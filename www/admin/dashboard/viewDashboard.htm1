@@ -1,0 +1,202 @@
+<div class="row top_tiles">
+  <div class="animated flipInY col-lg-3 col-md-3 col-sm-6 col-xs-12">
+	<div class="tile-stats">
+	  <div class="icon"><i class="fa fa-check-square-o"></i></div>
+	  <div class="count"><?=$tongtin?></div>
+	  <h3>Tổng số tin</h3>	  
+	</div>
+  </div>
+  <div class="animated flipInY col-lg-3 col-md-3 col-sm-6 col-xs-12">
+	<div class="tile-stats">
+	  <div class="icon"><i class="fa fa-check-square-o"></i></div>
+	  <div class="count"><?=$tongbai?></div>
+	  <h3>Tổng số bài</h3>	  
+	</div>
+  </div>
+  <div class="animated flipInY col-lg-3 col-md-3 col-sm-6 col-xs-12">
+	<div class="tile-stats">
+	  <div class="icon"><i class="fa fa-check-square-o"></i></div>
+	  <div class="count"><?=$tongsuutam?></div>
+	  <h3>Tổng số Sưu tập</h3>	  
+	</div>
+  </div>
+  <div class="animated flipInY col-lg-3 col-md-3 col-sm-6 col-xs-12">
+	<div class="tile-stats">
+	  <div class="icon"><i class="fa fa-check-square-o"></i></div>
+	  <div class="count"><?=$tongtinbai?></div>
+	  <h3>Tổng số tin bài</h3>	  
+	</div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-6 col-sm-6 col-xs-12">
+	<div class="x_panel">
+	  <div class="x_title">
+		<h2>Tin bài theo năm <small>đồ thị theo tháng</small></h2>		
+		<div class="clearfix"></div>
+	  </div>
+	  <div class="x_content">
+		<div class="col-md-12 col-sm-12 col-xs-12">
+		  <div class="demo-container" style="height:280px">
+			<div id="chart_plot_02" class="demo-placeholder"></div>
+		  </div>		 
+		</div>
+		
+	  </div>
+	</div>
+  </div>
+  <div class="col-md-6 col-sm-6 col-xs-12">
+	<div class="x_panel">
+	  <div class="x_title">
+		<h2>Tin bài trong tháng <small>đồ thị theo ngày</small></h2>		
+		<div class="clearfix"></div>
+	  </div>
+	  <div class="x_content" style="height:280px">
+		<canvas id="mybarChartthang"></canvas>
+	  </div>
+	</div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-12 col-sm-12 col-xs-12">
+	<div class="x_panel">
+	  <div class="x_title">
+		<h2>Danh sách tin bài</h2>		
+		<div class="clearfix"></div>
+	  </div>
+	  <div class="x_content">
+		<section id="web-application">
+			<div class="row fontawesome-icon-list">
+<? 
+	$urlnhan = "#";
+	$urldelai = "#";
+	$urlbientap = "#";
+	$urlDuyet = "#";
+	$urlChoDang = "#";
+	$urlDang = "#";
+					
+	if(in_array(80, $_SESSION["quyen"])||$_SESSION["AdminType"]==1) {      
+		$urlnhan = "?cmd=80";
+	}
+	if(in_array(81, $_SESSION["quyen"])||$_SESSION["AdminType"]==1){
+		$urldelai = "?cmd=81";
+	}
+	if(in_array(88, $_SESSION["quyen"])||$_SESSION["AdminType"]==1){
+		$urlbientap = "?cmd=88";
+	}
+	if(in_array(96, $_SESSION["quyen"])||$_SESSION["AdminType"]==1){
+		$urlbientap = "?cmd=96";
+	}
+	if(in_array('duyet', $_SESSION["quyen"],true)||$_SESSION["AdminType"]==1){
+		$urlDuyet = "?cmd=101";
+	}
+	if(in_array(106, $_SESSION["quyen"])||$_SESSION["AdminType"]==1){
+		$urlChoDang = "?cmd=106";
+	}
+	if(in_array(110, $_SESSION["quyen"])||$_SESSION["AdminType"]==1){
+		$urlDang = "?cmd=110";
+	}
+?>					
+				<div class="fa-hover col-md-12 col-sm-12 col-xs-12"><a href="<?=$urlnhan?>"><i class="fa fa-bar-chart" style="color: #009688;"></i> Tổng số tin bài đã nhận : <b><?=$tongnhan?></b></a></div>
+				<div class="fa-hover col-md-12 col-sm-12 col-xs-12"><a href="<?=$urldelai?>"><i class="fa fa-bar-chart" style="color: #009688;"></i> Tổng số tin bài để lại : <b><?=$tongdelai?></b></a></div>				
+				<div class="fa-hover col-md-12 col-sm-12 col-xs-12"><a href="<?=$urlbientap?>"><i class="fa fa-bar-chart" style="color: #009688;"></i> Tổng số tin bài biên tập : <b><?=$tongbt?></b></a></div>												
+				<div class="fa-hover col-md-12 col-sm-12 col-xs-12"><a href="<?=$urlDuyet?>"><i class="fa fa-bar-chart" style="color: #009688;"></i> Tổng số tin bài chờ duyệt : <b><?=$tongduyet?></b></a></div>
+				<div class="fa-hover col-md-12 col-sm-12 col-xs-12"><a href="<?=$urlChoDang?>"><i class="fa fa-bar-chart" style="color: #009688;"></i> Tổng số tin bài chờ đăng : <b><?=$tongchodang?></b></a></div>
+				<div class="fa-hover col-md-12 col-sm-12 col-xs-12"><a href="<?=$urlDang?>"><i class="fa fa-bar-chart" style="color: #009688;"></i> Tổng số tin bài đã đăng : <b><?=$tongdang?></b></a></div>
+			</div>
+		</section>
+		
+	  </div>
+	</div>
+  </div>  
+</div>
+
+<script>	
+$(document).ready(function() {		  
+	<?=$datathang?>
+	var chart_plot_02_settings = {
+		grid: {
+			show: true,
+			aboveData: true,
+			color: "#3f3f3f",			
+			axisMargin: 0,
+			borderWidth: 0,
+			borderColor: null,			
+			clickable: true,
+			hoverable: true,
+			autoHighlight: true,
+			mouseActiveRadius: 100
+		},
+		series: {
+			lines: {
+				show: true,
+				fill: true,
+				lineWidth: 2,
+				steps: false
+			},
+			points: {
+				show: true,
+				radius: 4.5,
+				symbol: "circle",
+				lineWidth: 3.0
+			}
+		},
+		
+		colors: ['#96CA59', '#3F97EB', '#72c380', '#6f7a8a', '#f7cb38', '#5a8022', '#2c7282'],
+		shadowSize: 0,
+		
+		yaxis: {
+			min: 0
+		},
+		xaxis: {			
+			tickSize: [1]
+		}
+	};	
+
+	if ($("#chart_plot_02").length){
+		console.log('Plot2');
+		
+		$.plot( $("#chart_plot_02"), 
+		[{ 
+			label: "", 
+			data: chart_plot_02_data, 			
+			lines: { 
+				fillColor: "rgba(150, 202, 89, 0.12)" 
+			}, 
+			points: { 
+				fillColor: "#fff" } 
+		}], chart_plot_02_settings);
+		
+	}
+	
+	var ctxthang = document.getElementById("mybarChartthang");
+	ctxthang.height = 170;
+	var mybarChartthang = new Chart(ctxthang, {
+	type: 'bar',
+	data: {
+	  <?=$labels?>,
+	  datasets: [{
+		label: 'Số tin bài',
+		backgroundColor: "#26B99A",
+		<?=$data?>
+	  }]
+	},
+
+	options: {
+	  legend: {
+				display: false
+			},	
+	  scales: {
+		yAxes: [{
+		  ticks: {
+			beginAtZero: true
+		  }
+		}]
+	  }
+	}
+	});
+		
+})  
+</script>

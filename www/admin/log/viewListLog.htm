@@ -1,0 +1,103 @@
+<?
+$listLog = $request->getAttribute("listLog");
+$listNguoiDung = $request->getAttribute("listNguoiDung");
+$numLog = $request->getAttribute("numLog");
+$sPage = $request->getAttribute("sPage");
+$page = $request->getAttribute("page");
+$username = $request->getAttribute("username");
+$chucnang = $request->getAttribute("chucnang");
+?>
+<form id="frmLog" action="" method="post" class="form-horizontal form-label-left">
+	<div class="x_panel">
+	  <div class="x_title">
+		<h2>Danh sách Log </h2>
+		<br><br>
+	  </div>	  
+	  <div class="form-group">
+		<label class="control-label col-md-2">
+			<select name="select_user" class="form-control">
+				<option value="">--- Chọn tài khoản ---</option>
+			<?
+				if($listNguoiDung!=false){		
+					foreach($listNguoiDung as $user){
+						$select="";
+						if($user->get("username")==$username) $select="selected";
+						if($user->get("id")!=11){
+			?>
+				<option value="<?=$user->get("username")?>" <?=$select?>><?=$user->get("username")?></option>
+			<?
+						}
+					}
+				}
+			?>		
+		   </select> 
+		</label>
+		<label class="control-label col-md-1" style="padding-top: 16px;">Chức năng : </label>
+		<label class="control-label col-md-3"><input name="txtChucNang" id="txtChucNang" type="text" value="<?=$chucnang?>" class="form-control"></label>
+		<label class="col-md-3" style="padding-top: 9px;padding-left: 0px;"><button id="submit" class="btn btn-secondary submit" style="float: none;">Xem </button></label>		
+	  </div>
+	  <input type="hidden" name="cmd" id="cmd" value="200">
+	  <input type="hidden" name="id" id="id">	  
+	  <div >		
+		<table id="datatable-author" name="datatable-author" class="table table-striped table-bordered">
+		  <thead>
+			<tr>
+			  <th>STT</th>
+			  <th>Ngày giờ</th>
+			  <th>Tên</th>
+			  <th>Chức năng</th>
+			  <th>Nội dung thay đổi</th>
+			  <th>Nội dung cũ</th>			  
+			  <th>Thao tác</th>
+			</tr>
+		  </thead>		  
+		  <tbody>
+					<!-- $i=$numLog-$page; -->
+
+<?
+
+		$i=1 + $page;
+		if($listLog!=false){
+			foreach($listLog as $log){
+?>
+			<tr>
+			  <td  align="center"><?=$i?></td>	
+			  <td><?=$log->get("ngay")?></td>
+			  <td><?=$log->get("ten")?></td>
+			  
+			  <td><?=$log->get("chucnang")?></td>
+			  <td><?=$log->get("noidung")?></td>
+			  <td><?=$log->get("noidungcu")?></td>			  
+			  <td align="center">
+<?
+			if($_SESSION["AdminType"]==1){
+		?>
+			  <button class="delete btn btn-danger" title="Xóa" data-toggle="tooltip"><i class="glyphicon glyphicon-trash"></i></button>
+			  <input type="hidden" name = "id" id = "id" value="<?=$log->get("logID")?>"
+		<?
+			}
+		?>	
+				</td>
+			</tr>
+<?					
+				$i++;
+			}
+		}
+?>			
+		  </tbody>
+		</table>		         
+	  </div>
+	  <div class="form-group">
+			<label class="control-label col-md-12">
+				<?
+						if($sPage!="") {
+				?>
+					Trang <?=$sPage?>
+											  
+				<?
+						}
+				?>    
+			</label>
+		</div>
+	</div>
+</form>

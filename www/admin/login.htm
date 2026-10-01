@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <!-- Meta, title, CSS, favicons, etc. -->
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title><?=_DEFAULT_TITLE_?></title>
+	<link rel="icon" type="image/png" href="<?=_DEFAULT_LOGO_?>"/>
+    <!-- Bootstrap -->
+    <link href="<?=_DEFAULT_URL_?>css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="<?=_DEFAULT_URL_?>css/font-awesome.min.css" rel="stylesheet">
+    <!-- NProgress -->
+    <link href="<?=_DEFAULT_URL_?>css/nprogress.css" rel="stylesheet">
+    <!-- Animate.css -->
+    <link href="<?=_DEFAULT_URL_?>css/animate.min.css" rel="stylesheet">
+
+    <!-- Custom Theme Style -->
+    <link href="<?=_DEFAULT_URL_?>css/custom.css" rel="stylesheet">
+  </head>
+
+  <body class="login">
+    <div>
+      <a class="hiddenanchor" id="signup"></a>
+      <a class="hiddenanchor" id="signin"></a>
+
+      <div class="login_wrapper">
+        <div class="animate form login_form">
+          <section class="login_content">
+            <form name="frmLogin" action="<?=_DEFAULT_URL_?>login/login/" method="post"> 							
+							<h1>Đăng nhập hệ thống</h1>
+							<div style="color:red;padding: 0px 0px 10px 0;"><?=$request->getAttribute("msg")?></div>
+							<div>
+								<input type="text" id="txtUserName" name="txtUserName" value="<?=$request->getAttribute("username")?>" class="form-control" placeholder="Username" required="" <?=$request->getAttribute("login-disabled")?>/>
+							</div>
+							<div>
+								<input type="password" id="<?=$request->getAttribute("pass")?>" name="<?=$request->getAttribute("pass")?>" class="form-control" placeholder="Password" required="" <?=$request->getAttribute("login-disabled")?>/>
+							</div>
+							<div>
+								<input type="submit" name="Submit" class="btn btn-default submit" style="float: none;" value="Đăng nhập"<?=$request->getAttribute("login-disabled")?>>	
+							</div>
+<!--Enter Code <img src="<?=_DEFAULT_URL_?>captcha.php"><input type="text" name="vercode" /> -->
+							<div class="clearfix"></div>
+
+							<div class="separator">
+								<div class="clearfix"></div>
+								<br />                
+							</div>
+							<input type="hidden" name="cmd" value="30">							
+            </form>
+          </section>
+        </div>
+       </div>
+    </div>
+  </body>
+<script language="javascript">
+	document.getElementById("txtUserName").focus();
+</script>
+</html>
+

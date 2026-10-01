@@ -1,0 +1,87 @@
+<?
+$listNQ = $request->getAttribute("listNQ");
+?>
+<div class="x_panel">
+	<div class="x_title table-title">
+		<h2>Danh sách người dùng</h2>
+		<div class="clearfix"></div>
+	</div>
+	<!-- Form tim kiem -->
+	<form class="form-horizontal form-label-left">
+		<div class="x_content">
+			<div class="panel panel-default tablemodify" style="padding:0 10px 10px 10px;margin-bottom: 0;">
+				<div class="x_title" style="margin-left: -10px;">
+						<h4 style="margin-bottom: 0px;">Tìm kiếm người dùng</h4>
+						<div class="clearfix"></div>
+				</div>
+				<div class="row">
+					<div class="form-group" style="margin-left: 10px;">
+						<label class="control-label" for="fullName">Nhập họ và tên</label>
+						<input type="text" class="form-control" name="fullName" id="fullName">
+					</div>	
+					<div class="form-group"  style="margin-left: 10px;">	
+						<label class="control-label">Nhập tên đăng nhập</label>
+						<input type="text" class="form-control" name="userName" id="userName">
+					</div>	
+							
+				</div>
+			</div>
+		</div>
+	</form>
+	<!-- Ket thuc Form tim kiem -->
+	<div class="x_content">
+		<div style="display:none">
+			<select id="nhomquyen" class="select form-control">
+				<?			
+			if($listNQ!=false){
+				foreach($listNQ as $nhomquyen){					
+?>
+				<option value="<?=$nhomquyen->get("maNQ")?>"><?=$nhomquyen->get("tenNQ")?></option>
+				<?
+				}
+			}
+?>
+			</select>
+		</div>
+		<table id="datatable-user" class="table table-striped table-bordered dt-responsive nowrap" cellspacing="0" width="100%">
+			<thead>
+				<tr>
+					<th>STT</th>
+					<th data-type="String" validate-type="true">Họ và Tên <span style="color:red">*</span></th>
+					<th data-type="String" validate-type="true" exception="edit">Tên đăng nhập <span style="color:red">*</span></th>
+					<th data-type="Password" validate-type="true">Mật khẩu <span style="color:red">*</span></th>
+					<th data-type="Select" objectid="nhomquyen" validate-type="true">Nhóm quyền </th>
+					<th>Thao tác</th>
+				</tr>
+			</thead>
+			<tbody>
+			</tbody>
+		</table>
+	</div>
+</div>
+
+<!--  Modal phan quyen -->
+<div class="modal fade" id="modal-phanquyen" role="dialog">
+	<div class="modal-dialog">
+		<!-- Modal content-->
+		<div class="modal-content">
+			<div class="modal-header">
+				<button type="button" class="close" data-dismiss="modal">&times;</button>
+				<h4 class="modal-title">Modal Header</h4>
+			</div>
+			<div class="modal-body" style="height: 600px;overflow-y: scroll;">
+
+			</div>
+			<div class="modal-footer">
+				<div class="col-xs-6 col-sm-6 col-md-6" style="text-align: left;">
+					<button type="button" class="btn btn-info save-hang-modal"><i class="fa fa-floppy-o"></i> Lưu phân
+						quyền</button>
+				</div>
+				<div class="col-xs-6 col-sm-6 col-md-6 " style=" display: flex; justify-content: flex-end;">
+					<button type="button" class="btn btn-secondary"  data-dismiss="modal">Close</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- End Modal add sp vao kho -->

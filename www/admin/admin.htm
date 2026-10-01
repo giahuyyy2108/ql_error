@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <!-- Meta, title, CSS, favicons, etc. -->
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title><?_DEFAULT_TITLE_?></title>
+	<link rel="icon" type="image/png" href="<?=_DEFAULT_LOGO_?>"/>
+    <!-- Bootstrap -->
+    <link href="<?=_DEFAULT_URL_?>css/bootstrap.min.css" rel="stylesheet">
+	<link rel="stylesheet" href="<?=_DEFAULT_URL_?>css/bootstrap-datetimepicker.min.css">
+    <!-- Font Awesome -->
+    <link href="<?=_DEFAULT_URL_?>css/font-awesome.min.css" rel="stylesheet">
+    <!-- NProgress -->
+    <link href="<?=_DEFAULT_URL_?>css/nprogress.css" rel="stylesheet">
+    <!-- iCheck -->
+    <link href="<?=_DEFAULT_URL_?>css/green.css" rel="stylesheet">
+    <!-- Datatables -->
+    <link href="<?=_DEFAULT_URL_?>css/dataTables.bootstrap.min.css" rel="stylesheet">
+    <link href="<?=_DEFAULT_URL_?>css/buttons.bootstrap.min.css" rel="stylesheet">
+    <!--<link href="<?=_DEFAULT_URL_?>css/fixedHeader.bootstrap.min.css" rel="stylesheet">-->
+    <link href="<?=_DEFAULT_URL_?>css/responsive.bootstrap.min.css" rel="stylesheet">
+    <link href="<?=_DEFAULT_URL_?>css/scroller.bootstrap.min.css" rel="stylesheet">
+	<link href="<?=_DEFAULT_URL_?>css/dropzone.min.css" rel="stylesheet">
+	<link rel="stylesheet" href="<?=_DEFAULT_URL_?>css/google.css">
+	<link rel="stylesheet" href="<?=_DEFAULT_URL_?>css/icon.css">
+	
+    <!-- Custom Theme Style -->
+	<!--<link href="<?=_DEFAULT_URL_?>css/style.css" rel="stylesheet">-->
+    <link href="<?=_DEFAULT_URL_?>css/custom.css?<?=_DEFAULT_VERSION_JS_CSS_?>" rel="stylesheet">
+	<link href="<?=_DEFAULT_URL_?>css/print.css?<?=_DEFAULT_VERSION_JS_CSS_?>" rel="stylesheet" type="text/css">
+	<?=$request->getAttribute("css")?>	
+			
+  </head>
+
+  <!--<body class="nav-sm">-->
+  <body class="nav-md">
+	<input type="hidden" id = "ULocal" value="<?=_DEFAULT_URL_?>">
+	<input type="hidden" id = "pageLength" value="<?=_ITEMS_PER_PAGE_ADMIN_?>">
+    <div class="container body">
+      <div class="main_container">
+        <div class="col-md-3 left_col">
+          <div class="left_col scroll-view">
+			<div class="navbar nav_title" style="border: 0;">
+              <a href="http://bvtn.org.vn" class="site_title"><img src="<?=_DEFAULT_URL_?>images/logo.png"> <span>Bệnh Viện Thống Nhất</span></a>
+            </div>
+            <!-- menu profile quick info -->
+            <div class="profile clearfix">
+              <div class="profile_pic">
+                <img src="<?=_DEFAULT_URL_?>images/profile.png" alt="..." class="img-circle profile_img">
+              </div>
+              <div class="profile_info">
+                <span>Chào mừng,</span>
+                <h2>
+<?
+		if($_SESSION["FullName"]!="") echo($_SESSION["FullName"]);
+		else echo($_SESSION["sUserName"]);
+?>
+				</h2>
+              </div>
+            </div>
+            <!-- /menu profile quick info -->
+
+            <br />
+
+            <!-- sidebar menu -->
+<?
+	include("www/admin/menu.htm");
+?>
+			<!-- /sidebar menu -->
+
+            <!-- /menu footer buttons -->
+            <div class="sidebar-footer hidden-small">
+              <a>
+                <span class="glyphicon" aria-hidden="true"></span>
+              </a>
+			  <a id="fullscreen" data-toggle="tooltip" data-placement="top" title="FullScreen">
+                <span class="glyphicon glyphicon-fullscreen" aria-hidden="true"></span>
+              </a>			  
+			  <a data-toggle="tooltip" data-placement="top" title="Hướng dẫn sử dụng">
+                <span class="glyphicon glyphicon-folder-open" aria-hidden="true"></span>
+              </a>
+			  <a data-toggle="tooltip" data-placement="top" title="Thoát khỏi hệ thống" href="<?=_DEFAULT_URL_?>login/logout/">
+                <span class="glyphicon glyphicon-off" aria-hidden="true"></span>
+              </a>			  
+            </div>
+            <!-- /menu footer buttons -->
+          </div>
+        </div>
+
+        <!-- top navigation -->
+        <div class="top_nav">
+          <div class="nav_menu">
+            <nav>
+              <div class="nav toggle">
+                <a id="menu_toggle"><i class="fa fa-bars"></i></a>
+              </div>			  
+
+              <ul class="nav navbar-nav navbar-right">                
+				<li class="">
+                  <a href="javascript:;" class="user-profile dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
+                    <img src="<?=_DEFAULT_URL_?>images/profile.png" alt="">
+<?
+		if($_SESSION["FullName"]!="") echo($_SESSION["FullName"]);
+		else echo($_SESSION["sUserName"]);
+?>
+                    <span class=" fa fa-angle-down"></span>
+                  </a>
+                  <ul class="dropdown-menu dropdown-usermenu pull-right">
+                    <li><a href="<?=_DEFAULT_URL_?>login/changePass/"> Đổi mật khẩu</a></li>
+					<!--<li><a href="help/help.pdf">Hướng dẫn sử dụng</a></li>-->
+                    <li><a href="<?=_DEFAULT_URL_?>login/logout/"><i class="fa fa-sign-out pull-right"></i> Thoát khỏi hệ thống</a></li>
+                  </ul>
+                </li>				
+				<li class="">
+                  <a href="<?=_DEFAULT_URL_?>huongdan/qlbh.pdf" data-toggle="tooltip" data-placement="bottom" data-html="true" title=" Hướng dẫn sử dụng" style="cursor: pointer;">
+					<span class="glyphicon glyphicon-folder-open" style="padding-right: 10px;"></span> HDSD
+				  </a>                 
+                </li>				
+               </ul>
+            </nav>
+          </div>
+        </div>
+        <!-- /top navigation -->
+
+        <!-- page content -->
+        <div class="right_col" role="main" style="padding: 5px 0px 0 5px;">
+          <div class="">
+			      <div class="page-title">
+              <div class="col-md-12 col-sm-12 col-xs-12" style="padding: 0px;">
+                <h2 style="color:#990000;"><?=$request->getAttribute("msg")?></h3>
+				        <input type="hidden" id="sys_date" value="<?=date("d/m/Y")?>">
+              </div>              
+            </div>
+
+            <div class="clearfix"></div>
+            <div class="row">
+				<div class="col-md-12 col-sm-12 col-xs-12" style="padding: 0px;">      
+<?
+	include($request->getModel());
+?>			
+				</div>
+			</div>
+          </div>
+        </div>
+        <!-- /page content -->
+
+        <!-- footer content -->
+        <footer>
+          <div class="pull-right">			
+            <p>Quản lý tiêm chủng ©2021 by Khôi Trần</p>
+          </div>
+          <div class="clearfix"></div>
+        </footer>
+        <!-- /footer content -->
+      </div>
+    </div>
+
+<!-- modal alert -->	
+	<div id="modal_alert" class="modal fade" tabindex="-1" role="dialog" aria-labelledby="mySmallModalLabel" aria-hidden="true">
+	  <div class="modal-dialog modal-sm">
+		<div class="modal-content">		  
+		  <div class="modal-body">
+			<p>content</p>
+		  </div>
+		  <div class="modal-footer">			
+			<button type="button" class="btn btn-secondary" id="modal-btn-no" data-dismiss="modal">Đóng</button>
+		  </div>
+		</div>
+	  </div>
+	</div>
+<!---------------------->		
+ 
+	<!-- jQuery -->
+    <!--<script src="<?=_DEFAULT_URL_?>scripts/jquery.min.js"></script>-->
+	<!--<script src="<?=_DEFAULT_URL_?>scripts/jquery-3.3.1.min.js"></script>-->
+	<!-- jQuery -->
+    <script src="<?=_DEFAULT_URL_?>scripts/jquery.min.js"></script>
+		
+	<script src="<?=_DEFAULT_URL_?>scripts/jquery.formance.min.js"></script>	
+	<script src="<?=_DEFAULT_URL_?>scripts/jquery.fullscreen.min.js"></script>
+		
+    <!-- Bootstrap -->
+    <script src="<?=_DEFAULT_URL_?>scripts/bootstrap.min.js"></script>
+    <!-- FastClick -->
+    <script src="<?=_DEFAULT_URL_?>scripts/fastclick.js"></script>
+	<script src="<?=_DEFAULT_URL_?>scripts/icheck.min.js"></script>	
+	<!-- Datatables -->	
+	<script src="<?=_DEFAULT_URL_?>scripts/jquery.dataTables.min.js"></script>	
+	
+	<script src="<?=_DEFAULT_URL_?>scripts/moment.min.js"></script>
+	
+	<script src="<?=_DEFAULT_URL_?>scripts/dataTables.bootstrap.min.js"></script>	
+	<script src="<?=_DEFAULT_URL_?>scripts/dataTables.buttons.min.js"></script>
+	<script src="<?=_DEFAULT_URL_?>scripts/dataTables.responsive.min.js"></script>
+		
+	<script src="<?=_DEFAULT_URL_?>scripts/buttons.bootstrap.min.js"></script>
+	<script src="<?=_DEFAULT_URL_?>scripts/jszip.min.js"></script>
+	<script src="<?=_DEFAULT_URL_?>scripts/pdfmake.min.js"></script>
+	<script src="<?=_DEFAULT_URL_?>scripts/vfs_fonts.js"></script>
+	<script src="<?=_DEFAULT_URL_?>scripts/buttons.html5.js"></script>
+	<script src="<?=_DEFAULT_URL_?>scripts/buttons.print.min.js"></script>
+	
+	<script src="<?=_DEFAULT_URL_?>scripts/bootstrap-datetimepicker.min.js"></script>	
+	
+    <!-- Custom Theme Scripts -->
+	<script src="<?=_DEFAULT_URL_?>scripts/functions.js?<?=_DEFAULT_VERSION_JS_CSS_?>"></script>
+	<script src="<?=_DEFAULT_URL_?>js/common.js?<?=_DEFAULT_VERSION_JS_CSS_?>"></script>
+    <script src="<?=_DEFAULT_URL_?>js/custom.js?<?=_DEFAULT_VERSION_JS_CSS_?>"></script>
+	<!-- script to page -->
+	<?=$request->getAttribute("script")?>
+  </body>
+</html>

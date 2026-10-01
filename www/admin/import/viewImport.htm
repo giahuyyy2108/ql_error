@@ -1,0 +1,49 @@
+<?
+$msg = $request->getAttribute("msg");
+?> 
+<form action="<?=_DEFAULT_URL_?>importData/import/" method="post" enctype="multipart/form-data" name="frmPhongHoc">
+	<div class="x_panel">
+	  <div class="x_title">
+		<h2>Khởi tạo dữ liệu </h2>
+		<br><br>
+	  </div>	  
+	  <div >		
+		<table class="table">		  
+			<tbody>
+			<tr>			
+			  <td style="text-align:right;vertical-align: middle;">&nbsp;<strong>Chọn file : </strong></td>
+			  <td style="text-align:left;vertical-align: middle;">				 
+				  <label>
+						<input type="file" name="file" id="file" class="form-control" style="padding: 0 3px;padding-top: 3px;line-height: 20px;">
+				  </label>
+				  <button class="btn btn-danger" onClick="return restore();">Thực thi</button>				
+			  </td>			 
+			</tr>
+			<tr>
+				<td  style="text-align:right;vertical-align: middle;">Xem file mẫu :</td>
+				<td  style="text-align:left;vertical-align: middle;">
+					<a href="<?=_DEFAULT_URL_?>importData/download/">Download file</a>
+				</td>
+			</tr>			
+		  </tbody>
+		</table>		             
+	  </div>
+	</div>
+</form>
+<script language="javascript">
+<?
+if($msg!="") echo('alert("'.$msg.'")');
+?>	
+	function restore(){
+		var file = document.getElementById("file").value;
+		if(file != ""){
+			if(confirm("Bạn có chắc chắc thực hiện việc tạo dữ liệu này không không?")){				
+				return true;
+			}
+		}
+		else {
+			alert("Chọn file cần tạo dữ liệu!");
+		}
+		return false;
+	}
+</script>

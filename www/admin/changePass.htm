@@ -1,0 +1,48 @@
+<?
+	$user = $request->getAttribute("user");
+	$msg = $request->getAttribute("msg");
+?>
+	<div class="x_panel">
+	  <div class="x_title">
+		<h2>Đổi mật khẩu <small>người dùng</small></h2>
+		<div class="clearfix"></div>
+	  </div>
+	  <div class="x_content">
+		<form action="<?=_DEFAULT_URL_?>login/savePass/" id="changepass" method="POST" data-parsley-validate class="form-horizontal form-label-left">
+
+		  <!-- <div class="form-group">
+			<label class="control-label col-md-3 col-sm-3 col-xs-12" for="first-name">Tên đăng nhập 
+			</label>
+			<div class="col-md-12 col-sm-12 col-xs-12" style="padding-top: 5px;font-size: 18px;">
+			  <?=$user->getUser("username")?>
+			</div>
+		  </div> -->
+		  <div class="form-group">
+			<label class="control-label col-md-3 col-sm-3 col-xs-12" for="last-name">Mật khẩu cũ <span class="required">*</span>
+			</label>
+			<div class="col-md-12 col-sm-12 col-xs-12">
+			  <input type="password" id="oldpass" name="oldpass" required="required" class="form-control col-md-7 col-xs-12">
+			</div>
+		  </div>
+		  <div class="form-group">
+			<label for="middle-name" class="control-label col-md-3 col-sm-3 col-xs-12">Mật khẩu mới <span class="required">*</span></label>
+			<div class="col-md-12 col-sm-12 col-xs-12">
+			  <input type="password" id="newpass" name="newpass" required="required" class="form-control col-md-7 col-xs-12" type="text">
+			</div>
+		 </div>
+		 <div class="form-group">
+			<label for="middle-name" class="control-label col-md-3 col-sm-3 col-xs-12">Xác nhận lại mật khẩu <span class="required">*</span></label>
+			<div class="col-md-12 col-sm-12 col-xs-12">
+			  <input type="password" id="verifypass" name="verifypass" required="required" class="form-control col-md-7 col-xs-12" type="text">
+			</div>
+		 </div>
+		 <!-- <div class="ln_solid"></div> -->
+		  <div class="form-group">
+			<div class="col-md-12 col-sm-12 col-xs-12 col-md-offset-3">			  
+			  <button type="submit" class="btn btn-success " style="margin: 10px 0;">Thay đổi mật khẩu</button>			  
+			</div>
+		  </div>
+
+		</form>
+	  </div>
+	</div>

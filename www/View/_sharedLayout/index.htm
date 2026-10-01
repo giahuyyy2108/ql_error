@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <!-- Meta, title, CSS, favicons, etc. -->
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" href="/vpdt/images/favicon.png" type="image/ico" />
+
+    <title><?=_DEFAULT_TITLE_?></title>
+
+    <!-- Bootstrap -->
+    <link href="<?=_DEFAULT_LIBS_?>bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="<?=_DEFAULT_LIBS_?>fontawesome/css/fontawesome.min.css" rel="stylesheet">
+
+    <link href="<?=_DEFAULT_LIBS_?>font-awesome/css/font-awesome.min.css" rel="stylesheet">
+
+    <!-- NProgress -->
+    <link href="<?=_DEFAULT_LIBS_?>nprogress/nprogress.css" rel="stylesheet">
+    <!-- iCheck -->
+    <link href="<?=_DEFAULT_LIBS_?>iCheck/skins/flat/green.css" rel="stylesheet">
+	
+    <!-- bootstrap-progressbar -->
+    <link href="<?=_DEFAULT_LIBS_?>bootstrap-progressbar/css/bootstrap-progressbar-3.3.4.min.css" rel="stylesheet">
+    <!-- JQVMap -->
+    <link href="<?=_DEFAULT_LIBS_?>jqvmap/dist/jqvmap.min.css" rel="stylesheet"/>
+    <!-- bootstrap-daterangepicker -->
+    <link href="<?=_DEFAULT_LIBS_?>bootstrap-daterangepicker/daterangepicker.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css" rel="stylesheet">
+
+    <!-- Datatables -->
+    <link href="<?=_DEFAULT_LIBS_?>datatables.net-bs/css/dataTables.bootstrap.min.css" rel="stylesheet">
+    <link href="<?=_DEFAULT_LIBS_?>datatables.net-buttons-bs/css/buttons.bootstrap.min.css" rel="stylesheet">
+    <link href="<?=_DEFAULT_LIBS_?>datatables.net-fixedheader-bs/css/fixedHeader.bootstrap.min.css" rel="stylesheet">
+    <link href="<?=_DEFAULT_LIBS_?>datatables.net-responsive-bs/css/responsive.bootstrap.min.css" rel="stylesheet">
+    <link href="<?=_DEFAULT_LIBS_?>datatables.net-scroller-bs/css/scroller.bootstrap.min.css" rel="stylesheet">
+    <!--Jquery css-->
+    <link href="<?=_DEFAULT_LIBS_?>jquery/dist/jquery-ui.min.css" rel="stylesheet"/>
+    <!-- SweetAlert2 -->
+    <link href="<?=_DEFAULT_LIBS_?>sweetalert2/sweetalert2.min.css" rel="stylesheet">
+    <!-- dropzone -->
+    <link href="<?=_DEFAULT_LIBS_?>dropzone/dist/min/dropzone.min.css" rel="stylesheet">
+
+    <!-- Custom Theme Style -->
+    <link href="<?=_DEFAULT_LIBS_?>build/css/custom.min.css" rel="stylesheet">
+
+    
+
+    <?=$request->getAttribute("css")?>	
+
+<style>
+   /* Increase the font size of the event title */
+   .fc-event-title {
+    font-size: 8px; /* Adjust this value as needed */
+    font-weight: bold; /* Optional: Make the font bold */
+  }
+
+  /* Increase the font size of the event time */
+  .fc-time {
+    font-size: 8px; /* Adjust this value as needed */
+  }
+  .fc-event-time{
+    font-size: 14px;
+  }
+
+  /* Increase the font size of the events in the dayGridMonth view */
+  .fc-daygrid-event .fc-event-title, .fc-daygrid-event .fc-time {
+    font-size: 14px; /* Adjust this value as needed */
+  }
+  /* Styles for smaller screens */
+@media (max-width: 600px) {
+  .fc-event-title {
+    font-size: 12px; /* Smaller font size */
+  }
+  .fc-event-time {
+    font-size: 12px; /* Smaller font size */
+  }
+}
+.fc-event {
+    position: relative; /* Để delete-icon nằm bên ngoài vùng hover của sự kiện */
+  }
+
+.delete-icon {
+  position: absolute;
+  color: red;
+  font-size: 30px;
+  cursor: pointer;
+  float: right;
+    z-index: 1000; /* Đảm bảo nằm trên các phần tử khác */
+    margin-left: 10px;
+}
+.delete-icon:hover {
+  text-decoration: underline;
+}
+
+.containers {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr); /* 6 equal-width columns */
+    gap: 10px; /* Space between the items */
+}
+
+.kho {
+    border: 1px solid #000;
+    padding: 20px;
+    width: 200px;
+    height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    cursor: pointer;
+    background-color: #f9f9f9; 
+    transition: background-color 0.3s, transform 0.3s; 
+    position: relative;
+    padding: 20px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* Hover effect for Kho */
+.kho:hover {
+    background-color: #e0e0e0; /* Change background color on hover */
+    transform: scale(1.05); /* Slightly enlarge the element */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Add a subtle shadow */
+}
+
+.trash-icon {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    cursor: pointer;
+    color: red;
+    font-size: 20px;
+}
+
+.trash-icon:hover {
+    color: darkred;
+}
+
+.detail {
+    margin-top: 20px;
+}
+
+.detail .kho-title {
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.tab-content {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    padding: 20px;
+    /* background-color: white; */
+    /* border: 1px solid #ccc; */
+    z-index: 2;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+#vetrang {
+    cursor: pointer;
+    color: #007bff;
+    font-size: 5vh;
+    margin-right: 10px;
+}
+
+#vetrang:hover {
+    color: #0056b3;
+}
+
+.ke-container {
+    display: flex;          /* Set the container to use Flexbox */
+    flex-direction: row;    /* Align items in a row */
+    gap: 20px;              /* Add spacing between items */
+    margin-top: 20px;       /* Optional: Adjust spacing if needed */
+    flex-wrap: wrap;        /* Wrap items if necessary */
+}
+
+/* Individual ke items */
+.ke-item {
+    border: 1px solid #000;
+    padding: 20px;
+    width: 200px;
+    height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    cursor: pointer;
+    background-color: #f0f0f0;
+    margin: 5px;
+}
+
+.ke-item:hover {
+    background-color: #e0e0e0;
+}
+
+.ngan {
+    border: 1px solid black; /* Adds a border to the div */
+    padding: 10px; /* Adds some padding inside the div */
+    text-align: center; /* Centers the text horizontally */
+    margin: 5px; /* Adds some space between Ngăn divs */
+}
+
+input[type=checkbox]{
+  width: 30px;
+  height: 30px;
+}
+</style>
+
+
+  </head>
+
+  <body class="nav-md" >
+    <input type="hidden" id="ULocal" value="<?=_DEFAULT_URL_?>">
+    <input type="hidden" id="pageLength" value="<?=_ITEMS_PER_PAGE_ADMIN_?>">
+    <div class="container body">
+      <div class="main_container">
+        <div class="col-md-3 left_col">
+          <div class="left_col scroll-view">
+            <div class="navbar nav_title" style="border: 0;">
+              <a href="http://bvtn.org.vn" class="site_title"><img src="<?=_DEFAULT_URL_?>images/logo.png"
+                style="margin-left: -3px;margin-bottom: 10px;width: 56px;"><span style="font-size: 12px; font-weight: bold;"> BỆNH VIỆN THỐNG NHẤT </span></a>
+            </div>
+  
+            <div class="clearfix"></div>
+  
+            <!-- menu profile quick info -->
+            <div class="profile clearfix">
+              <div class="profile_pic">
+                <img src="<?=_DEFAULT_URL_?>images/profile.png" alt="..." class="img-circle profile_img">
+              </div>
+              <div class="profile_info">
+                <span>Chào mừng</span>
+                <h2>
+                  <?
+                        if($_SESSION["FullName"]!="") echo($_SESSION["FullName"]);
+                        else echo($_SESSION["sUserName"]);
+                    ?>
+                </h2>
+              </div>
+            </div>
+            <!-- /menu profile quick info -->
+  
+            <br />
+  
+            <!-- sidebar menu -->
+            <?
+                include("www/View/_sharedLayout/menu.htm");
+              ?>
+            <!-- sidebar menu -->
+  
+            <div class="sidebar-footer hidden-small">
+              <!-- <a data-toggle="tooltip" data-placement="top" title="Settings">
+                <span class="glyphicon glyphicon-cog" aria-hidden="true"></span>
+              </a>
+              <a data-toggle="tooltip" data-placement="top" title="FullScreen">
+                <span class="glyphicon glyphicon-fullscreen" aria-hidden="true"></span>
+              </a>
+              <a data-toggle="tooltip" data-placement="top" title="Lock">
+                <span class="glyphicon glyphicon-eye-close" aria-hidden="true"></span>
+              </a> -->
+              <a data-toggle="tooltip" data-placement="top" title="Logout" href="<?=_DEFAULT_URL_?>login/logout/" style="width:100%">
+                <span class="glyphicon glyphicon-off" aria-hidden="true"></span>
+              </a>
+            </div>
+            <!-- /menu footer buttons -->
+          </div>
+        </div>
+  
+        <!-- top navigation -->
+        <div class="top_nav">
+          <div class="nav_menu">
+            <div class="nav toggle">
+              <a id="menu_toggle"><i class="fa fa-bars"></i></a>
+            </div>
+            <nav class="nav navbar-nav">
+              <ul class=" navbar-right">
+                <li class="nav-item dropdown open" style="padding-left: 15px;">
+                  <a href="javascript:;" class="user-profile dropdown-toggle" aria-haspopup="true" id="navbarDropdown"
+                    data-toggle="dropdown" aria-expanded="false">
+                    <img src="<?=_DEFAULT_URL_?>images/profile.png" alt="">
+                    <?
+                          if($_SESSION["FullName"]!="") echo($_SESSION["FullName"]);
+                          else echo($_SESSION["sUserName"]);
+                      ?>
+                    <span class=" fa fa-angle-down"></span>
+                  </a>
+                  <div class="dropdown-menu dropdown-usermenu pull-right" aria-labelledby="navbarDropdown">
+                    <a class="dropdown-item" href="<?=_DEFAULT_URL_?>login/changePass/"> Đổi mật khẩu</a>
+                    <a class="dropdown-item" href="<?=_DEFAULT_URL_?>login/logout/"><i
+                        class="fa fa-sign-out pull-right"></i> Thoát khỏi hệ thống</a>
+                  </div>
+                </li>
+  
+  
+              </ul>
+            </nav>
+          </div>
+        </div>
+        <!-- /top navigation -->
+  
+        <!-- page content -->
+        <div class="right_col" role="main">
+          <div class="page-title">
+            <div class="col-md-12 col-sm-12 col-xs-12" style="padding: 0px;">
+              <h2 style="color:#990000;"><?=$request->getAttribute("msg")?></h3>
+                <input type="hidden" id="sys_date" value="<?=date(" d/m/Y")?>">
+            </div>
+  
+            <div class="clearfix"></div>
+  
+  
+            <div class="title_left">
+              <!-- <h3>BỆNH NHÂN: NGUYỄN VĂN TEST</h3>
+                <h4>Năm sinh: 27/12/1980</h4>
+                <h4>Mã BN: 1911066133</h4> -->
+            </div>
+          </div>
+          <div class="clearfix"></div>
+  
+          <div class="row">
+            <div class="col-md-12 col-sm-12 col-xs-12">
+              <?
+                  include($request->getModel());
+                ?>
+            </div>
+          </div>
+        </div>
+          <!-- /page content -->
+  
+          <!-- footer content -->
+          <footer>
+            <div class="pull-right">
+              <a href="http://bvtn.org.vn/">
+                <?=_DEFAULT_TITLE_?>
+              </a>
+            </div>
+            <div class="clearfix"></div>
+          </footer>
+          <!-- /footer content -->
+        </div>
+      </div>
+   
+
+
+    <!-- jQuery -->
+    <script src="<?=_DEFAULT_LIBS_?>jquery/dist/jquery.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>jquery/dist/jquery-ui.min.js"></script>
+
+    <script src="<?=_DEFAULT_URL_?>scripts/jquery.formance.min.js"></script>
+    <!-- Bootstrap -->
+    <script src="<?=_DEFAULT_LIBS_?>bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- FastClick -->
+    <script src="<?=_DEFAULT_LIBS_?>fastclick/lib/fastclick.js"></script>
+    <!-- NProgress -->
+    <script src="<?=_DEFAULT_LIBS_?>nprogress/nprogress.js"></script>
+    <!-- Chart.js -->
+    <script src="<?=_DEFAULT_LIBS_?>Chart.js/dist/Chart.min.js"></script>
+    <!-- gauge.js -->
+    <script src="<?=_DEFAULT_LIBS_?>gauge.js/dist/gauge.min.js"></script>
+    <!-- bootstrap-progressbar -->
+    <script src="<?=_DEFAULT_LIBS_?>bootstrap-progressbar/bootstrap-progressbar.min.js"></script>
+    <!-- iCheck -->
+    <script src="<?=_DEFAULT_LIBS_?>iCheck/icheck.min.js"></script>
+    <!-- Skycons -->
+    <script src="<?=_DEFAULT_LIBS_?>skycons/skycons.js"></script>
+    <!-- Flot -->
+    <script src="<?=_DEFAULT_LIBS_?>Flot/jquery.flot.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>Flot/jquery.flot.pie.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>Flot/jquery.flot.time.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>Flot/jquery.flot.stack.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>Flot/jquery.flot.resize.js"></script>
+    <!-- Flot plugins -->
+    <script src="<?=_DEFAULT_LIBS_?>flot.orderbars/js/jquery.flot.orderBars.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>flot-spline/js/jquery.flot.spline.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>flot.curvedlines/curvedLines.js"></script>
+    <!-- DateJS -->
+    <script src="<?=_DEFAULT_LIBS_?>DateJS/build/date.js"></script>
+    <!-- JQVMap -->
+    <script src="<?=_DEFAULT_LIBS_?>jqvmap/dist/jquery.vmap.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>jqvmap/dist/maps/jquery.vmap.world.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>jqvmap/examples/js/jquery.vmap.sampledata.js"></script>
+    <!-- bootstrap-daterangepicker -->
+    <script src="<?=_DEFAULT_LIBS_?>moment/min/moment.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>bootstrap-daterangepicker/daterangepicker.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/js/bootstrap-datepicker.min.js"></script>
+
+    <!-- sweetalert2 -->
+    <script src="<?=_DEFAULT_LIBS_?>sweetalert2/sweetalert2.min.js"></script>
+
+    <!-- Datatables -->
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net/js/jquery.dataTables.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-bs/js/dataTables.bootstrap.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-buttons/js/dataTables.buttons.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-buttons-bs/js/buttons.bootstrap.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-buttons/js/buttons.flash.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-buttons/js/buttons.html5.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-buttons/js/buttons.print.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-fixedheader/js/dataTables.fixedHeader.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-keytable/js/dataTables.keyTable.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-responsive/js/dataTables.responsive.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-responsive-bs/js/responsive.bootstrap.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>datatables.net-scroller/js/dataTables.scroller.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>jszip/dist/jszip.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>pdfmake/build/pdfmake.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>pdfmake/build/vfs_fonts.js"></script>
+
+  <script src="<?=_DEFAULT_URL_?>js/common.js?<?=_DEFAULT_VERSION_JS_CSS_?>"></script>
+  <script src="<?=_DEFAULT_URL_?>scripts/functions.js?<?=_DEFAULT_VERSION_JS_CSS_?>"></script>
+
+    <!-- Custom Theme Scripts -->
+    <script src="<?=_DEFAULT_LIBS_?>build/js/custom.min.js"></script>
+    <script src="<?=_DEFAULT_LIBS_?>update/fullcalendar-6.1.15/dist/index.global.min.js"></script>
+
+    <script src="<?=_DEFAULT_LIBS_?>dropzone/dist/min/dropzone.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+    
+    <!-- script to page -->
+    <?=$request->getAttribute("script")?>
+    
+  </body>
+</html>

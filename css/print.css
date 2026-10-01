@@ -1,0 +1,163 @@
+.print-page {
+    width: 148mm;
+    overflow:hidden;
+    min-height:210mm;
+    /*padding: 2.54cm 1.59cm 2.54cm 2.54cm;*/
+	padding: 11.5mm 6mm 10mm 8.5mm;
+    margin-left:auto;
+    margin-right:auto;
+    background: white;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+	color: black;
+	font-size: 10px;
+}
+
+.print-page .header {
+    overflow:hidden;
+	text-align:left;
+}
+.print-page .header-left {
+	display: inline-block;
+	text-transform:uppercase;
+    background-color:#FFFFFF;
+    text-align:left;	
+	vertical-align: top;
+	width : 49%;
+    float:left;		
+}
+.print-page .header-right {
+	display: inline-block;
+    background-color:#FFFFFF;
+    text-align:right;		
+	vertical-align: top;
+	margin: -75px 0 5px 30px;
+	width : 49%;	
+    float:right;
+}
+.print-page .title {
+    text-align:center;
+    position:relative;
+    color:#000000;
+    font-size: 15px;
+    /*padding-top: 10px;
+	padding-bottom: 5px;*/
+	font-weight: bold;
+}
+.print-page hr{
+	margin: 2px auto;
+	width: 200px;
+	border: 1px solid #00000075;
+}
+.print-page .footer-left {
+    text-align:left; 
+    position:relative;
+	padding-top: 15px;   
+    width: 49%;
+    color:#000000;
+    float:left;
+    font-size: 12px;
+    bottom:1px;
+}
+.print-page .footer-right {
+    text-align:left; 
+    position:relative;
+    /*height: 150px;*/
+	padding-bottom: 10px;
+	padding-top: 7px;
+    width: 49%;
+    color:#000000;
+    font-size: 12px;
+    float:right;
+    bottom:1px;
+}
+.print-page .pfooter{
+	text-align: left;
+	position: absolute;
+	bottom: 0;
+	left:auto;
+	/*margin: -3px auto -180px;*/
+}
+.print-page ul{
+	list-style:none;
+	padding: 0px;
+}
+.print-page .font-weight-bolder{
+	font-weight:bolder;
+}
+.print-page .mr-2{
+	margin-right:1rem!important;
+}
+.print-page .font-size-1{
+	font-size:12px;
+}
+
+@page { margin: 0 }
+body { margin: 0 }
+.sheet {
+  margin: 0;
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+  page-break-after: always;
+}
+
+/** Paper sizes **/
+body.A3               .sheet { width: 297mm; height: 419mm }
+body.A3.landscape     .sheet { width: 420mm; height: 296mm }
+body.A4               .sheet { width: 210mm; height: 296mm }
+body.A4.landscape     .sheet { width: 297mm; height: 209mm }
+body.A5               .sheet { width: 148mm; height: 209mm }
+body.A5.landscape     .sheet { width: 210mm; height: 147mm }
+body.letter           .sheet { width: 216mm; height: 279mm }
+body.letter.landscape .sheet { width: 280mm; height: 215mm }
+body.legal            .sheet { width: 216mm; height: 356mm }
+body.legal.landscape  .sheet { width: 357mm; height: 215mm }
+
+/** Padding area **/
+.sheet.padding-10mm { padding: 10mm }
+.sheet.padding-15mm { padding: 15mm }
+.sheet.padding-20mm { padding: 20mm }
+.sheet.padding-25mm { padding: 25mm }
+
+/** For screen preview **/
+@media screen {
+  body { background: #e0e0e0 }
+  .sheet {
+    background: white;
+    box-shadow: 0 .5mm 2mm rgba(0,0,0,.3);
+    margin: 5mm auto;
+  }
+}
+
+@media print {
+	/*@page {
+		body.A5{ width: 148mm }	
+	}*/
+	body.A3.landscape { width: 420mm }
+	body.A3, body.A4.landscape { width: 297mm }
+	body.A4, body.A5.landscape { width: 210mm }
+	body.A5                    { width: 148mm }
+	body.letter, body.legal    { width: 216mm }
+	body.letter.landscape      { width: 280mm }
+	body.legal.landscape       { width: 357mm }
+	.print-page {
+		margin: -20px 0 0 0;
+		border: initial;
+		border-radius: initial;
+		width: initial;
+		min-height: initial;
+		box-shadow: initial;
+		background: initial;
+		page-break-after: always;
+		padding:0;
+		font-size: 10px;
+	}
+	.print-page .pfooter{
+		text-align: left;
+		position: fixed;
+		bottom: 0;
+		left:auto;
+		margin: 0;
+	}	
+	.fa:before { color:#337ab7!important; }
+}

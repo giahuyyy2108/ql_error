@@ -1,0 +1,55 @@
+<div id="sidebar-menu" class="main_menu_side hidden-print main_menu">
+<?
+	//if(in_array('nhantinbai', $_SESSION["quyen"],true)||in_array('bientap', $_SESSION["quyen"],true)||in_array('duyet', $_SESSION["quyen"],true)||in_array('dang', $_SESSION["quyen"],true)||in_array('timkiem', $_SESSION["quyen"],true)||in_array('thongke', $_SESSION["quyen"],true)||in_array('danhmuc', $_SESSION["quyen"],true)||$_SESSION["AdminType"]==1){
+?> 
+<?			
+	$strEndL0 = "";
+	$strEndL1 = "";	
+	if($listChucNang!=false){		
+		foreach($listChucNang as $chucnang){
+			$tmpQuyen = $chucnang->get("url");
+			if($tmpQuyen=="") $tmpQuyen = $chucnang->get("parentQuyen");
+			if($request->checkRole($tmpQuyen)) {
+				if($chucnang->get("level") == '0'){
+				
+?>			
+		<?=$strEndL1?>
+	<?=$strEndL0?>
+	<div class="menu_section">
+		<h3><?=$chucnang->get("tenChucNang")?></h3>
+		<ul class="nav side-menu">	
+<?		
+				$strEndL0 = "</ul></div>";
+				$strEndL1 = "";	
+				}
+				if($chucnang->get("level") == '1' ){
+					if($chucnang->get("url")!="") {
+?>
+			<?=$strEndL1?>
+			<li><a href="<?=_DEFAULT_URL_?><?=$chucnang->get("url")?>/"><i class="<?=$chucnang->get("logo")?>"></i> <?=$chucnang->get("tenChucNang")?></a></li>
+<?				
+					$strEndL1="";
+					}
+					else{
+?>
+			<?=$strEndL1?>
+			<li><a><i class="<?=$chucnang->get("logo")?>"></i> <?=$chucnang->get("tenChucNang")?> <span class="fa fa-chevron-down"></span></a>
+				<ul class="nav child_menu">		
+<?				
+					$strEndL1="</ul></li>";
+					}
+				}
+				if($chucnang->get("level") == '2' ){
+?>
+					<li><a href="<?=_DEFAULT_URL_?><?=$chucnang->get("url")?>/"><?=$chucnang->get("tenChucNang")?></a></li>
+<?			
+				}
+			}
+		}
+?>
+			<?=$strEndL1?>
+			<?=$strEndL0?>
+<?		
+	}	
+?>
+</div>          

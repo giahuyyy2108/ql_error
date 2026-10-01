@@ -1,0 +1,104 @@
+<form name="frmQuyen" id="frmQuyen" action="" method="post">
+	<table id="table-quyen" width="100%" class="table table-hover">
+<?			
+	if($listChucNang!=false){
+		$i = 0;
+		foreach($listChucNang as $chucnang){
+			if($chucnang->get("level") == '0' ){
+				$level0 = $chucnang->get("maChucNang");
+				$hasQuyen = "";
+				$hasQuyen = "";
+				$strQuyen = "";
+				if($chucnang->get("parentQuyen")!=""){
+					$hasQuyen = $this->request->checkRoleUser($chucnang->get("parentQuyen"),$quyen)?'checked="checked"':'';
+					$strQuyen = $chucnang->get("parentQuyen");
+				}
+?>      
+		<tr>
+			<td class="level0" style="border-top: 0px;">
+				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$strQuyen?>" <?=$hasQuyen?> level="<?=$level0?>">				
+				<strong>&nbsp;&nbsp;<?=$chucnang->get("tenChucNang")?> </strong>
+			</td>   
+		</tr>
+<?
+				$i++;
+			}
+			if($chucnang->get("level") == '1' ){
+				$id = $chucnang->get("maChucNang");
+				$hasQuyen = "";
+				$strQuyen = "";
+				if($chucnang->get("url")!="") {
+					$hasQuyen = $this->request->checkRoleUser($chucnang->get("url"),$quyen)?'checked="checked"':'';
+					$strQuyen = $chucnang->get("url");
+				}
+				if($chucnang->get("parentQuyen")!=""){
+					$hasQuyen = $this->request->checkRoleUser($chucnang->get("parentQuyen"),$quyen)?'checked="checked"':'';
+					$strQuyen = $chucnang->get("parentQuyen");
+				}
+?>      
+		<tr>      
+			<td class="level1">
+				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$strQuyen?>" <?=$hasQuyen?> onChange="Check(this,document.frmQuyen.checkbox<?=$i?>)" level="<?=$level0?>" data-chucnang="<?=$id?>">
+				<?=$chucnang->get("tenChucNang")?>  
+			</td>	
+		</tr>
+<?				$tenChucNangCon = array();
+				$urlChucNangCon = array();
+				$tenChucNangCon = explode(",", $chucnang->get("tenChucNangCon"));
+				$urlChucNangCon = explode(",", $chucnang->get("urlChucNangCon"));
+				if($tenChucNangCon!=false && $tenChucNangCon!=""){					
+					foreach($tenChucNangCon as $key => $tenchucnang){
+						
+						if($tenchucnang!=""){
+							$hasQuyen1 = $this->request->checkRoleUser($urlChucNangCon[$key],$quyen)?'checked="checked"':'';
+?>
+		<tr>       
+			<td class="level2">
+				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$urlChucNangCon[$key]?>" <?=$hasQuyen1?> onChange="CheckParen(this,document.frmQuyen.checkbox<?=$i?>)" level="<?=$level0?>" data-chucnang="<?=$id?>">
+				<?=$tenchucnang?> 
+			</td>
+		</tr>
+<?					
+						}
+					}
+				}
+				$i++;
+			}
+			if($chucnang->get("level") == '2' ){
+				$hasQuyen = $this->request->checkRoleUser($chucnang->get("url"),$quyen)?'checked="checked"':'';
+?>      
+		<tr>      
+			<td class="level2">
+				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$chucnang->get("url")?>" <?=$hasQuyen?> onChange="Check(this,document.frmQuyen.checkbox<?=$i?>)" level="<?=$level0?>" data-chucnang="<?=$id?>">
+				<?=$chucnang->get("tenChucNang")?>  
+			</td>	
+		</tr>
+<?				$tenChucNangCon = array();
+				$urlChucNangCon = array();
+				$tenChucNangCon = explode(",", $chucnang->get("tenChucNangCon"));
+				$urlChucNangCon = explode(",", $chucnang->get("urlChucNangCon"));
+				if($tenChucNangCon!=false && $tenChucNangCon!=""){					
+					foreach($tenChucNangCon as $key => $tenchucnang){
+						if($tenchucnang!=""){
+							$hasQuyen1 = $this->request->checkRoleUser($urlChucNangCon[$key],$quyen)?'checked="checked"':'';
+?>
+		<tr>       
+			<td class="level3">
+				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$urlChucNangCon[$key]?>" <?=$hasQuyen1?> onChange="CheckParen(this,document.frmQuyen.checkbox<?=$i?>)" level="<?=$level0?>" data-chucnang="<?=$id?>">
+				<?=$tenchucnang?> 
+			</td>
+		</tr>
+<?					
+						}
+					}
+				}
+				$i++;
+			}
+			
+		}
+	}
+?>
+    </table>     
+		<input type="hidden" name="username" id="username" value="<?=$username?>">
+		<input type="hidden" name="numCheck" id="numCheck" value="<?=$i?>">
+</form>

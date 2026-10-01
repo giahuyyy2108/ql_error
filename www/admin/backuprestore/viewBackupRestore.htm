@@ -1,0 +1,50 @@
+<form action="<?=_DEFAULT_URL_?>backup/backup/" method="post" enctype="multipart/form-data" name="frmPhongHoc">
+	<div class="x_panel">
+	  <div class="x_title">
+		<h2>Backup và Restore </h2>
+		<br><br>
+	  </div>	  
+	  <div >		
+		<table class="table">
+		  <thead>		  
+			<tr>			
+			  <th style="text-align:right;vertical-align: middle;">Lưu trữ file backup</th>
+			  <th style="text-align:left"><button class="btn btn-success">Lưu file</button></th>			 
+			</tr>
+			</thead>
+			<tbody>
+			<tr>			
+			  <th style="text-align:right;vertical-align: middle;">Phục hồi dữ liệu</th>
+			  <th style="text-align:left;vertical-align: middle;">				 
+				  <label>
+						<input type="file" name="file" id="file" class="form-control" style="padding: 0 3px;">
+				  </label>
+				  <button class="btn btn-danger" onClick="return restore();">Phục hồi</button>
+				  		  
+				  <input type="hidden" name="cmd" value="173">
+				  <input type="hidden" name="function" id="function" value="backup">
+				  <input type="hidden" name="export" id="export" value="true">
+			  </th>			 
+			</tr>	
+	
+		  </tbody>
+		</table>		             
+	  </div>
+	</div>
+</form>
+<script language="javascript">
+	function restore(){
+		var file = document.getElementById("file").value;
+		if(file != ""){
+			if(confirm("Khi phục hồi các dữ liệu hiện tại sẽ được thay thế bằng dữ liệu trong file phục hồi. Bạn có chắc chắc muốn phục hồi không?")){
+				document.getElementById("function").value="restore";
+				document.getElementById("export").value="";
+				return true;
+			}
+		}
+		else {
+			alert("Chọn file cần phục hồi!");
+		}
+		return false;
+	}
+</script>

@@ -1,0 +1,26 @@
+.workflow{
+	margin: 0px;
+	padding: 0px;
+	overflow: hidden;
+	background-image: url(../images/tile.png);
+	background-repeat: repeat;
+	background-size: 30px 30px;
+	background-color: #FBFBFB;
+	width: 100%;
+	display: flex;
+	justify-content: space-between;
+}
+.menuWorkflow{
+	width: 100px;
+	margin-right: 2px;
+	background-color: #a2c2dede;
+	position: relative;	
+	cursor: auto;
+	padding-top: 10px;
+}
+.contentWorkflow{
+	flex-grow: 1;
+	height: 750px;  
+	position: relative;	
+	cursor: auto;
+}
