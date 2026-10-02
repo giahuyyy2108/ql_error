@@ -1,6 +1,7 @@
 <?php
 
 require_once 'web_src/bean/XmlValidationRulePeer.php';
+require_once 'web_src/common/TableLookupService.php';
 
 class rulesAction
 {
@@ -131,7 +132,9 @@ class rulesAction
         if ($supportedRule['requires_value'] === 1 && $rule['rule_value'] === '') {
             throw new RuntimeException('Loại rule ' . $rule['rule_type'] . ' bắt buộc phải có giá trị cấu hình.');
         }
-        if (in_array($rule['rule_type'], array('FIELD_COMPARE', 'API', 'SUBSTRING', 'CCCD_GENDER_CENTURY'), true)) {
+        if (in_array($rule['rule_type'], array(
+            'FIELD_COMPARE', 'TABLE_EXISTS', 'API', 'SUBSTRING', 'CCCD_GENDER_CENTURY'
+        ), true)) {
             $config = json_decode($rule['rule_value'], true);
             if (!is_array($config)) {
                 throw new RuntimeException('Giá trị của rule ' . $rule['rule_type'] . ' phải là JSON hợp lệ.');
@@ -139,6 +142,9 @@ class rulesAction
             if ($rule['rule_type'] === 'FIELD_COMPARE'
                 && (empty($config['other_field']) || empty($config['operator']))) {
                 throw new RuntimeException('FIELD_COMPARE cần có other_field và operator.');
+            }
+            if ($rule['rule_type'] === 'TABLE_EXISTS') {
+                TableLookupService::normalizeConfig($config);
             }
             if ($rule['rule_type'] === 'API'
                 && (empty($config['api_config_id']) || !isset($config['request_mapping']))) {

@@ -6,6 +6,7 @@ require_once 'web_src/common/XmlRulesValidator.php';
 require_once 'web_src/bean/XmlValidationRulePeer.php';
 require_once 'web_src/bean/ApiValidationConfigPeer.php';
 require_once 'web_src/common/ApiValidationService.php';
+require_once 'web_src/common/TableLookupService.php';
 
 class fileAction
 {
@@ -113,10 +114,12 @@ class fileAction
         try {
             $rulePeer = new XmlValidationRulePeer();
             $apiService = new ApiValidationService(new ApiValidationConfigPeer());
+            $tableLookupService = new TableLookupService();
             $validation = XmlRulesValidator::validate(
                 $decodedContent,
                 $rulePeer->getRulesForValidation(),
-                $apiService
+                $apiService,
+                $tableLookupService
             );
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));

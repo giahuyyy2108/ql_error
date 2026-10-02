@@ -27,7 +27,16 @@ define('_FILE_UPLOAD_', './hsct_upload/');
 define('_FILE_IMPORT_', './import_upload/');
 define('_DEFAULT_HANDLE_', 'dashboard');
 define('_CLASS_HANDLE_', 'Action');
-define('_DEFAULT_URL_', 'http://192.168.31.151:80/ql_error/');
+
+// Tự động nhận diện giao thức (http hoặc https)
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443 || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https')) ? "https://" : "http://";
+
+// Tự động lấy tên miền hiện tại (localhost hoặc ://trycloudflare.com)
+$domain = $_SERVER['HTTP_HOST'];
+
+// Cấu hình URL mặc định động
+define('_DEFAULT_URL_', $protocol . $domain . '/ql_error/');
+
 
 // define('_DEFAULT_URL_', 'http://192.168.31.2:80/vpdt/');
 // define('_DEFAULT_URL_', 'http://localhost/vpdt/');

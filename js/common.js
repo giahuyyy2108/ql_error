@@ -32,7 +32,10 @@ jQuery(function($){
 			}				
 		});	
 		// enter focus
-		$('body').on('keypress', '.form-control', function(e) {			
+		$('body').on('keypress', '.form-control', function(e) {
+			if ($(this).is('textarea')) {
+				return;
+			}
 			if (e.which === 13) {
 				var index = $('.form-control').index(this) + 1;
 				$('.form-control').eq(index).focus();

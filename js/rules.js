@@ -94,20 +94,13 @@
             type: 'POST',
             error: function () { alert('Không thể tải danh sách rules.'); }
         },
+        dom: 'lrtip',
         pageLength: Number($('#pageLength').val()) || 25,
         order: [[1, 'asc'], [2, 'asc']],
         responsive: false,
         autoWidth: false,
         columns: [
-            {
-                data: null,
-                orderable: false,
-                className: 'text-center',
-                width: '4%',
-                render: function (data, type, row, meta) {
-                    return meta.row + meta.settings._iDisplayStart + 1;
-                }
-            },
+            { data: 'id', width: '7%', render: compactText },
             { data: 'file_type', width: '7%', render: compactText },
             { data: 'field_name', width: '11%', render: compactText },
             { data: 'display_name', width: '12%', render: compactText },
@@ -163,6 +156,23 @@
 
     loadRuleTypes();
     $('#rule-type').on('change', updateRuleTypeHelp);
+
+    $('#btn-search-rules').on('click', function () {
+        table.search($('#rules-search').val().trim()).draw();
+    });
+
+    $('#btn-reset-rules').on('click', function () {
+        $('#rules-search').val('');
+        table.search('').draw();
+        $('#rules-search').focus();
+    });
+
+    $('#rules-search').on('keydown', function (event) {
+        if (event.key === 'Enter' || event.which === 13) {
+            event.preventDefault();
+            table.search($(this).val().trim()).draw();
+        }
+    });
 
     $('#btn-add-rule').on('click', function () {
         resetForm();

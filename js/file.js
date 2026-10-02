@@ -29,6 +29,10 @@
         return (errors || []).filter(function (error) { return error.path === path; });
     }
 
+    function validFieldsAtPath(validFields, path) {
+        return (validFields || []).filter(function (item) { return item.path === path; });
+    }
+
     function appendErrorNotes(container, errors) {
         errors.forEach(function (error) {
             var note = error.message;
@@ -40,40 +44,54 @@
         });
     }
 
-    function appendJsonNode(container, key, value, depth, errors, path) {
+    function appendValidNotes(container, validFields) {
+        validFields.forEach(function (item) {
+            $('<div>')
+                .addClass('json-field-valid')
+                .text(item.display_name + ': Hợp lệ (' + item.rule_type + ')')
+                .appendTo(container);
+        });
+    }
+
+    function appendJsonNode(container, key, value, depth, errors, validFields, path) {
         var isArray = Array.isArray(value);
         var isObject = value !== null && typeof value === 'object';
         var fieldErrors = path ? errorsAtPath(errors, path) : [];
+        var fieldValids = path ? validFieldsAtPath(validFields, path) : [];
 
         if (isObject) {
             var details = $('<details>').prop('open', depth < 2);
             var count = isArray ? value.length : Object.keys(value).length;
             var summary = $('<summary>').text(key + (isArray ? ' [' + count + ']' : ' {' + count + '}')).appendTo(details);
             if (fieldErrors.length) summary.addClass('json-error-key');
+            else if (fieldValids.length) summary.addClass('json-valid-key');
 
             if (isArray) {
                 value.forEach(function (item, index) {
                     var childPath = path + '[' + index + ']';
-                    appendJsonNode(details, '[' + index + ']', item, depth + 1, errors, childPath);
+                    appendJsonNode(details, '[' + index + ']', item, depth + 1, errors, validFields, childPath);
                 });
             } else {
                 Object.keys(value).forEach(function (childKey) {
                     var childPath = path ? path + '.' + childKey : childKey;
-                    appendJsonNode(details, childKey, value[childKey], depth + 1, errors, childPath);
+                    appendJsonNode(details, childKey, value[childKey], depth + 1, errors, validFields, childPath);
                 });
             }
             container.append(details);
             appendErrorNotes(details, fieldErrors);
+            appendValidNotes(details, fieldValids);
             return;
         }
 
         var row = $('<div>').addClass('json-value');
-        $('<span>').addClass('json-key' + (fieldErrors.length ? ' json-error-key' : '')).text(key + ': ').appendTo(row);
+        var keyStateClass = fieldErrors.length ? ' json-error-key' : (fieldValids.length ? ' json-valid-key' : '');
+        $('<span>').addClass('json-key' + keyStateClass).text(key + ': ').appendTo(row);
         var valueClass = value === null ? 'json-null' : (typeof value === 'number' ? 'json-number' : 'json-string');
         var displayValue = value === null ? 'null' : String(value);
         $('<span>').addClass(valueClass).text(displayValue).appendTo(row);
         container.append(row);
         appendErrorNotes(container, fieldErrors);
+        appendValidNotes(container, fieldValids);
     }
 
     function collectDecodedFiles(decoded, validation) {
@@ -94,14 +112,18 @@
                     return false;
                 });
                 var errors = validationResult ? validationResult.errors : [];
+                var validFields = validationResult ? (validationResult.valid_fields || []) : [];
                 result.push({
                     label: 'Hồ sơ ' + (hoSoIndex + 1) + ' - ' + (file.LOAIHOSO || ('File ' + (fileIndex + 1)))
                         + (validationResult && validationResult.error_count ? ' (' + validationResult.error_count + ' lỗi)' : '')
                         + (validationResult && validationResult.warning_count ? ' (' + validationResult.warning_count + ' cảnh báo)' : '')
-                        + ((!validationResult || (!validationResult.error_count && !validationResult.warning_count)) ? ' (Hợp lệ)' : ''),
+                        + (validationResult && validationResult.valid_count ? ' (' + validationResult.valid_count + ' hợp lệ)' : '')
+                        + ((!validationResult || (!validationResult.error_count && !validationResult.warning_count
+                            && !validationResult.valid_count)) ? ' (Hợp lệ)' : ''),
                     type: file.LOAIHOSO || '',
                     content: file.NOIDUNGFILE,
-                    errors: errors
+                    errors: errors,
+                    validFields: validFields
                 });
             });
         });
@@ -117,6 +139,7 @@
         }
         var selected = decodedFiles[index];
         var summary = $('#validation-summary').empty().show();
+        var validSummary = $('#validation-valid-summary').empty().hide();
         if (selected.errors.length) {
             var errorCount = selected.errors.filter(function (error) { return error.severity !== 'warning'; }).length;
             var warningCount = selected.errors.length - errorCount;
@@ -130,9 +153,32 @@
                 $('<li>').text(error.display_name + ' (' + error.field_name + '): ' + note).appendTo(list);
             });
         } else {
-            summary.removeClass('alert-danger').addClass('alert-success').text('Không phát hiện lỗi theo rules đang hoạt động.');
+            summary.removeClass('alert-danger alert-warning alert-success')
+                .addClass('alert-success')
+                .text('Không phát hiện lỗi theo rules đang hoạt động.');
         }
-        appendJsonNode(tree, selected.type || 'NOIDUNGFILE', selected.content, 0, selected.errors, '');
+        if (selected.validFields.length) {
+            validSummary.show();
+            $('<strong>')
+                .addClass('validation-valid-title')
+                .text('Có ' + selected.validFields.length + ' lượt kiểm tra hợp lệ:')
+                .appendTo(validSummary);
+            var validList = $('<ul>').addClass('validation-valid-list').appendTo(validSummary);
+            selected.validFields.forEach(function (item) {
+                $('<li>')
+                    .text(item.display_name + ' (' + item.field_name + ', ' + item.rule_type + ')')
+                    .appendTo(validList);
+            });
+        }
+        appendJsonNode(
+            tree,
+            selected.type || 'NOIDUNGFILE',
+            selected.content,
+            0,
+            selected.errors,
+            selected.validFields,
+            ''
+        );
     }
 
     var table = $('#datatable-file').DataTable({
@@ -242,6 +288,7 @@
         $('#view-file-name').text(name);
         $('#decoded-file-select').empty().prop('disabled', true);
         $('#validation-summary').hide().empty();
+        $('#validation-valid-summary').hide().empty();
         $('#decoded-json-tree').text('Đang tải...');
         $('#modal-view-xml').modal('show');
 

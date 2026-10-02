@@ -67,6 +67,7 @@
                     <select id="decoded-file-select" class="form-control"></select>
                 </div>
                 <div id="validation-summary" class="alert" style="display:none"></div>
+                <div id="validation-valid-summary" class="alert alert-success" style="display:none"></div>
                 <div id="decoded-json-tree" class="json-tree"></div>
             </div>
             <div class="modal-footer">
@@ -122,11 +123,25 @@
         font-family: Arial, sans-serif;
     }
     .json-tree .json-error-key { color: #a94442; }
+    .json-tree .json-valid-key { color: #218838; }
+    .json-tree .json-field-valid {
+        margin: 3px 0 6px 27px;
+        padding: 5px 8px;
+        color: #155724;
+        background: #d4edda;
+        border-left: 3px solid #28a745;
+        font-family: Arial, sans-serif;
+    }
     .json-tree .json-field-warning {
         color: #8a6d3b;
         background: #fcf8e3;
         border-left-color: #8a6d3b;
     }
+    #validation-valid-summary .validation-valid-title {
+        display: block;
+        color: #155724;
+    }
+    #validation-valid-summary .validation-valid-list { margin-bottom: 0; }
 </style>
 
 <div class="modal fade" id="modal-delete-xml" tabindex="-1" role="dialog" aria-hidden="true">

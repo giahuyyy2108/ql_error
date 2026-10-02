@@ -2,7 +2,7 @@
 
 class XmlRulesValidator
 {
-    public static function validate(array $decodedContent, array $rules, $apiService = null)
+    public static function validate(array $decodedContent, array $rules, $apiService = null, $tableLookupService = null)
     {
         $rulesByType = array();
         foreach ($rules as $rule) {
@@ -26,6 +26,7 @@ class XmlRulesValidator
             foreach ($fileList as $fileIndex => $file) {
                 $fileType = isset($file['LOAIHOSO']) ? strtoupper($file['LOAIHOSO']) : '';
                 $errors = array();
+                $validFields = array();
                 $content = isset($file['NOIDUNGFILE']) ? $file['NOIDUNGFILE'] : array();
 
                 foreach (isset($rulesByType[$fileType]) ? $rulesByType[$fileType] : array() as $rule) {
@@ -34,31 +35,47 @@ class XmlRulesValidator
                     $ruleType = strtoupper(trim($rule['rule_type']));
 
                     if ($ruleType === 'FIELD_COMPARE') {
-                        $errors = array_merge(
-                            $errors,
-                            self::validateFieldCompare($rule, $matches, $content, $fileList)
-                        );
+                        $ruleErrors = self::validateFieldCompare($rule, $matches, $content, $fileList);
+                        $errors = array_merge($errors, $ruleErrors);
+                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        continue;
+                    }
+
+                    if ($ruleType === 'TABLE_EXISTS') {
+                        $ruleErrors = self::validateTableExists($rule, $matches, $tableLookupService);
+                        $errors = array_merge($errors, $ruleErrors);
+                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
                         continue;
                     }
 
                     if ($ruleType === 'API') {
-                        $errors = array_merge(
-                            $errors,
-                            self::validateApi($rule, $matches, $content, $fileList, $apiService)
+                        $apiPassed = false;
+                        $ruleErrors = self::validateApi(
+                            $rule,
+                            $matches,
+                            $content,
+                            $fileList,
+                            $apiService,
+                            $apiPassed
                         );
+                        $errors = array_merge($errors, $ruleErrors);
+                        if ($apiPassed) {
+                            self::appendValidMatches($validFields, $rule, $matches, $ruleErrors, true);
+                        }
                         continue;
                     }
 
                     if ($ruleType === 'SUBSTRING') {
-                        $errors = array_merge($errors, self::validateSubstring($rule, $matches));
+                        $ruleErrors = self::validateSubstring($rule, $matches);
+                        $errors = array_merge($errors, $ruleErrors);
+                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
                         continue;
                     }
 
                     if ($ruleType === 'CCCD_GENDER_CENTURY') {
-                        $errors = array_merge(
-                            $errors,
-                            self::validateCccdGenderCentury($rule, $matches, $content, $fileList)
-                        );
+                        $ruleErrors = self::validateCccdGenderCentury($rule, $matches, $content, $fileList);
+                        $errors = array_merge($errors, $ruleErrors);
+                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors, true);
                         continue;
                     }
 
@@ -72,6 +89,8 @@ class XmlRulesValidator
                     foreach ($matches as $match) {
                         if (!self::passes($match['value'], $ruleType, $rule['rule_value'])) {
                             $errors[] = self::makeError($rule, $match['path'], $match['value']);
+                        } else {
+                            $validFields[] = self::makeValid($rule, $match['path'], $match['value']);
                         }
                     }
                 }
@@ -81,6 +100,8 @@ class XmlRulesValidator
                     'file_index' => (int) $fileIndex,
                     'file_type' => $fileType,
                     'errors' => $errors,
+                    'valid_fields' => $validFields,
+                    'valid_count' => count($validFields),
                     'error_count' => count(array_filter($errors, function ($error) {
                         return !isset($error['severity']) || $error['severity'] === 'error';
                     })),
@@ -92,6 +113,38 @@ class XmlRulesValidator
         }
 
         return $results;
+    }
+
+    private static function appendValidMatches(
+        array &$validFields,
+        array $rule,
+        array $matches,
+        array $ruleErrors,
+        $firstOnly = false
+    ) {
+        if (empty($matches)) {
+            return;
+        }
+
+        foreach ($ruleErrors as $error) {
+            if (!isset($error['message']) || $error['message'] !== $rule['error_message']) {
+                return;
+            }
+        }
+
+        $targets = $firstOnly ? array($matches[0]) : $matches;
+        foreach ($targets as $match) {
+            $hasError = false;
+            foreach ($ruleErrors as $error) {
+                if (isset($error['path']) && $error['path'] === $match['path']) {
+                    $hasError = true;
+                    break;
+                }
+            }
+            if (!$hasError) {
+                $validFields[] = self::makeValid($rule, $match['path'], $match['value']);
+            }
+        }
     }
 
     private static function findFields($data, $fieldName, $path, array &$matches)
@@ -188,6 +241,40 @@ class XmlRulesValidator
                 isset($config['data_type']) ? $config['data_type'] : 'string',
                 isset($config['format']) ? $config['format'] : null
             )) {
+                $errors[] = self::makeError($rule, $match['path'], $match['value']);
+            }
+        }
+        return $errors;
+    }
+
+    private static function validateTableExists(array $rule, array $matches, $tableLookupService)
+    {
+        $config = json_decode($rule['rule_value'], true);
+        if (!is_array($config) || empty($config['table']) || empty($config['column'])) {
+            return array(self::makeError(
+                $rule,
+                $rule['field_name'],
+                null,
+                'error',
+                'Cấu hình TABLE_EXISTS không hợp lệ.'
+            ));
+        }
+        if (empty($matches)) {
+            return array(self::makeError($rule, $rule['field_name'], null));
+        }
+        if ($tableLookupService === null) {
+            return array(self::makeError(
+                $rule,
+                $matches[0]['path'],
+                $matches[0]['value'],
+                'error',
+                'Dịch vụ tra cứu bảng chưa được cấu hình.'
+            ));
+        }
+
+        $errors = array();
+        foreach ($matches as $match) {
+            if (!$tableLookupService->exists($match['value'], $config)) {
                 $errors[] = self::makeError($rule, $match['path'], $match['value']);
             }
         }
@@ -310,8 +397,15 @@ class XmlRulesValidator
         return array();
     }
 
-    private static function validateApi(array $rule, array $matches, array $content, array $fileList, $apiService)
-    {
+    private static function validateApi(
+        array $rule,
+        array $matches,
+        array $content,
+        array $fileList,
+        $apiService,
+        &$passed = null
+    ) {
+        $passed = false;
         $config = json_decode($rule['rule_value'], true);
         if (!is_array($config) || empty($config['api_config_id']) || !isset($config['request_mapping'])) {
             return array(self::makeError($rule, $rule['field_name'], null, 'error', 'Cấu hình API rule không hợp lệ.'));
@@ -371,6 +465,7 @@ class XmlRulesValidator
             if (!self::compareValues($actual, $expected, $operator, $dataType, null)) {
                 return array(self::makeError($rule, $path, $value));
             }
+            $passed = true;
             return array();
         } catch (RuntimeException $exception) {
             if ($onError === 'SKIP') {
@@ -464,6 +559,18 @@ class XmlRulesValidator
             'value' => is_scalar($value) ? (string) $value : null,
             'message' => $message !== null ? $message : $rule['error_message'],
             'severity' => $severity
+        );
+    }
+
+    private static function makeValid(array $rule, $path, $value)
+    {
+        return array(
+            'field_name' => $rule['field_name'],
+            'display_name' => $rule['display_name'],
+            'rule_type' => $rule['rule_type'],
+            'path' => $path,
+            'value' => is_scalar($value) ? (string) $value : null,
+            'message' => 'Hợp lệ'
         );
     }
 }

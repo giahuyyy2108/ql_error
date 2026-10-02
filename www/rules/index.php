@@ -7,6 +7,22 @@
         <div class="clearfix"></div>
     </div>
     <div class="x_content">
+        <div class="row rules-search-row">
+            <div class="col-md-7 col-sm-8 col-xs-12">
+                <div class="input-group">
+                    <input type="text" id="rules-search" class="form-control"
+                           placeholder="Nhập loại file, tên trường, loại rule hoặc nội dung cần tìm...">
+                    <span class="input-group-btn">
+                        <button type="button" id="btn-search-rules" class="btn btn-primary">
+                            <i class="fa fa-search"></i> Tìm
+                        </button>
+                        <button type="button" id="btn-reset-rules" class="btn btn-default">
+                            <i class="fa fa-refresh"></i> Làm mới
+                        </button>
+                    </span>
+                </div>
+            </div>
+        </div>
         <table id="datatable-rules" class="table table-striped table-bordered rules-table" width="100%">
             <thead>
                 <tr>
@@ -27,6 +43,7 @@
 </div>
 
 <style>
+    .rules-search-row { margin-bottom: 12px; }
     #datatable-rules {
         width: 100% !important;
         table-layout: fixed;
