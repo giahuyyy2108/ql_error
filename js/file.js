@@ -3,7 +3,8 @@
 
     var baseUrl = $('#ULocal').val();
     var csrfToken = $('#xml-file-csrf').val();
-    var fileToDelete = null;
+    var fileIdsToDelete = [];
+    var selectedFileIds = {};
     var decodedFiles = [];
 
     function escapeHtml(value) {
@@ -23,6 +24,18 @@
             .addClass(success ? 'alert-success' : 'alert-danger')
             .text(message)
             .show();
+    }
+
+    function updateSelectionControls() {
+        var count = Object.keys(selectedFileIds).length;
+        $('#btn-delete-selected').prop('disabled', count === 0).text(
+            count ? 'Xóa đã chọn (' + count + ')' : 'Xóa đã chọn'
+        );
+        var pageCheckboxes = $('#datatable-file .file-select');
+        var checkedOnPage = pageCheckboxes.filter(':checked').length;
+        $('#select-all-files')
+            .prop('checked', pageCheckboxes.length > 0 && checkedOnPage === pageCheckboxes.length)
+            .prop('indeterminate', checkedOnPage > 0 && checkedOnPage < pageCheckboxes.length);
     }
 
     function errorsAtPath(errors, path) {
@@ -190,10 +203,22 @@
             }
         },
         pageLength: Number($('#pageLength').val()) || 25,
-        order: [[4, 'desc']],
+        order: [[6, 'desc']],
         responsive: true,
         autoWidth: false,
         columns: [
+            {
+                data: 'id',
+                orderable: false,
+                searchable: false,
+                className: 'text-center',
+                width: '3%',
+                render: function (data, type) {
+                    if (type !== 'display') return data;
+                    return '<input type="checkbox" class="file-select" value="' + Number(data) + '"'
+                        + (selectedFileIds[data] ? ' checked' : '') + '>';
+                }
+            },
             {
                 data: null,
                 orderable: false,
@@ -203,13 +228,38 @@
                     return meta.row + meta.settings._iDisplayStart + 1;
                 }
             },
-            { data: 'name' },
+            {
+                data: 'name',
+                className: 'file-name-cell',
+                width: '24%',
+                render: function (data, type) {
+                    if (type !== 'display') return data;
+                    return $('<span>')
+                        .addClass('file-name-ellipsis')
+                        .attr('title', data || '')
+                        .text(data || '')
+                        .prop('outerHTML');
+                }
+            },
             { data: 'ma_lk' },
             {
                 data: 'size',
                 className: 'text-right',
                 render: function (data, type) {
                     return type === 'display' ? formatBytes(data) : data;
+                }
+            },
+            {
+                data: 'status',
+                className: 'text-center',
+                render: function (data, type) {
+                    if (type !== 'display') return data;
+                    if (data === 'pending_revalidation') {
+                        return '<span class="label label-warning">Chờ quét lại</span>';
+                    }
+                    return data === 'failed'
+                        ? '<span class="label label-danger">Failed</span>'
+                        : '<span class="label label-success">Processed</span>';
                 }
             },
             {
@@ -232,6 +282,9 @@
                 }
             }
         ],
+        drawCallback: function () {
+            updateSelectionControls();
+        },
         language: {
             search: 'Tìm kiếm:',
             lengthMenu: 'Hiển thị _MENU_ dòng',
@@ -242,6 +295,57 @@
             paginate: { first: 'Đầu', last: 'Cuối', next: 'Sau', previous: 'Trước' }
         }
     });
+
+    $('#datatable-file').on('change', '.file-select', function () {
+        var id = String($(this).val());
+        if (this.checked) selectedFileIds[id] = true;
+        else delete selectedFileIds[id];
+        updateSelectionControls();
+    });
+
+    $('#select-all-files').on('change', function () {
+        var checked = this.checked;
+        table.rows({ page: 'current', search: 'applied' }).data().each(function (row) {
+            var id = String(row.id);
+            if (checked) selectedFileIds[id] = true;
+            else delete selectedFileIds[id];
+        });
+        table.rows({ page: 'current' }).invalidate().draw(false);
+    });
+
+    $('#btn-delete-selected').on('click', function () {
+        fileIdsToDelete = Object.keys(selectedFileIds).map(Number);
+        if (!fileIdsToDelete.length) return;
+        $('#delete-file-name').text(fileIdsToDelete.length + ' file đã chọn');
+        $('#modal-delete-xml').modal('show');
+    });
+
+    $('#btn-revalidate-all').on('click', function () {
+        var button = $(this).prop('disabled', true);
+        $.ajax({
+            url: baseUrl + 'file/revalidateAll/',
+            type: 'POST',
+            dataType: 'json',
+            data: { csrf_token: csrfToken }
+        }).done(function (response) {
+            alert(response.message);
+            if (response.success) table.ajax.reload(null, false);
+        }).fail(function (xhr) {
+            var message = xhr.responseJSON && xhr.responseJSON.message
+                ? xhr.responseJSON.message : 'Không thể tạo hàng đợi quét lại.';
+            alert(message);
+        }).always(function () {
+            button.prop('disabled', false);
+        });
+    });
+
+    // Files imported by the background watcher do not pass through this page,
+    // so periodically refresh the table while the tab is visible.
+    setInterval(function () {
+        if (!document.hidden) {
+            table.ajax.reload(null, false);
+        }
+    }, 5000);
 
     $('#btn-open-upload').on('click', function () {
         $('#form-upload-xml')[0].reset();
@@ -310,36 +414,43 @@
             });
             select.prop('disabled', decodedFiles.length === 0);
             renderSelectedDecodedFile();
-        }).fail(function () {
-            $('#decoded-json-tree').text('Không thể đọc nội dung đã giải mã.');
+        }).fail(function (xhr) {
+            var message = 'Không thể đọc nội dung đã giải mã.';
+            if (xhr.status === 401) {
+                message = 'Phiên đăng nhập đã hết hạn. Vui lòng tải lại trang và đăng nhập lại.';
+            } else if (xhr.responseJSON && xhr.responseJSON.message) {
+                message = xhr.responseJSON.message;
+            } else if (/^\s*<!doctype|^\s*<html/i.test(xhr.responseText || '')) {
+                message = 'Phiên đăng nhập đã hết hạn. Vui lòng tải lại trang và đăng nhập lại.';
+            }
+            $('#decoded-json-tree').text(message);
         });
     });
 
     $('#decoded-file-select').on('change', renderSelectedDecodedFile);
 
     $('#datatable-file').on('click', '.btn-delete-file', function () {
-        fileToDelete = {
-            id: $(this).attr('data-id'),
-            name: $(this).attr('data-name')
-        };
-        $('#delete-file-name').text(fileToDelete.name);
+        fileIdsToDelete = [Number($(this).attr('data-id'))];
+        $('#delete-file-name').text($(this).attr('data-name'));
         $('#modal-delete-xml').modal('show');
     });
 
     $('#btn-confirm-delete').on('click', function () {
-        if (!fileToDelete || !fileToDelete.id) return;
+        if (!fileIdsToDelete.length) return;
         var button = $(this).prop('disabled', true);
 
         $.ajax({
-            url: baseUrl + 'file/delete/',
+            url: baseUrl + 'file/deleteMany/',
             type: 'POST',
             dataType: 'json',
-            data: { id: fileToDelete.id, csrf_token: csrfToken }
+            data: { ids: fileIdsToDelete, csrf_token: csrfToken }
         }).done(function (response) {
             if (response.success) {
                 $('#modal-delete-xml').modal('hide');
+                fileIdsToDelete.forEach(function (id) { delete selectedFileIds[String(id)]; });
+                fileIdsToDelete = [];
                 table.ajax.reload(null, false);
-                fileToDelete = null;
+                updateSelectionControls();
             } else {
                 alert(response.message);
             }

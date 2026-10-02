@@ -3,6 +3,16 @@
         <h2>Danh sách file XML</h2>
         <ul class="nav navbar-right panel_toolbox">
             <li>
+                <button type="button" id="btn-revalidate-all" class="btn btn-warning">
+                    <i class="fa fa-refresh"></i> Quét lại tất cả
+                </button>
+            </li>
+            <li>
+                <button type="button" id="btn-delete-selected" class="btn btn-danger" disabled>
+                    <i class="fa fa-trash"></i> Xóa đã chọn
+                </button>
+            </li>
+            <li>
                 <button type="button" id="btn-open-upload" class="btn btn-primary">
                     <i class="fa fa-plus"></i> Thêm file
                 </button>
@@ -14,10 +24,12 @@
         <table id="datatable-file" class="table table-striped table-bordered dt-responsive nowrap" cellspacing="0" width="100%">
             <thead>
                 <tr>
+                    <th class="text-center"><input type="checkbox" id="select-all-files" title="Chọn tất cả trên trang"></th>
                     <th>STT</th>
                     <th>Tên file</th>
                     <th>MA_LK</th>
                     <th>Dung lượng</th>
+                    <th>Trạng thái</th>
                     <th>Cập nhật lúc</th>
                     <th>Thao tác</th>
                 </tr>
@@ -78,6 +90,16 @@
 </div>
 
 <style>
+    #datatable-file td.file-name-cell {
+        max-width: 280px;
+        width: 24%;
+    }
+    #datatable-file .file-name-ellipsis {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
     .json-tree {
         max-height: 60vh;
         overflow: auto;

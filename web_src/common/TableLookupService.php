@@ -3,6 +3,7 @@
 class TableLookupService
 {
     private $connection;
+    private $existsCache = array();
 
     private static $allowedSources = array(
         'icd10' => array(
@@ -77,8 +78,14 @@ class TableLookupService
     public function exists($value, array $config)
     {
         $config = self::normalizeConfig($config);
+        $normalizedValue = is_scalar($value) ? trim((string) $value) : '';
+        $cacheKey = json_encode(array($config, $normalizedValue));
+        if ($cacheKey !== false && array_key_exists($cacheKey, $this->existsCache)) {
+            return $this->existsCache[$cacheKey];
+        }
+
         $sql = 'SELECT 1 FROM `' . $config['table'] . '` WHERE `' . $config['column'] . '` = ?';
-        $parameters = array(is_scalar($value) ? trim((string) $value) : '');
+        $parameters = array($normalizedValue);
 
         foreach ($config['conditions'] as $column => $conditionValue) {
             if ($conditionValue === null) {
@@ -104,6 +111,9 @@ class TableLookupService
         $statement->store_result();
         $exists = $statement->num_rows > 0;
         $statement->close();
+        if ($cacheKey !== false) {
+            $this->existsCache[$cacheKey] = $exists;
+        }
         return $exists;
     }
 }

@@ -72,6 +72,18 @@ if($listHandle[0] == "refreshSession"){
 
 // kiem tra login
 if(!$_SESSION["sUserLogin"]){
+	$isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+		&& strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+	if ($isAjax && $listHandle[0] != _DEFAULT_LOGIN_) {
+		ob_end_clean();
+		http_response_code(401);
+		header('Content-Type: application/json; charset=utf-8');
+		echo json_encode(array(
+			'success' => false,
+			'message' => 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
+		), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+		return false;
+	}
 	if($listHandle[0]!=_DEFAULT_LOGIN_ || $listHandle[1]==""){
 		//echo 5;	
 		$listHandle[0] = _DEFAULT_LOGIN_;

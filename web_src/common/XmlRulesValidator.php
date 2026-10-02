@@ -15,6 +15,7 @@ class XmlRulesValidator
             }
             $rulesByType[$fileType][] = $rule;
         }
+        $requiredFieldsByType = self::collectRequiredFields($rulesByType);
 
         $results = array();
         $hoSoList = isset($decodedContent['DANHSACHHOSO']['HOSO'])
@@ -23,19 +24,21 @@ class XmlRulesValidator
 
         foreach ($hoSoList as $hoSoIndex => $hoSo) {
             $fileList = isset($hoSo['FILEHOSO']) ? $hoSo['FILEHOSO'] : array();
+            $fileContexts = self::buildFileContexts($fileList, $requiredFieldsByType);
             foreach ($fileList as $fileIndex => $file) {
                 $fileType = isset($file['LOAIHOSO']) ? strtoupper($file['LOAIHOSO']) : '';
                 $errors = array();
                 $validFields = array();
-                $content = isset($file['NOIDUNGFILE']) ? $file['NOIDUNGFILE'] : array();
+                $fieldIndex = isset($fileContexts[$fileIndex]['fields'])
+                    ? $fileContexts[$fileIndex]['fields'] : array();
 
                 foreach (isset($rulesByType[$fileType]) ? $rulesByType[$fileType] : array() as $rule) {
-                    $matches = array();
-                    self::findFields($content, $rule['field_name'], '', $matches);
+                    $matches = isset($fieldIndex[$rule['field_name']])
+                        ? $fieldIndex[$rule['field_name']] : array();
                     $ruleType = strtoupper(trim($rule['rule_type']));
 
                     if ($ruleType === 'FIELD_COMPARE') {
-                        $ruleErrors = self::validateFieldCompare($rule, $matches, $content, $fileList);
+                        $ruleErrors = self::validateFieldCompare($rule, $matches, $fileContexts, $fileIndex);
                         $errors = array_merge($errors, $ruleErrors);
                         self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
                         continue;
@@ -53,8 +56,8 @@ class XmlRulesValidator
                         $ruleErrors = self::validateApi(
                             $rule,
                             $matches,
-                            $content,
-                            $fileList,
+                            $fileContexts,
+                            $fileIndex,
                             $apiService,
                             $apiPassed
                         );
@@ -73,7 +76,7 @@ class XmlRulesValidator
                     }
 
                     if ($ruleType === 'CCCD_GENDER_CENTURY') {
-                        $ruleErrors = self::validateCccdGenderCentury($rule, $matches, $content, $fileList);
+                        $ruleErrors = self::validateCccdGenderCentury($rule, $matches, $fileContexts, $fileIndex);
                         $errors = array_merge($errors, $ruleErrors);
                         self::appendValidMatches($validFields, $rule, $matches, $ruleErrors, true);
                         continue;
@@ -115,6 +118,129 @@ class XmlRulesValidator
         return $results;
     }
 
+    private static function collectRequiredFields(array $rulesByType)
+    {
+        $required = array();
+        foreach ($rulesByType as $fileType => $rules) {
+            foreach ($rules as $rule) {
+                self::addRequiredField($required, $fileType, $rule['field_name']);
+                $ruleType = strtoupper(trim($rule['rule_type']));
+                if (!in_array($ruleType, array('FIELD_COMPARE', 'CCCD_GENDER_CENTURY', 'API'), true)) {
+                    continue;
+                }
+
+                $config = json_decode($rule['rule_value'], true);
+                if (!is_array($config)) {
+                    continue;
+                }
+
+                if ($ruleType === 'FIELD_COMPARE' && !empty($config['other_field'])) {
+                    $targetType = !empty($config['other_file_type'])
+                        ? strtoupper($config['other_file_type']) : $fileType;
+                    self::addRequiredField($required, $targetType, $config['other_field']);
+                } elseif ($ruleType === 'CCCD_GENDER_CENTURY') {
+                    if (!empty($config['birth_field'])) {
+                        $targetType = !empty($config['birth_file_type'])
+                            ? strtoupper($config['birth_file_type']) : $fileType;
+                        self::addRequiredField($required, $targetType, $config['birth_field']);
+                    }
+                    if (!empty($config['gender_field'])) {
+                        $targetType = !empty($config['gender_file_type'])
+                            ? strtoupper($config['gender_file_type']) : $fileType;
+                        self::addRequiredField($required, $targetType, $config['gender_field']);
+                    }
+                } elseif ($ruleType === 'API' && isset($config['request_mapping'])
+                    && is_array($config['request_mapping'])) {
+                    foreach ($config['request_mapping'] as $fieldConfig) {
+                        if (is_array($fieldConfig) && array_key_exists('value', $fieldConfig)) {
+                            continue;
+                        }
+                        $fieldName = is_array($fieldConfig)
+                            ? (isset($fieldConfig['field']) ? $fieldConfig['field'] : '') : $fieldConfig;
+                        $targetType = is_array($fieldConfig) && !empty($fieldConfig['file_type'])
+                            ? strtoupper($fieldConfig['file_type']) : $fileType;
+                        self::addRequiredField($required, $targetType, $fieldName);
+                    }
+                }
+            }
+        }
+        return $required;
+    }
+
+    private static function addRequiredField(array &$required, $fileType, $fieldName)
+    {
+        $fileType = strtoupper(trim((string) $fileType));
+        $fieldName = trim((string) $fieldName);
+        if ($fileType === '' || $fieldName === '') {
+            return;
+        }
+        if (!isset($required[$fileType])) {
+            $required[$fileType] = array();
+        }
+        $required[$fileType][$fieldName] = true;
+    }
+
+    private static function buildFileContexts(array $fileList, array $requiredFieldsByType)
+    {
+        $contexts = array();
+        foreach ($fileList as $fileIndex => $file) {
+            $fileType = isset($file['LOAIHOSO']) ? strtoupper($file['LOAIHOSO']) : '';
+            $content = isset($file['NOIDUNGFILE']) ? $file['NOIDUNGFILE'] : array();
+            $fields = array();
+            $required = isset($requiredFieldsByType[$fileType])
+                ? $requiredFieldsByType[$fileType] : array();
+            if (!empty($required)) {
+                self::indexFields($content, $required, '', $fields);
+            }
+            $contexts[$fileIndex] = array('file_type' => $fileType, 'fields' => $fields);
+        }
+        return $contexts;
+    }
+
+    private static function indexFields($data, array $required, $path, array &$fields)
+    {
+        if (!is_array($data)) {
+            return;
+        }
+
+        foreach ($data as $key => $value) {
+            $key = (string) $key;
+            $currentPath = $path === ''
+                ? $key
+                : ($key !== '' && ctype_digit($key) ? $path . '[' . $key . ']' : $path . '.' . $key);
+
+            if (isset($required[$key])) {
+                if (!isset($fields[$key])) {
+                    $fields[$key] = array();
+                }
+                $fields[$key][] = array('path' => $currentPath, 'value' => $value);
+            }
+            if (is_array($value)) {
+                self::indexFields($value, $required, $currentPath, $fields);
+            }
+        }
+    }
+
+    private static function indexedMatches(array $fileContexts, $currentFileIndex, $targetFileType, $fieldName)
+    {
+        $targetIndex = $currentFileIndex;
+        if ($targetFileType !== null && trim((string) $targetFileType) !== '') {
+            $targetType = strtoupper($targetFileType);
+            $targetIndex = null;
+            foreach ($fileContexts as $fileIndex => $context) {
+                if ($context['file_type'] === $targetType) {
+                    $targetIndex = $fileIndex;
+                    break;
+                }
+            }
+        }
+
+        if ($targetIndex === null || !isset($fileContexts[$targetIndex]['fields'][$fieldName])) {
+            return array();
+        }
+        return $fileContexts[$targetIndex]['fields'][$fieldName];
+    }
+
     private static function appendValidMatches(
         array &$validFields,
         array $rule,
@@ -143,27 +269,6 @@ class XmlRulesValidator
             }
             if (!$hasError) {
                 $validFields[] = self::makeValid($rule, $match['path'], $match['value']);
-            }
-        }
-    }
-
-    private static function findFields($data, $fieldName, $path, array &$matches)
-    {
-        if (!is_array($data)) {
-            return;
-        }
-
-        foreach ($data as $key => $value) {
-            $key = (string) $key;
-            $currentPath = $path === ''
-                ? $key
-                : ($key !== '' && ctype_digit($key) ? $path . '[' . $key . ']' : $path . '.' . $key);
-
-            if ($key === $fieldName) {
-                $matches[] = array('path' => $currentPath, 'value' => $value);
-            }
-            if (is_array($value)) {
-                self::findFields($value, $fieldName, $currentPath, $matches);
             }
         }
     }
@@ -206,7 +311,7 @@ class XmlRulesValidator
         }
     }
 
-    private static function validateFieldCompare(array $rule, array $matches, array $content, array $fileList)
+    private static function validateFieldCompare(array $rule, array $matches, array $fileContexts, $currentFileIndex)
     {
         $config = json_decode($rule['rule_value'], true);
         if (!is_array($config) || empty($config['other_field']) || empty($config['operator'])) {
@@ -216,12 +321,12 @@ class XmlRulesValidator
             return array(self::makeError($rule, $rule['field_name'], null));
         }
 
-        $otherContent = $content;
-        if (!empty($config['other_file_type'])) {
-            $otherContent = self::findFileContent($fileList, strtoupper($config['other_file_type']));
-        }
-        $otherMatches = array();
-        self::findFields($otherContent, $config['other_field'], '', $otherMatches);
+        $otherMatches = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            !empty($config['other_file_type']) ? $config['other_file_type'] : null,
+            $config['other_field']
+        );
         if (empty($otherMatches)) {
             return array(self::makeError(
                 $rule,
@@ -327,7 +432,12 @@ class XmlRulesValidator
         return $errors;
     }
 
-    private static function validateCccdGenderCentury(array $rule, array $cccdMatches, array $content, array $fileList)
+    private static function validateCccdGenderCentury(
+        array $rule,
+        array $cccdMatches,
+        array $fileContexts,
+        $currentFileIndex
+    )
     {
         $config = json_decode($rule['rule_value'], true);
         if (!is_array($config) || empty($config['birth_field']) || empty($config['gender_field'])) {
@@ -339,14 +449,18 @@ class XmlRulesValidator
             return array(self::makeError($rule, $rule['field_name'], null));
         }
 
-        $birthContent = !empty($config['birth_file_type'])
-            ? self::findFileContent($fileList, strtoupper($config['birth_file_type'])) : $content;
-        $genderContent = !empty($config['gender_file_type'])
-            ? self::findFileContent($fileList, strtoupper($config['gender_file_type'])) : $content;
-        $birthMatches = array();
-        $genderMatches = array();
-        self::findFields($birthContent, $config['birth_field'], '', $birthMatches);
-        self::findFields($genderContent, $config['gender_field'], '', $genderMatches);
+        $birthMatches = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            !empty($config['birth_file_type']) ? $config['birth_file_type'] : null,
+            $config['birth_field']
+        );
+        $genderMatches = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            !empty($config['gender_file_type']) ? $config['gender_file_type'] : null,
+            $config['gender_field']
+        );
 
         $path = $cccdMatches[0]['path'];
         $cccd = trim((string) $cccdMatches[0]['value']);
@@ -400,8 +514,8 @@ class XmlRulesValidator
     private static function validateApi(
         array $rule,
         array $matches,
-        array $content,
-        array $fileList,
+        array $fileContexts,
+        $currentFileIndex,
         $apiService,
         &$passed = null
     ) {
@@ -427,9 +541,12 @@ class XmlRulesValidator
             if (is_array($fieldConfig) && array_key_exists('value', $fieldConfig)) {
                 $mappedValue = $fieldConfig['value'];
             } else {
-                $targetContent = $targetType ? self::findFileContent($fileList, $targetType) : $content;
-                $fieldMatches = array();
-                self::findFields($targetContent, $targetField, '', $fieldMatches);
+                $fieldMatches = self::indexedMatches(
+                    $fileContexts,
+                    $currentFileIndex,
+                    $targetType,
+                    $targetField
+                );
                 $mappedValue = !empty($fieldMatches) ? $fieldMatches[0]['value'] : null;
             }
             if (is_array($fieldConfig) && array_key_exists('start', $fieldConfig)) {
@@ -479,16 +596,6 @@ class XmlRulesValidator
                 $rule['error_message'] . ' (' . $exception->getMessage() . ')'
             ));
         }
-    }
-
-    private static function findFileContent(array $fileList, $fileType)
-    {
-        foreach ($fileList as $file) {
-            if (isset($file['LOAIHOSO']) && strtoupper($file['LOAIHOSO']) === $fileType) {
-                return isset($file['NOIDUNGFILE']) ? $file['NOIDUNGFILE'] : array();
-            }
-        }
-        return array();
     }
 
     private static function compareValues($left, $right, $operator, $dataType, $format)

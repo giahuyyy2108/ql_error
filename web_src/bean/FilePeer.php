@@ -17,7 +17,8 @@ class FilePeer
 
     public function getList()
     {
-        $sql = 'SELECT id, ten, ma_lk, kichthuoc, update_at, create_at FROM `file` ORDER BY update_at DESC, id DESC';
+        $sql = 'SELECT id, ten, ma_lk, kichthuoc, processing_status, update_at, create_at
+                FROM `file` ORDER BY update_at DESC, id DESC';
         $result = $this->connection->query($sql);
         if (!$result) {
             throw new RuntimeException('Không thể tải danh sách file.');
@@ -31,6 +32,7 @@ class FilePeer
                 'name' => $row['ten'],
                 'ma_lk' => $row['ma_lk'],
                 'size' => (int) $row['kichthuoc'],
+                'status' => $row['processing_status'],
                 'modified' => $timestamp ? date('d/m/Y H:i:s', $timestamp) : '',
                 'timestamp' => $timestamp ?: 0
             );
@@ -55,28 +57,43 @@ class FilePeer
         return $exists;
     }
 
-    public function insert($name, $maLk, $size, $xmlContent, array $decodedContent)
+    public function getByMaLk($maLk)
     {
-        // Cột noidung có ràng buộc JSON, XML được lưu nguyên vẹn dưới dạng JSON string.
-        $jsonContent = json_encode($xmlContent, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        if ($jsonContent === false) {
-            throw new RuntimeException('Nội dung XML không sử dụng bảng mã UTF-8 hợp lệ.');
+        $statement = $this->connection->prepare(
+            'SELECT id, ten, ma_lk, kichthuoc, file_path, processing_status, validation_result
+             FROM `file` WHERE ma_lk = ? LIMIT 1'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể đọc hồ sơ theo MA_LK.');
         }
+        $statement->bind_param('s', $maLk);
+        $statement->execute();
+        $result = $statement->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
+        $statement->close();
+        return $row ?: false;
+    }
 
-        $jsonDecodedContent = json_encode($decodedContent, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        if ($jsonDecodedContent === false) {
-            throw new RuntimeException('Không thể chuyển nội dung giải mã sang JSON.');
+    public function insert($name, $maLk, $size, $filePath, $validationResult = null, $status = 'processed')
+    {
+        $jsonValidation = $validationResult === null
+            ? null
+            : json_encode($validationResult, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($validationResult !== null && $jsonValidation === false) {
+            throw new RuntimeException('Không thể chuyển kết quả kiểm tra sang JSON.');
         }
 
         $statement = $this->connection->prepare(
-            'INSERT INTO `file` (ten, ma_lk, kichthuoc, noidung, `decode`) VALUES (?, ?, ?, ?, ?)'
+            'INSERT INTO `file`
+             (ten, ma_lk, kichthuoc, file_path, processing_status, validation_result)
+             VALUES (?, ?, ?, ?, ?, ?)'
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu file.');
         }
 
         $size = (string) $size;
-        $statement->bind_param('sssss', $name, $maLk, $size, $jsonContent, $jsonDecodedContent);
+        $statement->bind_param('ssssss', $name, $maLk, $size, $filePath, $status, $jsonValidation);
         if (!$statement->execute()) {
             $statement->close();
             throw new RuntimeException('Không thể lưu file vào cơ sở dữ liệu.');
@@ -87,10 +104,36 @@ class FilePeer
         return $id;
     }
 
+    public function replaceImportedFile($id, $name, $size, $filePath, array $validationResult, $status)
+    {
+        $jsonValidation = json_encode($validationResult, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($jsonValidation === false) {
+            throw new RuntimeException('Không thể chuyển kết quả kiểm tra sang JSON.');
+        }
+        $statement = $this->connection->prepare(
+            'UPDATE `file`
+             SET ten = ?, kichthuoc = ?, file_path = ?, processing_status = ?, validation_result = ?
+             WHERE id = ?'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị dữ liệu import lại.');
+        }
+        $size = (string) $size;
+        $statement->bind_param('sssssi', $name, $size, $filePath, $status, $jsonValidation, $id);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể cập nhật file đã tồn tại.');
+        }
+        $statement->close();
+        return true;
+    }
+
     public function getById($id)
     {
         $statement = $this->connection->prepare(
-            'SELECT id, ten, ma_lk, kichthuoc, noidung, `decode`, update_at, create_at FROM `file` WHERE id = ? LIMIT 1'
+            'SELECT id, ten, ma_lk, kichthuoc, file_path, processing_status,
+                    validation_result, update_at, create_at
+             FROM `file` WHERE id = ? LIMIT 1'
         );
         if (!$statement) {
             throw new RuntimeException('Không thể đọc dữ liệu file.');
@@ -105,27 +148,90 @@ class FilePeer
         return $row ?: false;
     }
 
-    public function updateDecodedContent($id, array $decodedContent)
+    public function updateValidationResult($id, array $validationResult)
     {
-        $jsonDecodedContent = json_encode($decodedContent, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        if ($jsonDecodedContent === false) {
-            throw new RuntimeException('Không thể chuyển nội dung giải mã sang JSON.');
+        $jsonValidation = json_encode($validationResult, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($jsonValidation === false) {
+            throw new RuntimeException('Không thể chuyển kết quả kiểm tra sang JSON.');
         }
 
-        $statement = $this->connection->prepare('UPDATE `file` SET `decode` = ? WHERE id = ?');
+        $statement = $this->connection->prepare(
+            'UPDATE `file` SET validation_result = ? WHERE id = ?'
+        );
         if (!$statement) {
-            throw new RuntimeException('Không thể chuẩn bị dữ liệu giải mã.');
+            throw new RuntimeException('Không thể chuẩn bị kết quả kiểm tra.');
         }
 
-        $statement->bind_param('si', $jsonDecodedContent, $id);
+        $statement->bind_param('si', $jsonValidation, $id);
         if (!$statement->execute()) {
             $statement->close();
-            throw new RuntimeException('Không thể cập nhật nội dung giải mã.');
+            throw new RuntimeException('Không thể cập nhật kết quả kiểm tra.');
         }
         $updated = $statement->affected_rows >= 0;
         $statement->close();
 
         return $updated;
+    }
+
+    public function updateStorageLocation($id, $filePath, $status)
+    {
+        $statement = $this->connection->prepare(
+            'UPDATE `file` SET file_path = ?, processing_status = ? WHERE id = ?'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị đường dẫn lưu file.');
+        }
+        $statement->bind_param('ssi', $filePath, $status, $id);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể cập nhật đường dẫn lưu file.');
+        }
+        $statement->close();
+        return true;
+    }
+
+    public function markAllForRevalidation()
+    {
+        $pendingResult = $this->connection->query(
+            "SELECT COUNT(*) AS total FROM `file` WHERE processing_status = 'pending_revalidation'"
+        );
+        if (!$pendingResult) {
+            throw new RuntimeException('Không thể kiểm tra hàng đợi quét lại.');
+        }
+        $pendingRow = $pendingResult->fetch_assoc();
+        $pendingResult->free();
+        if ((int) $pendingRow['total'] > 0) {
+            return -1;
+        }
+        if (!$this->connection->query(
+            "UPDATE `file` SET processing_status = 'pending_revalidation'
+             WHERE processing_status <> 'pending_revalidation'"
+        )) {
+            throw new RuntimeException('Không thể tạo hàng đợi quét lại.');
+        }
+        return $this->connection->affected_rows;
+    }
+
+    public function getPendingRevalidation($limit = 2)
+    {
+        $limit = max(1, min(20, (int) $limit));
+        $result = $this->connection->query(
+            "SELECT id, ten, ma_lk, file_path, processing_status
+             FROM `file`
+             WHERE processing_status = 'pending_revalidation'
+             ORDER BY update_at ASC, id ASC
+             LIMIT " . $limit
+        );
+        if (!$result) {
+            throw new RuntimeException('Không thể đọc hàng đợi quét lại.');
+        }
+        $files = array();
+        while ($row = $result->fetch_assoc()) {
+            $row['id'] = (int) $row['id'];
+            $files[] = $row;
+        }
+        $result->free();
+        return $files;
     }
 
     public function delete($id)
@@ -142,4 +248,30 @@ class FilePeer
 
         return $deleted;
     }
+
+    public function deleteMany(array $ids)
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), function ($id) {
+            return $id > 0;
+        })));
+        if (empty($ids)) {
+            return 0;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $statement = $this->connection->prepare('DELETE FROM `file` WHERE id IN (' . $placeholders . ')');
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị thao tác xóa nhiều file.');
+        }
+        $types = str_repeat('i', count($ids));
+        $statement->bind_param($types, ...$ids);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể xóa các file đã chọn.');
+        }
+        $deleted = $statement->affected_rows;
+        $statement->close();
+        return $deleted;
+    }
+
 }
