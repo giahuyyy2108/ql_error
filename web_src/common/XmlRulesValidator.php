@@ -2,6 +2,10 @@
 
 class XmlRulesValidator
 {
+    private static $multiValueFields = array(
+        'MA_BENH_KT' => true
+    );
+
     public static function validate(array $decodedContent, array $rules, $apiService = null, $tableLookupService = null)
     {
         $rulesByType = array();
@@ -213,12 +217,42 @@ class XmlRulesValidator
                 if (!isset($fields[$key])) {
                     $fields[$key] = array();
                 }
-                $fields[$key][] = array('path' => $currentPath, 'value' => $value);
+                if (isset(self::$multiValueFields[$key])) {
+                    $values = self::splitMultiValueField($value);
+                    foreach ($values as $itemIndex => $itemValue) {
+                        $fields[$key][] = array(
+                            'path' => $currentPath,
+                            'value' => $itemValue,
+                            'item_index' => $itemIndex
+                        );
+                    }
+                } else {
+                    $fields[$key][] = array('path' => $currentPath, 'value' => $value);
+                }
             }
             if (is_array($value)) {
                 self::indexFields($value, $required, $currentPath, $fields);
             }
         }
+    }
+
+    private static function splitMultiValueField($value)
+    {
+        $sourceValues = is_array($value) ? $value : array($value);
+        $result = array();
+        foreach ($sourceValues as $sourceValue) {
+            if (!is_scalar($sourceValue)) {
+                continue;
+            }
+            $parts = preg_split('/\s*[;,|]\s*/u', trim((string) $sourceValue));
+            foreach ($parts as $part) {
+                $part = trim($part);
+                if ($part !== '') {
+                    $result[] = $part;
+                }
+            }
+        }
+        return $result;
     }
 
     private static function indexedMatches(array $fileContexts, $currentFileIndex, $targetFileType, $fieldName)
@@ -262,7 +296,10 @@ class XmlRulesValidator
         foreach ($targets as $match) {
             $hasError = false;
             foreach ($ruleErrors as $error) {
-                if (isset($error['path']) && $error['path'] === $match['path']) {
+                $samePath = isset($error['path']) && $error['path'] === $match['path'];
+                $sameValue = !array_key_exists('value', $error)
+                    || (string) $error['value'] === (is_scalar($match['value']) ? (string) $match['value'] : '');
+                if ($samePath && $sameValue) {
                     $hasError = true;
                     break;
                 }
@@ -364,6 +401,9 @@ class XmlRulesValidator
                 'Cấu hình TABLE_EXISTS không hợp lệ.'
             ));
         }
+        if (empty($matches) && !empty($config['allow_empty'])) {
+            return array();
+        }
         if (empty($matches)) {
             return array(self::makeError($rule, $rule['field_name'], null));
         }
@@ -379,7 +419,35 @@ class XmlRulesValidator
 
         $errors = array();
         foreach ($matches as $match) {
-            if (!$tableLookupService->exists($match['value'], $config)) {
+            $lookupValue = $match['value'];
+            $lookupConfig = $config;
+            if (isset($config['value_substring']) && is_array($config['value_substring'])
+                && array_key_exists('start', $config['value_substring'])) {
+                $lookupValue = self::substringValue(
+                    $match['value'],
+                    (int) $config['value_substring']['start'],
+                    array_key_exists('length', $config['value_substring'])
+                        ? (int) $config['value_substring']['length'] : null
+                );
+            }
+            if (isset($config['conditions_from_substring'])
+                && is_array($config['conditions_from_substring'])) {
+                if (!isset($lookupConfig['conditions']) || !is_array($lookupConfig['conditions'])) {
+                    $lookupConfig['conditions'] = array();
+                }
+                foreach ($config['conditions_from_substring'] as $conditionColumn => $substringConfig) {
+                    if (!is_array($substringConfig) || !array_key_exists('start', $substringConfig)) {
+                        continue;
+                    }
+                    $lookupConfig['conditions'][$conditionColumn] = self::substringValue(
+                        $match['value'],
+                        (int) $substringConfig['start'],
+                        array_key_exists('length', $substringConfig)
+                            ? (int) $substringConfig['length'] : null
+                    );
+                }
+            }
+            if (!$tableLookupService->exists($lookupValue, $lookupConfig)) {
                 $errors[] = self::makeError($rule, $match['path'], $match['value']);
             }
         }

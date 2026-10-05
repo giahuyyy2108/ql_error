@@ -25,6 +25,26 @@ class TableLookupService
             'table' => 'khoa',
             'columns' => array('ma'),
             'conditions' => array('is_active')
+        ),
+        'ma_tinhthanh' => array(
+            'table' => 'tinhthanh',
+            'columns' => array('ma_cu', 'ma_sau_sapnhap'),
+            'conditions' => array()
+        ),
+        'tinhthanh' => array(
+            'table' => 'tinhthanh',
+            'columns' => array('ma_cu', 'ma_sau_sapnhap'),
+            'conditions' => array()
+        ),
+        'ma_doituong_kcb' => array(
+            'table' => 'doituong_kcb',
+            'columns' => array('ma'),
+            'conditions' => array('is_active')
+        ),
+        'doituong_kcb' => array(
+            'table' => 'doituong_kcb',
+            'columns' => array('ma'),
+            'conditions' => array('is_active')
         )
     );
 
