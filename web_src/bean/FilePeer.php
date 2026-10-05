@@ -193,7 +193,8 @@ class FilePeer
     public function markAllForRevalidation()
     {
         $pendingResult = $this->connection->query(
-            "SELECT COUNT(*) AS total FROM `file` WHERE processing_status = 'pending_revalidation'"
+            "SELECT COUNT(*) AS total FROM `file`
+             WHERE processing_status IN ('pending_revalidation', 'revalidating')"
         );
         if (!$pendingResult) {
             throw new RuntimeException('Không thể kiểm tra hàng đợi quét lại.');
@@ -210,6 +211,60 @@ class FilePeer
             throw new RuntimeException('Không thể tạo hàng đợi quét lại.');
         }
         return $this->connection->affected_rows;
+    }
+
+    public function claimPendingRevalidation($limit = 2)
+    {
+        $limit = max(1, min(20, (int) $limit));
+        $this->connection->begin_transaction();
+        try {
+            $result = $this->connection->query(
+                "SELECT id, ten, ma_lk, file_path, processing_status
+                 FROM `file`
+                 WHERE processing_status = 'pending_revalidation'
+                 ORDER BY update_at ASC, id ASC
+                 LIMIT " . $limit . " FOR UPDATE"
+            );
+            if (!$result) {
+                throw new RuntimeException('Không thể nhận hàng đợi quét lại.');
+            }
+
+            $files = array();
+            $ids = array();
+            while ($row = $result->fetch_assoc()) {
+                $row['id'] = (int) $row['id'];
+                $files[] = $row;
+                $ids[] = (int) $row['id'];
+            }
+            $result->free();
+
+            if (!empty($ids)) {
+                $idList = implode(',', $ids);
+                if (!$this->connection->query(
+                    "UPDATE `file` SET processing_status = 'revalidating' WHERE id IN (" . $idList . ")"
+                )) {
+                    throw new RuntimeException('Không thể cập nhật hàng đợi quét lại.');
+                }
+            }
+            $this->connection->commit();
+            return $files;
+        } catch (Throwable $exception) {
+            $this->connection->rollback();
+            throw $exception;
+        }
+    }
+
+    public function countPendingRevalidation()
+    {
+        $result = $this->connection->query(
+            "SELECT COUNT(*) AS total FROM `file` WHERE processing_status = 'pending_revalidation'"
+        );
+        if (!$result) {
+            throw new RuntimeException('Không thể đếm hàng đợi quét lại.');
+        }
+        $row = $result->fetch_assoc();
+        $result->free();
+        return (int) $row['total'];
     }
 
     public function getPendingRevalidation($limit = 2)

@@ -31,7 +31,8 @@ class fileAction
         $this->request->setAttribute('xmlFileCsrf', $_SESSION['xml_file_csrf']);
         $this->request->setAttribute(
             'script',
-            '<script src="' . _DEFAULT_URL_ . 'js/file.js?' . _DEFAULT_VERSION_JS_CSS_ . '"></script>'
+            '<script src="' . _DEFAULT_URL_ . 'js/file.js?' . _DEFAULT_VERSION_JS_CSS_
+            . '&amp;v=' . filemtime(dirname(__DIR__, 2) . '/js/file.js') . '"></script>'
         );
         $this->request->setModel('www/file/index.php');
         return true;
@@ -240,6 +241,73 @@ class fileAction
                 ? 'Đã đưa ' . $queued . ' file vào hàng đợi quét lại.'
                 : 'Không có file mới cần đưa vào hàng đợi.')
         ));
+    }
+
+    public function processRevalidationBatch()
+    {
+        if (!$this->validCsrf()) {
+            return $this->json(array('success' => false, 'message' => 'Phiên làm việc không hợp lệ. Vui lòng tải lại trang.'));
+        }
+
+        try {
+            $files = $this->filePeer->claimPendingRevalidation(2);
+            $errors = array();
+            foreach ($files as $file) {
+                try {
+                    $this->revalidateQueuedFile($file);
+                } catch (Throwable $exception) {
+                    $this->filePeer->updateStorageLocation($file['id'], $file['file_path'], 'failed');
+                    $errors[] = $file['ten'] . ': ' . $exception->getMessage();
+                }
+            }
+            return $this->json(array(
+                'success' => true,
+                'processed' => count($files),
+                'remaining' => $this->filePeer->countPendingRevalidation(),
+                'errors' => $errors
+            ));
+        } catch (Throwable $exception) {
+            return $this->json(array('success' => false, 'message' => $exception->getMessage()));
+        }
+    }
+
+    private function revalidateQueuedFile(array $file)
+    {
+        $storedPath = $this->resolveStoredFilePath($file['file_path']);
+        $content = file_get_contents($storedPath);
+        if ($content === false) {
+            throw new RuntimeException('Không thể đọc file XML để quét lại.');
+        }
+
+        $decodedContent = XmlFileDecoder::decodeDanhSachHoSo($content);
+        $validation = call_user_func($this->createValidationCallback(), $decodedContent);
+        $newStatus = $this->validationHasErrors($validation) ? 'failed' : 'processed';
+
+        $projectRoot = dirname(__DIR__, 2);
+        $targetDirectory = $projectRoot . DIRECTORY_SEPARATOR . 'storage'
+            . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . $newStatus;
+        $currentDirectory = realpath(dirname($storedPath));
+        $resolvedTarget = realpath($targetDirectory);
+        $newPath = $file['file_path'];
+        if ($currentDirectory === false || $resolvedTarget === false
+            || strcasecmp($currentDirectory, $resolvedTarget) !== 0) {
+            $newPath = $this->moveValidatedFile($storedPath, $newStatus, $validation);
+        } else {
+            $newPath = str_replace('\\', '/', substr($storedPath, strlen($projectRoot) + 1));
+            $errorPath = $storedPath . '.error.txt';
+            if ($newStatus === 'failed') {
+                $errorCount = 0;
+                foreach ($validation as $result) {
+                    $errorCount += isset($result['error_count']) ? (int) $result['error_count'] : 0;
+                }
+                file_put_contents($errorPath, 'Validation failed with ' . $errorCount . ' error(s).' . PHP_EOL, LOCK_EX);
+            } elseif (is_file($errorPath)) {
+                @unlink($errorPath);
+            }
+        }
+
+        $this->filePeer->updateValidationResult($file['id'], $validation);
+        $this->filePeer->updateStorageLocation($file['id'], $newPath, $newStatus);
     }
 
     private function deleteFiles(array $ids)

@@ -34,6 +34,6 @@ File không đạt rule vẫn được import với trạng thái `failed`. Mỗ
 
 Nếu `MA_LK` đã tồn tại, file mới không bị bỏ qua: hệ thống quét lại đúng một lần, cập nhật bản ghi hiện có (giữ nguyên ID) và chuyển phiên bản file cũ vào `deleted` để giữ 30 ngày.
 
-Nút **Quét lại tất cả** chỉ đưa các bản ghi vào trạng thái `pending_revalidation`. Worker ưu tiên nhận file mới, sau đó xử lý nền từng lô 2 file và cập nhật trạng thái/kết quả trên giao diện.
+Nút **Quét lại tất cả** đưa các bản ghi vào trạng thái `pending_revalidation` rồi tự xử lý từng lô 2 file ngay từ giao diện. Worker nền cũng có thể nhận cùng hàng đợi; mỗi lô được khóa nhận việc để hai tiến trình không quét trùng một file.
 
 File bị người dùng xóa được chuyển vào `storage/xml/deleted`, giữ 30 ngày rồi worker mới xóa vĩnh viễn.

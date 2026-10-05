@@ -291,7 +291,7 @@ $revalidatePending = function () use (
     $resetDatabase
 ) {
     try {
-        $pendingFiles = $filePeer->getPendingRevalidation(2);
+        $pendingFiles = $filePeer->claimPendingRevalidation(2);
     } catch (Throwable $exception) {
         $log('Không thể đọc hàng đợi quét lại: ' . $exception->getMessage());
         try {

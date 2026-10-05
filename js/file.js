@@ -6,6 +6,7 @@
     var fileIdsToDelete = [];
     var selectedFileIds = {};
     var decodedFiles = [];
+    var revalidationInProgress = false;
 
     function escapeHtml(value) {
         return $('<div>').text(value == null ? '' : value).html();
@@ -198,7 +199,8 @@
         ajax: {
             url: baseUrl + 'file/getData/',
             type: 'POST',
-            error: function () {
+            error: function (xhr, textStatus) {
+                if (textStatus === 'abort' || revalidationInProgress) return;
                 alert('Không thể tải danh sách file.');
             }
         },
@@ -256,6 +258,9 @@
                     if (type !== 'display') return data;
                     if (data === 'pending_revalidation') {
                         return '<span class="label label-warning">Chờ quét lại</span>';
+                    }
+                    if (data === 'revalidating') {
+                        return '<span class="label label-info">Đang quét lại</span>';
                     }
                     return data === 'failed'
                         ? '<span class="label label-danger">Failed</span>'
@@ -321,28 +326,70 @@
     });
 
     $('#btn-revalidate-all').on('click', function () {
+        if (revalidationInProgress) return;
+        revalidationInProgress = true;
         var button = $(this).prop('disabled', true);
+        var originalHtml = button.html();
+
+        function finish(message) {
+            revalidationInProgress = false;
+            button.prop('disabled', false).html(originalHtml);
+            table.ajax.reload(null, false);
+            alert(message);
+        }
+
+        function processNextBatch(processed, errorCount) {
+            button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét... (' + processed + ')');
+            $.ajax({
+                url: baseUrl + 'file/processRevalidationBatch/',
+                type: 'POST',
+                dataType: 'json',
+                data: { csrf_token: csrfToken }
+            }).done(function (response) {
+                if (!response.success) {
+                    finish(response.message || 'Không thể quét lại file.');
+                    return;
+                }
+                processed += Number(response.processed) || 0;
+                errorCount += response.errors && response.errors.length ? response.errors.length : 0;
+                if (Number(response.remaining) > 0) {
+                    window.setTimeout(function () { processNextBatch(processed, errorCount); }, 100);
+                    return;
+                }
+                var message = 'Đã quét lại ' + processed + ' file.';
+                if (errorCount) {
+                    message += '\nCó ' + errorCount + ' file không thể xử lý.';
+                }
+                finish(message);
+            }).fail(function (xhr) {
+                var message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message : 'Không thể xử lý hàng đợi quét lại.';
+                finish(message);
+            });
+        }
+
         $.ajax({
             url: baseUrl + 'file/revalidateAll/',
             type: 'POST',
             dataType: 'json',
             data: { csrf_token: csrfToken }
         }).done(function (response) {
-            alert(response.message);
-            if (response.success) table.ajax.reload(null, false);
+            if (!response.success) {
+                finish(response.message || 'Không thể tạo hàng đợi quét lại.');
+                return;
+            }
+            processNextBatch(0, 0);
         }).fail(function (xhr) {
             var message = xhr.responseJSON && xhr.responseJSON.message
                 ? xhr.responseJSON.message : 'Không thể tạo hàng đợi quét lại.';
-            alert(message);
-        }).always(function () {
-            button.prop('disabled', false);
+            finish(message);
         });
     });
 
     // Files imported by the background watcher do not pass through this page,
     // so periodically refresh the table while the tab is visible.
     setInterval(function () {
-        if (!document.hidden) {
+        if (!document.hidden && !revalidationInProgress) {
             table.ajax.reload(null, false);
         }
     }, 5000);
