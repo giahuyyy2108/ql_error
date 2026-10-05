@@ -23,6 +23,7 @@
                 </div>
             </div>
         </div>
+        <div class="rules-table-scroll" tabindex="0" aria-label="Danh sách rules có thể cuộn">
         <table id="datatable-rules" class="table table-striped table-bordered rules-table" width="100%">
             <thead>
                 <tr>
@@ -39,11 +40,21 @@
             </thead>
             <tbody></tbody>
         </table>
+        </div>
     </div>
 </div>
 
 <style>
     .rules-search-row { margin-bottom: 12px; }
+    .rules-table-scroll {
+        width: 100%;
+        max-height: calc(100vh - 300px);
+        min-height: 260px;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    #datatable-rules_wrapper { min-width: 1100px; }
+    .rules-table-scroll:focus { outline: 2px solid rgba(51, 122, 183, .25); }
     #datatable-rules {
         width: 100% !important;
         table-layout: fixed;
@@ -89,17 +100,50 @@
         padding: 3px 6px;
         min-width: 27px;
     }
-    #datatable-rules .rule-status-icon {
-        font-size: 18px;
-        cursor: help;
+    #datatable-rules .rule-switch {
+        display: inline-block;
+        position: relative;
+        width: 42px;
+        height: 22px;
+        margin: 0;
+        vertical-align: middle;
+    }
+    #datatable-rules .rule-switch input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+    }
+    #datatable-rules .rule-switch-slider {
+        position: absolute;
+        inset: 0;
+        cursor: pointer;
+        border-radius: 22px;
+        background: #b7b7b7;
+        transition: background-color .2s;
+    }
+    #datatable-rules .rule-switch-slider:before {
+        content: '';
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        left: 2px;
+        top: 2px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+        transition: transform .2s;
+    }
+    #datatable-rules .rule-switch input:checked + .rule-switch-slider { background: #26b99a; }
+    #datatable-rules .rule-switch input:checked + .rule-switch-slider:before { transform: translateX(20px); }
+    #datatable-rules .rule-switch input:focus + .rule-switch-slider { box-shadow: 0 0 0 2px rgba(38, 185, 154, .25); }
+    #datatable-rules .rule-switch input:disabled + .rule-switch-slider {
+        cursor: not-allowed;
+        opacity: .55;
     }
     #datatable-rules_wrapper .dataTables_length,
     #datatable-rules_wrapper .dataTables_filter {
         font-size: 12px;
-    }
-    #datatable-rules_wrapper .dataTables_scrollBody,
-    #datatable-rules_wrapper .dataTables_scrollHead {
-        overflow: visible !important;
     }
 </style>
 

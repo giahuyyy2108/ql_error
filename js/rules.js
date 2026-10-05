@@ -96,9 +96,10 @@
         },
         dom: 'lrtip',
         pageLength: Number($('#pageLength').val()) || 25,
-        order: [[1, 'asc'], [2, 'asc']],
+        order: [[0, 'asc']],
         responsive: false,
         autoWidth: false,
+        "lengthChange": false,
         columns: [
             { data: 'id', width: '7%', render: compactText },
             { data: 'file_type', width: '7%', render: compactText },
@@ -116,10 +117,15 @@
                 data: 'is_active',
                 width: '9%',
                 className: 'text-center',
-                render: function (data) {
-                    return Number(data) === 1
-                        ? '<i class="fa fa-check-circle text-success rule-status-icon" title="Hoạt động" aria-label="Hoạt động"></i>'
-                        : '<i class="fa fa-pause-circle text-muted rule-status-icon" title="Tạm dừng" aria-label="Tạm dừng"></i>';
+                render: function (data, type, row) {
+                    if (type !== 'display') return Number(data);
+                    var active = Number(data) === 1;
+                    return '<label class="rule-switch" title="' + (active ? 'Đang bật' : 'Đang tắt') + '">'
+                        + '<input type="checkbox" class="rule-active-switch" data-id="' + Number(row.id) + '"'
+                        + (active ? ' checked' : '')
+                        + (can('#role-rules-update') ? '' : ' disabled')
+                        + ' aria-label="Bật hoặc tắt rule">'
+                        + '<span class="rule-switch-slider"></span></label>';
                 }
             },
             {
@@ -232,6 +238,39 @@
             showMessage('Có lỗi xảy ra khi lưu rule.', false);
         }).always(function () {
             $('#btn-save-rule').prop('disabled', false);
+        });
+    });
+
+    $('#datatable-rules').on('change', '.rule-active-switch', function () {
+        var toggle = $(this);
+        var active = toggle.is(':checked');
+        var rowElement = toggle.closest('tr');
+        var row = table.row(rowElement);
+        var rowData = row.data();
+        toggle.prop('disabled', true);
+
+        $.ajax({
+            url: baseUrl + 'rules/updateActive/',
+            type: 'POST',
+            dataType: 'json',
+            data: {
+                id: toggle.attr('data-id'),
+                is_active: active ? '1' : '0',
+                csrf_token: csrfToken
+            }
+        }).done(function (response) {
+            if (!response.success) {
+                toggle.prop('checked', !active);
+                alert(response.message);
+                return;
+            }
+            rowData.is_active = active ? 1 : 0;
+            row.data(rowData).invalidate().draw(false);
+        }).fail(function () {
+            toggle.prop('checked', !active);
+            alert('Có lỗi xảy ra khi cập nhật trạng thái rule.');
+        }).always(function () {
+            toggle.prop('disabled', !can('#role-rules-update'));
         });
     });
 

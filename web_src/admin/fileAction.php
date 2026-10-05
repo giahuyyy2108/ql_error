@@ -9,6 +9,7 @@ require_once __DIR__ . '/../bean/XmlValidationRulePeer.php';
 require_once __DIR__ . '/../bean/ApiValidationConfigPeer.php';
 require_once __DIR__ . '/../common/ApiValidationService.php';
 require_once __DIR__ . '/../common/TableLookupService.php';
+require_once __DIR__ . '/../bean/HeThongPeer.php';
 
 class fileAction
 {
@@ -167,7 +168,8 @@ class fileAction
             'success' => true,
             'name' => $file['ten'],
             'decoded' => $decodedContent,
-            'validation' => $validation
+            'validation' => $validation,
+            'display_settings' => (new HeThongPeer())->getXmlDisplaySettings()
         ));
     }
 

@@ -25,7 +25,8 @@ class rulesAction
         $this->request->setAttribute('rulesCsrf', $_SESSION['rules_csrf']);
         $this->request->setAttribute(
             'script',
-            '<script src="' . _DEFAULT_URL_ . 'js/rules.js?' . _DEFAULT_VERSION_JS_CSS_ . '"></script>'
+            '<script src="' . _DEFAULT_URL_ . 'js/rules.js?' . _DEFAULT_VERSION_JS_CSS_
+            . '&amp;v=' . filemtime(dirname(__DIR__, 2) . '/js/rules.js') . '"></script>'
         );
         $this->request->setModel('www/rules/index.php');
         return true;
@@ -97,6 +98,36 @@ class rulesAction
                 return $this->json(array('success' => false, 'message' => 'Rule không tồn tại.'));
             }
             return $this->json(array('success' => true, 'message' => 'Xóa rule thành công.'));
+        } catch (RuntimeException $exception) {
+            return $this->json(array('success' => false, 'message' => $exception->getMessage()));
+        }
+    }
+
+    public function updateActive()
+    {
+        if (!$this->validCsrf()) {
+            return $this->json(array('success' => false, 'message' => 'Phiên làm việc không hợp lệ.'));
+        }
+        $isAdmin = isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1;
+        if (!$isAdmin && !$this->request->checkRole('rules.update')) {
+            return $this->json(array('success' => false, 'message' => 'Bạn không có quyền sửa rule.'));
+        }
+
+        $id = (int) $this->request->getParameter('id', false);
+        $isActive = $this->request->getParameter('is_active', false);
+        if ($id <= 0 || !in_array((string) $isActive, array('0', '1'), true)) {
+            return $this->json(array('success' => false, 'message' => 'Trạng thái rule không hợp lệ.'));
+        }
+
+        try {
+            if (!$this->rulePeer->updateActive($id, (int) $isActive)) {
+                return $this->json(array('success' => false, 'message' => 'Rule không tồn tại.'));
+            }
+            return $this->json(array(
+                'success' => true,
+                'is_active' => (int) $isActive,
+                'message' => (int) $isActive === 1 ? 'Đã bật rule.' : 'Đã tắt rule.'
+            ));
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }

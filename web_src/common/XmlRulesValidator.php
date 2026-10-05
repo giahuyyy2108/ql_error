@@ -20,6 +20,7 @@ class XmlRulesValidator
             $rulesByType[$fileType][] = $rule;
         }
         $requiredFieldsByType = self::collectRequiredFields($rulesByType);
+        $nullableFieldsByType = self::collectNullableFields($rulesByType);
 
         $results = array();
         $hoSoList = isset($decodedContent['DANHSACHHOSO']['HOSO'])
@@ -40,6 +41,23 @@ class XmlRulesValidator
                     $matches = isset($fieldIndex[$rule['field_name']])
                         ? $fieldIndex[$rule['field_name']] : array();
                     $ruleType = strtoupper(trim($rule['rule_type']));
+                    $isNullable = isset($nullableFieldsByType[$fileType][$rule['field_name']]);
+
+                    if ($ruleType === 'NULLABLE') {
+                        foreach ($matches as $match) {
+                            $validFields[] = self::makeValid($rule, $match['path'], $match['value']);
+                        }
+                        continue;
+                    }
+
+                    if ($isNullable) {
+                        $matches = array_values(array_filter($matches, function ($match) {
+                            return !self::isNullValue(isset($match['value']) ? $match['value'] : null);
+                        }));
+                        if (empty($matches)) {
+                            continue;
+                        }
+                    }
 
                     if ($ruleType === 'FIELD_COMPARE') {
                         $ruleErrors = self::validateFieldCompare($rule, $matches, $fileContexts, $fileIndex);
@@ -120,6 +138,28 @@ class XmlRulesValidator
         }
 
         return $results;
+    }
+
+    private static function collectNullableFields(array $rulesByType)
+    {
+        $nullable = array();
+        foreach ($rulesByType as $fileType => $rules) {
+            foreach ($rules as $rule) {
+                if (strtoupper(trim($rule['rule_type'])) !== 'NULLABLE') {
+                    continue;
+                }
+                if (!isset($nullable[$fileType])) {
+                    $nullable[$fileType] = array();
+                }
+                $nullable[$fileType][$rule['field_name']] = true;
+            }
+        }
+        return $nullable;
+    }
+
+    private static function isNullValue($value)
+    {
+        return $value === null || (is_string($value) && trim($value) === '');
     }
 
     private static function collectRequiredFields(array $rulesByType)

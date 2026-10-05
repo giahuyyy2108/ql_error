@@ -158,6 +158,37 @@ class XmlValidationRulePeer
         return true;
     }
 
+    public function updateActive($id, $isActive)
+    {
+        $statement = $this->connection->prepare(
+            'UPDATE xml_validation_rules SET is_active = ? WHERE id = ?'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị trạng thái rule.');
+        }
+        $isActive = $isActive ? 1 : 0;
+        $statement->bind_param('ii', $isActive, $id);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể cập nhật trạng thái rule.');
+        }
+        $exists = $statement->affected_rows > 0;
+        $statement->close();
+
+        if (!$exists) {
+            $check = $this->connection->prepare('SELECT id FROM xml_validation_rules WHERE id = ? LIMIT 1');
+            if (!$check) {
+                throw new RuntimeException('Không thể kiểm tra rule.');
+            }
+            $check->bind_param('i', $id);
+            $check->execute();
+            $check->store_result();
+            $exists = $check->num_rows > 0;
+            $check->close();
+        }
+        return $exists;
+    }
+
     public function delete($id)
     {
         $statement = $this->connection->prepare('DELETE FROM xml_validation_rules WHERE id = ?');

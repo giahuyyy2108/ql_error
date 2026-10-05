@@ -6,6 +6,7 @@
     var fileIdsToDelete = [];
     var selectedFileIds = {};
     var decodedFiles = [];
+    var xmlDisplaySettings = { show_errors: true, show_valid: true };
     var revalidationInProgress = false;
 
     function escapeHtml(value) {
@@ -125,13 +126,14 @@
                     }
                     return false;
                 });
-                var errors = validationResult ? validationResult.errors : [];
-                var validFields = validationResult ? (validationResult.valid_fields || []) : [];
+                var errors = validationResult && xmlDisplaySettings.show_errors ? validationResult.errors : [];
+                var validFields = validationResult && xmlDisplaySettings.show_valid
+                    ? (validationResult.valid_fields || []) : [];
                 result.push({
                     label: 'Hồ sơ ' + (hoSoIndex + 1) + ' - ' + (file.LOAIHOSO || ('File ' + (fileIndex + 1)))
-                        + (validationResult && validationResult.error_count ? ' (' + validationResult.error_count + ' lỗi)' : '')
-                        + (validationResult && validationResult.warning_count ? ' (' + validationResult.warning_count + ' cảnh báo)' : '')
-                        + (validationResult && validationResult.valid_count ? ' (' + validationResult.valid_count + ' hợp lệ)' : '')
+                        + (xmlDisplaySettings.show_errors && validationResult && validationResult.error_count ? ' (' + validationResult.error_count + ' lỗi)' : '')
+                        + (xmlDisplaySettings.show_errors && validationResult && validationResult.warning_count ? ' (' + validationResult.warning_count + ' cảnh báo)' : '')
+                        + (xmlDisplaySettings.show_valid && validationResult && validationResult.valid_count ? ' (' + validationResult.valid_count + ' hợp lệ)' : '')
                         + ((!validationResult || (!validationResult.error_count && !validationResult.warning_count
                             && !validationResult.valid_count)) ? ' (Hợp lệ)' : ''),
                     type: file.LOAIHOSO || '',
@@ -152,9 +154,9 @@
             return;
         }
         var selected = decodedFiles[index];
-        var summary = $('#validation-summary').empty().show();
+        var summary = $('#validation-summary').empty().toggle(xmlDisplaySettings.show_errors);
         var validSummary = $('#validation-valid-summary').empty().hide();
-        if (selected.errors.length) {
+        if (xmlDisplaySettings.show_errors && selected.errors.length) {
             var errorCount = selected.errors.filter(function (error) { return error.severity !== 'warning'; }).length;
             var warningCount = selected.errors.length - errorCount;
             summary.removeClass('alert-success alert-warning alert-danger')
@@ -166,12 +168,12 @@
                 if (error.substring !== undefined) note += ' (Giá trị cắt: ' + error.substring + ')';
                 $('<li>').text(error.display_name + ' (' + error.field_name + '): ' + note).appendTo(list);
             });
-        } else {
+        } else if (xmlDisplaySettings.show_errors) {
             summary.removeClass('alert-danger alert-warning alert-success')
                 .addClass('alert-success')
                 .text('Không phát hiện lỗi theo rules đang hoạt động.');
         }
-        if (selected.validFields.length) {
+        if (xmlDisplaySettings.show_valid && selected.validFields.length) {
             validSummary.show();
             $('<strong>')
                 .addClass('validation-valid-title')
@@ -206,8 +208,9 @@
         },
         pageLength: Number($('#pageLength').val()) || 25,
         order: [[6, 'desc']],
-        responsive: true,
+        responsive: false,
         autoWidth: false,
+        "lengthChange": false,
         columns: [
             {
                 data: 'id',
@@ -454,6 +457,10 @@
                 return;
             }
 
+            xmlDisplaySettings = $.extend(
+                { show_errors: true, show_valid: true },
+                response.display_settings || {}
+            );
             decodedFiles = collectDecodedFiles(response.decoded, response.validation);
             var select = $('#decoded-file-select').empty();
             decodedFiles.forEach(function (file, index) {

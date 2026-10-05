@@ -21,7 +21,8 @@
         <div class="clearfix"></div>
     </div>
     <div class="x_content">
-        <table id="datatable-file" class="table table-striped table-bordered dt-responsive nowrap" cellspacing="0" width="100%">
+        <div class="file-table-scroll" tabindex="0" aria-label="Danh sách file có thể cuộn">
+        <table id="datatable-file" class="table table-striped table-bordered nowrap" cellspacing="0" width="100%">
             <thead>
                 <tr>
                     <th class="text-center"><input type="checkbox" id="select-all-files" title="Chọn tất cả trên trang"></th>
@@ -36,6 +37,7 @@
             </thead>
             <tbody></tbody>
         </table>
+        </div>
     </div>
 </div>
 
@@ -90,6 +92,15 @@
 </div>
 
 <style>
+    .file-table-scroll {
+        width: 100%;
+        max-height: calc(100vh - 250px);
+        min-height: 260px;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    #datatable-file_wrapper { min-width: 980px; }
+    .file-table-scroll:focus { outline: 2px solid rgba(51, 122, 183, .25); }
     #datatable-file td.file-name-cell {
         max-width: 280px;
         width: 24%;
