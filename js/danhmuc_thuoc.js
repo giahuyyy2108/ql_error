@@ -5,10 +5,10 @@
         if (type !== 'display') return text;
         return $('<span>').addClass('td-text').attr('title', text).text(text).prop('outerHTML');
     }
-    var table = $('#datatable-tanduoc').DataTable({
+    var table = $('#datatable-danhmuc-thuoc').DataTable({
         processing: true, serverSide: true, scrollX: true, scrollCollapse: false,
-        ajax: {url: $('#ULocal').val() + 'tanduoc/getData/', type: 'POST', data: function (data) {
-            data.searchText = $('#tanduoc-search').val().trim(); data.province = $('#tanduoc-province').val();
+        ajax: {url: $('#ULocal').val() + 'danhmuc_thuoc/getData/', type: 'POST', data: function (data) {
+            data.searchText = $('#danhmuc-thuoc-search').val().trim(); data.province = $('#danhmuc-thuoc-province').val();
         }},
         pageLength: 25, lengthMenu: [[10,25,50,100,200],[10,25,50,100,200]], searching: false, ordering: false, autoWidth: false,
         columnDefs: [
@@ -35,8 +35,8 @@
     table.on('draw.dt', function () { table.columns.adjust(); });
     $(window).on('load resize', function () { table.columns.adjust(); });
     function reload(){ table.ajax.reload(); }
-    $('#btn-search-tanduoc').on('click', reload);
-    $('#tanduoc-province').on('change', reload);
-    $('#btn-reset-tanduoc').on('click', function(){ $('#tanduoc-search,#tanduoc-province').val(''); reload(); });
-    $('#tanduoc-search').on('keydown', function(event){ if(event.key==='Enter'||event.which===13){event.preventDefault();reload();} });
+    $('#btn-search-danhmuc-thuoc').on('click', reload);
+    $('#danhmuc-thuoc-province').on('change', reload);
+    $('#btn-reset-danhmuc-thuoc').on('click', function(){ $('#danhmuc-thuoc-search,#danhmuc-thuoc-province').val(''); reload(); });
+    $('#danhmuc-thuoc-search').on('keydown', function(event){ if(event.key==='Enter'||event.which===13){event.preventDefault();reload();} });
 })(jQuery);

@@ -1,6 +1,6 @@
 <?php
 
-class TanDuocPeer
+class DanhMucThuocPeer
 {
     private $connection;
 
@@ -35,10 +35,10 @@ class TanDuocPeer
             $types .= 's';
         }
         $where = $clauses ? ' WHERE ' . implode(' AND ', $clauses) : '';
-        $total = (int) $this->connection->query('SELECT COUNT(*) AS total FROM tan_duoc')->fetch_assoc()['total'];
+        $total = (int) $this->connection->query('SELECT COUNT(*) AS total FROM danhmuc_thuoc')->fetch_assoc()['total'];
         $filtered = $total;
         if ($where !== '') {
-            $count = $this->connection->prepare('SELECT COUNT(*) AS total FROM tan_duoc' . $where);
+            $count = $this->connection->prepare('SELECT COUNT(*) AS total FROM danhmuc_thuoc' . $where);
             $count->bind_param($types, ...$params);
             $count->execute();
             $filtered = (int) $count->get_result()->fetch_assoc()['total'];
@@ -50,7 +50,7 @@ class TanDuocPeer
                        nuoc_san_xuat, quy_cach_dong_goi, don_vi_tinh, so_luong, don_gia,
                        thanh_tien, nha_thau_trung_thau, nhom_tieu_chi, goi_thau, don_vi_cong_bo,
                        tinh_thanh, so_quyet_dinh, ngay_cong_bo
-                FROM tan_duoc' . $where . ' ORDER BY stt_nguon ASC, id ASC LIMIT ' . $start . ', ' . $length;
+                FROM danhmuc_thuoc' . $where . ' ORDER BY stt_nguon ASC, id ASC LIMIT ' . $start . ', ' . $length;
         $statement = $this->connection->prepare($sql);
         if ($types !== '') $statement->bind_param($types, ...$params);
         $statement->execute();
@@ -63,10 +63,9 @@ class TanDuocPeer
 
     public function getProvinces()
     {
-        $result = $this->connection->query("SELECT DISTINCT tinh_thanh FROM tan_duoc WHERE tinh_thanh IS NOT NULL AND tinh_thanh <> '' ORDER BY tinh_thanh");
+        $result = $this->connection->query("SELECT DISTINCT tinh_thanh FROM danhmuc_thuoc WHERE tinh_thanh IS NOT NULL AND tinh_thanh <> '' ORDER BY tinh_thanh");
         $items = array();
         while ($row = $result->fetch_assoc()) $items[] = $row['tinh_thanh'];
         return $items;
     }
 }
-

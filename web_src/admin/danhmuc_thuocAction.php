@@ -1,25 +1,25 @@
 <?php
 
-require_once 'web_src/bean/TanDuocPeer.php';
+require_once 'web_src/bean/DanhMucThuocPeer.php';
 
-class hoatchatAction
+class danhmuc_thuocAction
 {
-    public static $listRole = 'tanduoc';
+    public static $listRole = 'danhmuc_thuoc';
     private $request;
     private $peer;
 
     public function __construct()
     {
         $this->request = new Request();
-        $this->peer = new TanDuocPeer();
+        $this->peer = new DanhMucThuocPeer();
         $this->request->setTitle('Danh mục tân dược');
     }
 
     public function index()
     {
         $this->request->setAttribute('provinces', $this->peer->getProvinces());
-        $this->request->setAttribute('script', '<script src="' . _DEFAULT_URL_ . 'js/tanduoc.js?' . _DEFAULT_VERSION_JS_CSS_ . '"></script>');
-        $this->request->setModel('www/tanduoc/index.php');
+        $this->request->setAttribute('script', '<script src="' . _DEFAULT_URL_ . 'js/danhmuc_thuoc.js?' . _DEFAULT_VERSION_JS_CSS_ . '"></script>');
+        $this->request->setModel('www/danhmuc_thuoc/index.php');
         return true;
     }
 
@@ -44,4 +44,3 @@ class hoatchatAction
         }
     }
 }
-

@@ -5,7 +5,7 @@ if (PHP_SAPI !== 'cli') {
     exit(1);
 }
 if ($argc < 2 || !is_file($argv[1])) {
-    fwrite(STDERR, "Usage: php scripts/import_tan_duoc_ndjson.php <rows.ndjson>\n");
+    fwrite(STDERR, "Usage: php scripts/import_danhmuc_thuoc_ndjson.php <rows.ndjson>\n");
     exit(1);
 }
 
@@ -43,7 +43,7 @@ function dateValue($value)
     return sprintf('%04d-%02d-%02d', $matches[3], $matches[2], $matches[1]);
 }
 
-$sql = 'INSERT INTO tan_duoc
+$sql = 'INSERT INTO danhmuc_thuoc
     (stt_nguon, ma_hoat_chat, ten_hoat_chat, duong_dung_dang_bao_che, nong_do_ham_luong,
      ten_thuoc, sdk_gpnk, sdk_chuan_hoa, nha_san_xuat, nuoc_san_xuat, quy_cach_dong_goi,
      don_vi_tinh, so_luong, don_gia, thanh_tien, nha_thau_trung_thau, nhom_tieu_chi,
@@ -56,7 +56,7 @@ $handle = fopen($argv[1], 'rb');
 $count = 0;
 $connect->begin_transaction();
 try {
-    $connect->query('TRUNCATE TABLE tan_duoc');
+    $connect->query('TRUNCATE TABLE danhmuc_thuoc');
     while (($line = fgets($handle)) !== false) {
         $row = json_decode($line, true);
         if (!is_array($row)) continue;
@@ -77,12 +77,12 @@ try {
     }
     // Corrections for five cells which are rendered as hashes/overlapping text
     // in the source PDF and therefore cannot be recovered from text positions.
-    $connect->query("UPDATE tan_duoc SET thanh_tien=so_luong*don_gia WHERE stt_nguon=98");
-    $connect->query("UPDATE tan_duoc SET ma_hoat_chat='40.100', ten_hoat_chat='Deferoxamin', ten_thuoc='Derikad', so_luong=250, don_gia=127000, thanh_tien=31750000 WHERE stt_nguon=3249");
-    $connect->query("UPDATE tan_duoc SET ma_hoat_chat='40.82', ten_hoat_chat='Desloratadine', ten_thuoc='Highercoldz One', so_luong=70000, don_gia=2999, thanh_tien=209930000 WHERE stt_nguon=5104");
-    $connect->query("UPDATE tan_duoc SET ma_hoat_chat='40.798', ten_hoat_chat='Acarbose', ten_thuoc='Savi Acarbose 25', so_luong=80000, don_gia=1800, thanh_tien=144000000 WHERE stt_nguon=5247");
-    $connect->query("UPDATE tan_duoc SET ma_hoat_chat='40.976', ten_hoat_chat='Ipratropium bromide + Fenoterol hydrobromide', ten_thuoc='Berodual', so_luong=4000, don_gia=96870, thanh_tien=387480000 WHERE stt_nguon=6788");
-    $connect->query("UPDATE tan_duoc SET don_vi_cong_bo='BV Phong - Da liễu Trung ương Quy Hòa' WHERE so_quyet_dinh='122/QĐ-TWQH' AND tinh_thanh='Bình Định'");
+    $connect->query("UPDATE danhmuc_thuoc SET thanh_tien=so_luong*don_gia WHERE stt_nguon=98");
+    $connect->query("UPDATE danhmuc_thuoc SET ma_hoat_chat='40.100', ten_hoat_chat='Deferoxamin', ten_thuoc='Derikad', so_luong=250, don_gia=127000, thanh_tien=31750000 WHERE stt_nguon=3249");
+    $connect->query("UPDATE danhmuc_thuoc SET ma_hoat_chat='40.82', ten_hoat_chat='Desloratadine', ten_thuoc='Highercoldz One', so_luong=70000, don_gia=2999, thanh_tien=209930000 WHERE stt_nguon=5104");
+    $connect->query("UPDATE danhmuc_thuoc SET ma_hoat_chat='40.798', ten_hoat_chat='Acarbose', ten_thuoc='Savi Acarbose 25', so_luong=80000, don_gia=1800, thanh_tien=144000000 WHERE stt_nguon=5247");
+    $connect->query("UPDATE danhmuc_thuoc SET ma_hoat_chat='40.976', ten_hoat_chat='Ipratropium bromide + Fenoterol hydrobromide', ten_thuoc='Berodual', so_luong=4000, don_gia=96870, thanh_tien=387480000 WHERE stt_nguon=6788");
+    $connect->query("UPDATE danhmuc_thuoc SET don_vi_cong_bo='BV Phong - Da liễu Trung ương Quy Hòa' WHERE so_quyet_dinh='122/QĐ-TWQH' AND tinh_thanh='Bình Định'");
     $connect->commit();
 } catch (Throwable $exception) {
     $connect->rollback();

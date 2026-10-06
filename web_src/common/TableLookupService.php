@@ -47,8 +47,8 @@ class TableLookupService
             'columns' => array('ma'),
             'conditions' => array('is_active')
         ),
-        'tan_duoc' => array(
-            'table' => 'tan_duoc',
+        'danhmuc_thuoc' => array(
+            'table' => 'danhmuc_thuoc',
             'columns' => array('ma_hoat_chat', 'sdk_gpnk', 'sdk_chuan_hoa'),
             'conditions' => array('is_active', 'nhom_tieu_chi', 'goi_thau', 'tinh_thanh')
         )

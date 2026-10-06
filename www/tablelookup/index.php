@@ -22,7 +22,7 @@
         <div class="modal-body">
             <input type="hidden" id="lookup-id">
             <div class="row">
-                <div class="form-group col-md-6"><label>Mã nguồn <span class="text-danger">*</span></label><input id="lookup-key" class="form-control" maxlength="64" placeholder="Ví dụ: tan_duoc" required></div>
+                <div class="form-group col-md-6"><label>Mã nguồn <span class="text-danger">*</span></label><input id="lookup-key" class="form-control" maxlength="64" placeholder="Ví dụ: danhmuc_thuoc" required></div>
                 <div class="form-group col-md-6"><label>Tên hiển thị <span class="text-danger">*</span></label><input id="lookup-name" class="form-control" maxlength="150" required></div>
             </div>
             <div class="form-group"><label>Bảng dữ liệu <span class="text-danger">*</span></label><select id="lookup-table" class="form-control" required><option value="">-- Chọn bảng --</option><?php foreach ($databaseSchema as $table => $columns): ?><option value="<?=htmlspecialchars($table, ENT_QUOTES, 'UTF-8')?>"><?=htmlspecialchars($table, ENT_QUOTES, 'UTF-8')?></option><?php endforeach; ?></select></div>

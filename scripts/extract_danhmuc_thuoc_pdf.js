@@ -8,7 +8,7 @@ const pdfPath = process.argv[2];
 const outputPath = process.argv[3];
 const pdfjsRoot = process.argv[4] || path.join(process.env.TEMP || process.env.TMP, 'tan-duoc-pdf-tools', 'node_modules', 'pdfjs-dist');
 if (!pdfPath || !outputPath) {
-    console.error('Usage: node scripts/extract_tan_duoc_pdf.js <source.pdf> <output.ndjson> [pdfjs-dist-dir]');
+    console.error('Usage: node scripts/extract_danhmuc_thuoc_pdf.js <source.pdf> <output.ndjson> [pdfjs-dist-dir]');
     process.exit(1);
 }
 

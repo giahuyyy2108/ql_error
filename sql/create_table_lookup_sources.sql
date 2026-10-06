@@ -24,4 +24,4 @@ VALUES
     ('tinhthanh', 'Tỉnh thành', 'tinhthanh', '["ma_cu","ma_sau_sapnhap"]', '[]', 1),
     ('ma_doituong_kcb', 'Mã đối tượng KCB', 'doituong_kcb', '["ma"]', '["is_active"]', 1),
     ('doituong_kcb', 'Đối tượng KCB', 'doituong_kcb', '["ma"]', '["is_active"]', 1),
-    ('tan_duoc', 'Tân dược', 'tan_duoc', '["ma_hoat_chat","sdk_gpnk","sdk_chuan_hoa"]', '["is_active","nhom_tieu_chi","goi_thau","tinh_thanh"]', 1);
+    ('danhmuc_thuoc', 'Danh mục thuốc', 'danhmuc_thuoc', '["ma_hoat_chat","sdk_gpnk","sdk_chuan_hoa"]', '["is_active","nhom_tieu_chi","goi_thau","tinh_thanh"]', 1);

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `tan_duoc` (
+CREATE TABLE IF NOT EXISTS `danhmuc_thuoc` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `stt_nguon` INT UNSIGNED DEFAULT NULL,
     `ma_hoat_chat` VARCHAR(50) DEFAULT NULL,
@@ -27,11 +27,11 @@ CREATE TABLE IF NOT EXISTS `tan_duoc` (
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_tan_duoc_ma_hoat_chat` (`ma_hoat_chat`),
-    KEY `idx_tan_duoc_sdk_chuan_hoa` (`sdk_chuan_hoa`),
-    KEY `idx_tan_duoc_ten_thuoc` (`ten_thuoc`(100)),
-    KEY `idx_tan_duoc_tinh_thanh` (`tinh_thanh`),
-    KEY `idx_tan_duoc_ngay_cong_bo` (`ngay_cong_bo`),
-    KEY `idx_tan_duoc_source_page` (`source_page`),
-    KEY `idx_tan_duoc_is_active` (`is_active`)
+    KEY `idx_danhmuc_thuoc_ma_hoat_chat` (`ma_hoat_chat`),
+    KEY `idx_danhmuc_thuoc_sdk_chuan_hoa` (`sdk_chuan_hoa`),
+    KEY `idx_danhmuc_thuoc_ten_thuoc` (`ten_thuoc`(100)),
+    KEY `idx_danhmuc_thuoc_tinh_thanh` (`tinh_thanh`),
+    KEY `idx_danhmuc_thuoc_ngay_cong_bo` (`ngay_cong_bo`),
+    KEY `idx_danhmuc_thuoc_source_page` (`source_page`),
+    KEY `idx_danhmuc_thuoc_is_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
