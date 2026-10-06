@@ -156,6 +156,21 @@
         font-family: Arial, sans-serif;
     }
     .json-tree .json-error-key { color: #a94442; }
+    .json-tree .json-warning-key { color: #8a6d3b; }
+    .json-tree .json-error-count,
+    .json-tree .json-warning-count {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 1px 7px;
+        border-radius: 10px;
+        color: #fff;
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 16px;
+    }
+    .json-tree .json-error-count { background: #d9534f; }
+    .json-tree .json-warning-count { background: #f0ad4e; }
     .json-tree .json-valid-key { color: #218838; }
     .json-tree .json-field-valid {
         margin: 3px 0 6px 27px;
@@ -174,7 +189,6 @@
         display: block;
         color: #155724;
     }
-    #validation-valid-summary .validation-valid-list { margin-bottom: 0; }
 </style>
 
 <div class="modal fade" id="modal-delete-xml" tabindex="-1" role="dialog" aria-hidden="true">

@@ -48,6 +48,20 @@
         return (validFields || []).filter(function (item) { return item.path === path; });
     }
 
+    function validationCountsBelowPath(errors, path) {
+        var counts = { errors: 0, warnings: 0 };
+        (errors || []).forEach(function (error) {
+            var errorPath = error.path || '';
+            var belongsToNode = path === '' || errorPath === path
+                || errorPath.indexOf(path + '.') === 0
+                || errorPath.indexOf(path + '[') === 0;
+            if (!belongsToNode) return;
+            if (error.severity === 'warning') counts.warnings++;
+            else counts.errors++;
+        });
+        return counts;
+    }
+
     function appendErrorNotes(container, errors) {
         errors.forEach(function (error) {
             var note = error.message;
@@ -75,10 +89,19 @@
         var fieldValids = path ? validFieldsAtPath(validFields, path) : [];
 
         if (isObject) {
-            var details = $('<details>').prop('open', depth < 2);
+            var branchCounts = validationCountsBelowPath(errors, path);
+            var details = $('<details>').prop('open', depth < 2 || branchCounts.errors > 0 || branchCounts.warnings > 0);
             var count = isArray ? value.length : Object.keys(value).length;
-            var summary = $('<summary>').text(key + (isArray ? ' [' + count + ']' : ' {' + count + '}')).appendTo(details);
-            if (fieldErrors.length) summary.addClass('json-error-key');
+            var summary = $('<summary>').appendTo(details);
+            $('<span>').text(key + (isArray ? ' [' + count + ']' : ' {' + count + '}')).appendTo(summary);
+            if (branchCounts.errors > 0) {
+                $('<span>').addClass('json-error-count').text(branchCounts.errors + ' lỗi').appendTo(summary);
+            }
+            if (branchCounts.warnings > 0) {
+                $('<span>').addClass('json-warning-count').text(branchCounts.warnings + ' cảnh báo').appendTo(summary);
+            }
+            if (branchCounts.errors > 0) summary.addClass('json-error-key');
+            else if (branchCounts.warnings > 0) summary.addClass('json-warning-key');
             else if (fieldValids.length) summary.addClass('json-valid-key');
 
             if (isArray) {
@@ -161,30 +184,16 @@
             var warningCount = selected.errors.length - errorCount;
             summary.removeClass('alert-success alert-warning alert-danger')
                 .addClass(errorCount ? 'alert-danger' : 'alert-warning');
-            $('<strong>').text('Có ' + errorCount + ' lỗi, ' + warningCount + ' cảnh báo:').appendTo(summary);
-            var list = $('<ul>').css('margin-bottom', 0).appendTo(summary);
-            selected.errors.forEach(function (error) {
-                var note = error.message;
-                if (error.substring !== undefined) note += ' (Giá trị cắt: ' + error.substring + ')';
-                $('<li>').text(error.display_name + ' (' + error.field_name + '): ' + note).appendTo(list);
-            });
+            $('<strong>').text('Có ' + errorCount + ' lỗi, ' + warningCount + ' cảnh báo').appendTo(summary);
         } else if (xmlDisplaySettings.show_errors) {
-            summary.removeClass('alert-danger alert-warning alert-success')
-                .addClass('alert-success')
-                .text('Không phát hiện lỗi theo rules đang hoạt động.');
+            summary.hide();
         }
         if (xmlDisplaySettings.show_valid && selected.validFields.length) {
             validSummary.show();
             $('<strong>')
                 .addClass('validation-valid-title')
-                .text('Có ' + selected.validFields.length + ' lượt kiểm tra hợp lệ:')
+                .text('Có ' + selected.validFields.length + ' lượt kiểm tra hợp lệ')
                 .appendTo(validSummary);
-            var validList = $('<ul>').addClass('validation-valid-list').appendTo(validSummary);
-            selected.validFields.forEach(function (item) {
-                $('<li>')
-                    .text(item.display_name + ' (' + item.field_name + ', ' + item.rule_type + ')')
-                    .appendTo(validList);
-            });
         }
         appendJsonNode(
             tree,
