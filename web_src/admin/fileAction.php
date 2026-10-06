@@ -109,7 +109,8 @@ class fileAction
                     $failedFile['absolute_path'],
                     dirname($failedFile['absolute_path']),
                     $result['validation'],
-                    true
+                    true,
+                    $result['name']
                 );
                 $canonicalPath = !empty($organized) ? $organized[0] : $failedFile['absolute_path'];
                 $canonicalRelative = str_replace('\\', '/', substr($canonicalPath, strlen(dirname(__DIR__, 2)) + 1));
@@ -173,7 +174,8 @@ class fileAction
                         $absoluteNewPath,
                         dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . 'failed',
                         $validation,
-                        true
+                        true,
+                        $file['ten']
                     );
                     if (!empty($organized)) {
                         $newPath = str_replace('\\', '/', substr($organized[0], strlen(dirname(__DIR__, 2)) + 1));
@@ -336,7 +338,8 @@ class fileAction
                 $absoluteFinalPath,
                 dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . 'failed',
                 $validation,
-                true
+                true,
+                $file['ten']
             );
             if (!empty($organized)) {
                 $newPath = str_replace('\\', '/', substr($organized[0], strlen(dirname(__DIR__, 2)) + 1));

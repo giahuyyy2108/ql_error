@@ -172,8 +172,11 @@ class TableLookupService
         $statement->store_result();
         $exists = $statement->num_rows > 0;
         $statement->close();
-        if ($cacheKey !== false) {
-            $this->existsCache[$cacheKey] = $exists;
+        // Positive lookups are stable enough to cache during a worker run.
+        // Do not cache misses because reference tables can be updated while
+        // the long-running XML watcher is still active.
+        if ($cacheKey !== false && $exists) {
+            $this->existsCache[$cacheKey] = true;
         }
         return $exists;
     }

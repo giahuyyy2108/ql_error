@@ -292,7 +292,8 @@
                 className: 'text-center',
                 render: function (data, type, row) {
                     var name = escapeHtml(row.name);
-                    return '<button type="button" class="btn btn-sm btn-info btn-view-file" data-id="' + row.id + '" data-name="' + name + '" title="Xem">' +
+                    var malk = escapeHtml(row.ma_lk);
+                    return '<button type="button" class="btn btn-sm btn-info btn-view-file" data-id="' + row.id + '" data-malk="' + malk + '" title="Xem">' +
                         '<i class="fa fa-eye"></i> Xem</button> ' +
                         '<button type="button" class="btn btn-sm btn-danger btn-delete-file" data-id="' + row.id + '" data-name="' + name + '" title="Xóa">' +
                         '<i class="fa fa-trash"></i> Xóa</button>';
@@ -447,7 +448,7 @@
 
     $('#datatable-file').on('click', '.btn-view-file', function () {
         var id = $(this).attr('data-id');
-        var name = $(this).attr('data-name');
+        var name = $(this).attr('data-malk');
         $('#view-file-name').text(name);
         $('#decoded-file-select').empty().prop('disabled', true);
         $('#validation-summary').hide().empty();

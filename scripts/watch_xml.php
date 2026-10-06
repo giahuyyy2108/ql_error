@@ -265,7 +265,8 @@ $process = function ($path) use (
                 $finalPath,
                 $failedDir,
                 $result['validation'],
-                true
+                true,
+                $result['name']
             );
             if (!empty($organizedPaths)) {
                 $normalizedOrganizedPath = str_replace('\\', '/', $organizedPaths[0]);
@@ -361,7 +362,13 @@ $revalidatePending = function () use (
                     'Validation failed with ' . $errorCount . ' error(s).' . PHP_EOL,
                     LOCK_EX
                 );
-                $organizedPaths = XmlErrorArchiveOrganizer::organize($finalPath, $failedDir, $validation, true);
+                $organizedPaths = XmlErrorArchiveOrganizer::organize(
+                    $finalPath,
+                    $failedDir,
+                    $validation,
+                    true,
+                    $file['ten']
+                );
                 if (!empty($organizedPaths)) $finalPath = $organizedPaths[0];
             } else {
                 if (is_file($oldErrorPath)) @unlink($oldErrorPath);

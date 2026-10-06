@@ -2,13 +2,14 @@
 
 class XmlErrorArchiveOrganizer
 {
-    public static function organize($sourcePath, $failedDirectory, array $validation, $moveSource = false)
+    public static function organize($sourcePath, $failedDirectory, array $validation, $moveSource = false, $originalName = null)
     {
         if (!is_file($sourcePath)) {
             throw new RuntimeException('Không tìm thấy file XML lỗi để phân loại.');
         }
 
-        $originalName = basename($sourcePath);
+        $originalName = is_string($originalName) && $originalName !== ''
+            ? basename($originalName) : basename($sourcePath);
         $groups = self::groupErrors($validation);
         self::removePreviousCopies($failedDirectory, $originalName, $sourcePath);
 
@@ -95,7 +96,7 @@ class XmlErrorArchiveOrganizer
         $value = preg_replace('/[^A-Za-z0-9]+/', '_', $value);
         $value = trim($value, '_');
         if ($value === '') $value = $fallback;
-        return substr($value, 0, 80);
+        return substr($value, 0, 32);
     }
 
     private static function removePreviousCopies($failedDirectory, $originalName, $sourcePath)
