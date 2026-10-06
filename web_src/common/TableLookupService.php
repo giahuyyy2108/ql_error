@@ -4,6 +4,7 @@ class TableLookupService
 {
     private $connection;
     private $existsCache = array();
+    private static $databaseSources = null;
 
     private static $allowedSources = array(
         'icd10' => array(
@@ -45,6 +46,11 @@ class TableLookupService
             'table' => 'doituong_kcb',
             'columns' => array('ma'),
             'conditions' => array('is_active')
+        ),
+        'tan_duoc' => array(
+            'table' => 'tan_duoc',
+            'columns' => array('ma_hoat_chat', 'sdk_gpnk', 'sdk_chuan_hoa'),
+            'conditions' => array('is_active', 'nhom_tieu_chi', 'goi_thau', 'tinh_thanh')
         )
     );
 
@@ -64,11 +70,12 @@ class TableLookupService
         if ($tableKey === '' || $column === '') {
             throw new RuntimeException('TABLE_EXISTS cần có table và column.');
         }
-        if (!isset(self::$allowedSources[$tableKey])) {
+        $allowedSources = self::getAllowedSources();
+        if (!isset($allowedSources[$tableKey])) {
             throw new RuntimeException('Bảng ' . $tableKey . ' không được phép dùng trong TABLE_EXISTS.');
         }
 
-        $source = self::$allowedSources[$tableKey];
+        $source = $allowedSources[$tableKey];
         if (!in_array($column, $source['columns'], true)) {
             throw new RuntimeException('Cột ' . $column . ' không được phép đối chiếu trong bảng ' . $source['table'] . '.');
         }
@@ -93,6 +100,40 @@ class TableLookupService
             'column' => $column,
             'conditions' => $conditions
         );
+    }
+
+    private static function getAllowedSources()
+    {
+        if (self::$databaseSources !== null) return self::$databaseSources;
+        global $connect;
+        if (!($connect instanceof mysqli)) return self::$allowedSources;
+
+        $exists = $connect->query("SHOW TABLES LIKE 'table_lookup_sources'");
+        if (!$exists || $exists->num_rows === 0) {
+            if ($exists) $exists->free();
+            return self::$allowedSources;
+        }
+        $exists->free();
+
+        $result = $connect->query(
+            'SELECT source_key, table_name, allowed_columns, condition_columns
+             FROM table_lookup_sources WHERE is_active=1'
+        );
+        if (!$result) return self::$allowedSources;
+        $sources = array();
+        while ($row = $result->fetch_assoc()) {
+            $columns = json_decode($row['allowed_columns'], true);
+            $conditions = json_decode($row['condition_columns'], true);
+            if (!is_array($columns) || !$columns) continue;
+            $sources[strtolower($row['source_key'])] = array(
+                'table' => $row['table_name'],
+                'columns' => array_values($columns),
+                'conditions' => is_array($conditions) ? array_values($conditions) : array()
+            );
+        }
+        $result->free();
+        self::$databaseSources = $sources;
+        return self::$databaseSources;
     }
 
     public function exists($value, array $config)
