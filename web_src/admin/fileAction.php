@@ -9,6 +9,7 @@ require_once __DIR__ . '/../bean/XmlValidationRulePeer.php';
 require_once __DIR__ . '/../bean/ApiValidationConfigPeer.php';
 require_once __DIR__ . '/../common/ApiValidationService.php';
 require_once __DIR__ . '/../common/TableLookupService.php';
+require_once __DIR__ . '/../common/XmlErrorArchiveOrganizer.php';
 require_once __DIR__ . '/../bean/HeThongPeer.php';
 
 class fileAction
@@ -104,8 +105,16 @@ class fileAction
                     $storedFile['absolute_path'],
                     'File không đạt validation.'
                 );
-                $this->filePeer->updateStorageLocation($result['id'], $failedFile['relative_path'], 'failed');
-                $this->archiveReplacedFile($result, $failedFile['absolute_path']);
+                $organized = XmlErrorArchiveOrganizer::organize(
+                    $failedFile['absolute_path'],
+                    dirname($failedFile['absolute_path']),
+                    $result['validation'],
+                    true
+                );
+                $canonicalPath = !empty($organized) ? $organized[0] : $failedFile['absolute_path'];
+                $canonicalRelative = str_replace('\\', '/', substr($canonicalPath, strlen(dirname(__DIR__, 2)) + 1));
+                $this->filePeer->updateStorageLocation($result['id'], $canonicalRelative, 'failed');
+                $this->archiveReplacedFile($result, $canonicalPath);
                 return $this->json(array(
                     'success' => false,
                     'message' => 'File đã được lưu vào thư mục failed vì không đạt validation.'
@@ -158,6 +167,18 @@ class fileAction
             $newStatus = $this->validationHasErrors($validation) ? 'failed' : 'processed';
             if ($newStatus !== $file['processing_status']) {
                 $newPath = $this->moveValidatedFile($storedPath, $newStatus, $validation);
+                if ($newStatus === 'failed') {
+                    $absoluteNewPath = $this->resolveStoredFilePath($newPath);
+                    $organized = XmlErrorArchiveOrganizer::organize(
+                        $absoluteNewPath,
+                        dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . 'failed',
+                        $validation,
+                        true
+                    );
+                    if (!empty($organized)) {
+                        $newPath = str_replace('\\', '/', substr($organized[0], strlen(dirname(__DIR__, 2)) + 1));
+                    }
+                }
                 $this->filePeer->updateStorageLocation($id, $newPath, $newStatus);
             }
         } catch (RuntimeException $exception) {
@@ -309,6 +330,18 @@ class fileAction
         }
 
         $this->filePeer->updateValidationResult($file['id'], $validation);
+        if ($newStatus === 'failed') {
+            $absoluteFinalPath = $this->resolveStoredFilePath($newPath);
+            $organized = XmlErrorArchiveOrganizer::organize(
+                $absoluteFinalPath,
+                dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . 'failed',
+                $validation,
+                true
+            );
+            if (!empty($organized)) {
+                $newPath = str_replace('\\', '/', substr($organized[0], strlen(dirname(__DIR__, 2)) + 1));
+            }
+        }
         $this->filePeer->updateStorageLocation($file['id'], $newPath, $newStatus);
     }
 

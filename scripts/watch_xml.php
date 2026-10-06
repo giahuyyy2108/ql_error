@@ -80,6 +80,7 @@ require $projectRoot . '/web_src/bean/XmlValidationRulePeer.php';
 require $projectRoot . '/web_src/bean/ApiValidationConfigPeer.php';
 require $projectRoot . '/web_src/common/ApiValidationService.php';
 require $projectRoot . '/web_src/common/TableLookupService.php';
+require $projectRoot . '/web_src/common/XmlErrorArchiveOrganizer.php';
 
 $filePeer = null;
 $validationCallback = null;
@@ -260,6 +261,18 @@ $process = function ($path) use (
                 'Validation failed with ' . $errorCount . ' error(s).' . PHP_EOL,
                 LOCK_EX
             );
+            $organizedPaths = XmlErrorArchiveOrganizer::organize(
+                $finalPath,
+                $failedDir,
+                $result['validation'],
+                true
+            );
+            if (!empty($organizedPaths)) {
+                $normalizedOrganizedPath = str_replace('\\', '/', $organizedPaths[0]);
+                $organizedStoredPath = strpos($normalizedOrganizedPath, $normalizedRoot) === 0
+                    ? substr($normalizedOrganizedPath, strlen($normalizedRoot)) : $normalizedOrganizedPath;
+                $filePeer->updateStorageLocation($result['id'], $organizedStoredPath, 'failed');
+            }
             $log('File không đạt validation (' . $errorCount . ' lỗi): ' . $result['name']);
             return;
         }
@@ -348,6 +361,8 @@ $revalidatePending = function () use (
                     'Validation failed with ' . $errorCount . ' error(s).' . PHP_EOL,
                     LOCK_EX
                 );
+                $organizedPaths = XmlErrorArchiveOrganizer::organize($finalPath, $failedDir, $validation, true);
+                if (!empty($organizedPaths)) $finalPath = $organizedPaths[0];
             } else {
                 if (is_file($oldErrorPath)) @unlink($oldErrorPath);
                 if ($newErrorPath !== $oldErrorPath && is_file($newErrorPath)) @unlink($newErrorPath);

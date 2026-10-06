@@ -6,6 +6,15 @@ Thư mục nhận file mặc định là `storage/xml`. Khi một file `.xml` đ
 - XML không hợp lệ, có lỗi validation hoặc xử lý thất bại: `storage/xml/failed`
 - Chi tiết lỗi: file `.error.txt` nằm cạnh XML lỗi
 
+Mỗi file lỗi được chuyển vào một thư mục riêng trong `storage/xml/failed` theo mẫu. Nếu file có nhiều loại lỗi, file chính nằm ở nhóm lỗi đầu tiên và các nhóm còn lại nhận một bản sao:
+
+```text
+PASS<số lỗi>_<tên file XML>_<tên lỗi>/
+└── PASS<số lỗi>_<tên file XML>_<tên lỗi>_<tên file gốc>.xml
+```
+
+Ví dụ: `PASS2_XML2_Ma_hoat_chat/PASS2_XML2_Ma_hoat_chat_hoso.xml`.
+
 Chạy worker liên tục trên Windows/XAMPP:
 
 ```powershell
