@@ -86,6 +86,9 @@
                 <div id="decoded-json-tree" class="json-tree"></div>
             </div>
             <div class="modal-footer">
+                <a id="btn-download-view-file" class="btn btn-success" href="#">
+                    <i class="fa fa-download"></i> Tải file XML
+                </a>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
             </div>
         </div>
@@ -112,15 +115,51 @@
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+    #modal-view-xml .modal-dialog {
+        height: calc(100vh - 40px);
+        margin-top: 20px;
+        margin-bottom: 20px;
+    }
+    #modal-view-xml .modal-content {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        overflow: hidden;
+    }
+    #modal-view-xml .modal-header,
+    #modal-view-xml .modal-footer {
+        flex: 0 0 auto;
+        background: #fff;
+        z-index: 2;
+    }
+    #modal-view-xml .modal-header {
+        border-bottom: 1px solid #e5e5e5;
+    }
+    #modal-view-xml .modal-footer {
+        border-top: 1px solid #e5e5e5;
+    }
+    #modal-view-xml .modal-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
     .json-tree {
-        max-height: 60vh;
-        overflow: auto;
+        max-height: none;
+        overflow-x: auto;
+        overflow-y: visible;
         padding: 12px;
         border: 1px solid #d8d8d8;
         border-radius: 4px;
         background: #f7f7f7;
         font-family: Consolas, Monaco, monospace;
         font-size: 13px;
+    }
+    @media (max-width: 767px) {
+        #modal-view-xml .modal-dialog {
+            height: calc(100vh - 20px);
+            margin: 10px;
+        }
     }
     .json-tree details {
         margin-left: 18px;

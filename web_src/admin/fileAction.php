@@ -196,6 +196,43 @@ class fileAction
         ));
     }
 
+    public function download()
+    {
+        $id = (int) $this->request->getParameter('id', false);
+        if ($id <= 0) {
+            http_response_code(400);
+            echo 'Mã file không hợp lệ.';
+            return null;
+        }
+
+        try {
+            $file = $this->filePeer->getById($id);
+            if ($file === false) throw new RuntimeException('File không tồn tại.');
+            $storedPath = $this->resolveStoredFilePath($file['file_path']);
+        } catch (RuntimeException $exception) {
+            http_response_code(404);
+            echo $exception->getMessage();
+            return null;
+        }
+
+        $downloadName = basename((string) $file['ten']);
+        if ($downloadName === '' || strtolower(pathinfo($downloadName, PATHINFO_EXTENSION)) !== 'xml') {
+            $downloadName = 'file-' . $id . '.xml';
+        }
+        $asciiName = preg_replace('/[^A-Za-z0-9_.()-]/', '_', $downloadName);
+        if ($asciiName === '') $asciiName = 'file-' . $id . '.xml';
+
+        while (ob_get_level() > 0) ob_end_clean();
+        header('Content-Type: application/xml; charset=utf-8');
+        header('Content-Length: ' . filesize($storedPath));
+        header('Content-Disposition: attachment; filename="' . $asciiName
+            . '"; filename*=UTF-8\'\'' . rawurlencode($downloadName));
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, no-store, max-age=0');
+        readfile($storedPath);
+        exit;
+    }
+
     public function delete()
     {
         if (!$this->validCsrf()) {

@@ -450,6 +450,7 @@
         var id = $(this).attr('data-id');
         var name = $(this).attr('data-malk');
         $('#view-file-name').text(name);
+        $('#btn-download-view-file').attr('href', baseUrl + 'file/download/?id=' + Number(id));
         $('#decoded-file-select').empty().prop('disabled', true);
         $('#validation-summary').hide().empty();
         $('#validation-valid-summary').hide().empty();
