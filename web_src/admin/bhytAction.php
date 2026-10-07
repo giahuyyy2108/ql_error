@@ -77,11 +77,15 @@ class bhytAction
 
     private function readItem()
     {
+        $dien = $this->request->getParameter('dien', false);
+        if (!is_array($dien)) $dien = $dien === '' ? array() : array($dien);
+        $dien = array_values(array_unique(array_map('intval', $dien)));
+        sort($dien);
         $item = array(
             'id' => strtoupper(trim($this->request->getParameter('id', false))),
             'ten' => trim($this->request->getParameter('ten', false)),
             'mota' => trim($this->request->getParameter('mota', false)),
-            'dien' => (int) $this->request->getParameter('dien', false)
+            'dien' => $dien
         );
         if (!preg_match('/^[A-Z0-9]{2,10}$/', $item['id'])) {
             throw new RuntimeException('Mã nhóm phải gồm 2–10 chữ in hoa hoặc chữ số.');
@@ -89,7 +93,8 @@ class bhytAction
         if ($item['ten'] === '' || $item['mota'] === '') {
             throw new RuntimeException('Vui lòng nhập tên và mô tả nhóm BHYT.');
         }
-        if (strlen($item['ten']) > 255 || !in_array($item['dien'], array(1, 2, 3, 4, 5), true)) {
+        if (strlen($item['ten']) > 255 || count($item['dien']) < 1 || count($item['dien']) > 2
+            || array_diff($item['dien'], array(1, 2, 3, 4, 5))) {
             throw new RuntimeException('Tên hoặc diện BHYT không hợp lệ.');
         }
         return $item;
@@ -107,4 +112,3 @@ class bhytAction
         return $this->request->json_response(json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 }
-

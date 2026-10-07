@@ -145,15 +145,21 @@ class TableLookupService
             return $this->existsCache[$cacheKey];
         }
 
-        $sql = 'SELECT 1 FROM `' . $config['table'] . '` WHERE `' . $config['column'] . '` = ?';
+        $bhytDien = $config['table'] === 'nhom_BHYT' && array_key_exists('dien', $config['conditions']);
+        $sql = 'SELECT 1 FROM `' . $config['table'] . '`';
+        if ($bhytDien) {
+            $sql .= ' INNER JOIN `nhom_BHYT_dien` ON `nhom_BHYT_dien`.`ma_bhyt` = `nhom_BHYT`.`id`';
+        }
+        $sql .= ' WHERE `' . $config['table'] . '`.`' . $config['column'] . '` = ?';
         $parameters = array($normalizedValue);
 
         foreach ($config['conditions'] as $column => $conditionValue) {
+            $conditionTable = $bhytDien && $column === 'dien' ? 'nhom_BHYT_dien' : $config['table'];
             if ($conditionValue === null) {
-                $sql .= ' AND `' . $column . '` IS NULL';
+                $sql .= ' AND `' . $conditionTable . '`.`' . $column . '` IS NULL';
                 continue;
             }
-            $sql .= ' AND `' . $column . '` = ?';
+            $sql .= ' AND `' . $conditionTable . '`.`' . $column . '` = ?';
             $parameters[] = (string) $conditionValue;
         }
         $sql .= ' LIMIT 1';

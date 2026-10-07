@@ -2,12 +2,20 @@ CREATE TABLE IF NOT EXISTS `nhom_BHYT` (
     `id` VARCHAR(10) NOT NULL,
     `ten` VARCHAR(255) NOT NULL,
     `mota` TEXT NOT NULL,
-    `dien` TINYINT UNSIGNED NOT NULL,
-    PRIMARY KEY (`id`),
-    KEY `idx_nhom_bhyt_dien` (`dien`)
+    PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-INSERT INTO `nhom_BHYT` (`id`, `ten`, `mota`, `dien`) VALUES
+DROP TEMPORARY TABLE IF EXISTS `tmp_nhom_BHYT_seed`;
+
+CREATE TEMPORARY TABLE `tmp_nhom_BHYT_seed` (
+    `id` VARCHAR(10) NOT NULL,
+    `ten` VARCHAR(255) NOT NULL,
+    `mota` TEXT NOT NULL,
+    `dien` TINYINT UNSIGNED NOT NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+INSERT INTO `tmp_nhom_BHYT_seed` (`id`, `ten`, `mota`, `dien`) VALUES
 (
     'DN',
     'Người lao động tại doanh nghiệp',
@@ -90,3 +98,25 @@ ON DUPLICATE KEY UPDATE
     `ten` = VALUES(`ten`),
     `mota` = VALUES(`mota`),
     `dien` = VALUES(`dien`);
+
+INSERT INTO `nhom_BHYT` (`id`, `ten`, `mota`)
+SELECT `id`, `ten`, `mota` FROM `tmp_nhom_BHYT_seed`
+ON DUPLICATE KEY UPDATE
+    `ten` = VALUES(`ten`),
+    `mota` = VALUES(`mota`);
+
+CREATE TABLE IF NOT EXISTS `nhom_BHYT_dien` (
+    `ma_bhyt` VARCHAR(10) NOT NULL,
+    `dien` TINYINT UNSIGNED NOT NULL,
+    PRIMARY KEY (`ma_bhyt`, `dien`),
+    KEY `idx_nhom_bhyt_dien_dien` (`dien`),
+    CONSTRAINT `fk_nhom_bhyt_dien_bhyt`
+        FOREIGN KEY (`ma_bhyt`) REFERENCES `nhom_BHYT` (`id`)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT `chk_nhom_bhyt_dien_value` CHECK (`dien` BETWEEN 1 AND 5)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+INSERT IGNORE INTO `nhom_BHYT_dien` (`ma_bhyt`, `dien`)
+SELECT `id`, `dien` FROM `tmp_nhom_BHYT_seed`;
+
+DROP TEMPORARY TABLE `tmp_nhom_BHYT_seed`;

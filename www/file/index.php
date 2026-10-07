@@ -86,7 +86,7 @@
                 <div id="decoded-json-tree" class="json-tree"></div>
             </div>
             <div class="modal-footer">
-                <a id="btn-download-view-file" class="btn btn-success" href="#">
+                <a id="btn-download-view-file" class="btn btn-success" href="#" download rel="noopener">
                     <i class="fa fa-download"></i> Tải file XML
                 </a>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
