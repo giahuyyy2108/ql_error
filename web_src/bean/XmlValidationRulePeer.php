@@ -33,6 +33,26 @@ class XmlValidationRulePeer
         return $rules;
     }
 
+    public function getById($id)
+    {
+        $statement = $this->connection->prepare(
+            'SELECT id, file_type, field_name, display_name, rule_type, rule_value, error_message, is_active
+             FROM xml_validation_rules WHERE id = ? LIMIT 1'
+        );
+        if (!$statement) throw new RuntimeException('Không thể tải thông tin rule.');
+        $id = (int) $id;
+        $statement->bind_param('i', $id);
+        $statement->execute();
+        $result = $statement->get_result();
+        $rule = $result ? $result->fetch_assoc() : null;
+        $statement->close();
+        if ($rule) {
+            $rule['id'] = (int) $rule['id'];
+            $rule['is_active'] = (int) $rule['is_active'];
+        }
+        return $rule ?: false;
+    }
+
     public function getSupportedRuleTypes()
     {
         $sql = 'SELECT id, code, display_name, description, value_hint, requires_value

@@ -102,8 +102,69 @@ $buildImportService = function () use (&$filePeer, &$validationCallback) {
 $importService = $buildImportService();
 $observed = array();
 
-$log = function ($message) {
-    echo '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
+$workerLogPath = $inboxDir . DIRECTORY_SEPARATOR . 'watcher.log';
+$workerErrorLogPath = $inboxDir . DIRECTORY_SEPARATOR . 'watcher.error.log';
+$log = function ($message, $level = 'INFO') use ($workerLogPath, $workerErrorLogPath) {
+    $level = strtoupper((string) $level);
+    $line = '[' . date('Y-m-d H:i:s') . '] [' . $level . '] ' . $message . PHP_EOL;
+    echo $line;
+    file_put_contents($workerLogPath, $line, FILE_APPEND | LOCK_EX);
+    if ($level === 'ERROR') {
+        file_put_contents($workerErrorLogPath, $line, FILE_APPEND | LOCK_EX);
+    }
+};
+
+$logValidationErrors = function ($fileName, array $validation) use ($log) {
+    $groups = array();
+    foreach ($validation as $validationItem) {
+        $fileType = isset($validationItem['file_type']) ? (string) $validationItem['file_type'] : 'XML';
+        $errors = isset($validationItem['errors']) && is_array($validationItem['errors'])
+            ? $validationItem['errors'] : array();
+        foreach ($errors as $error) {
+            if (isset($error['severity']) && $error['severity'] === 'warning') continue;
+            $ruleId = isset($error['rule_id']) ? (string) $error['rule_id'] : '-';
+            $ruleType = isset($error['rule_type']) ? (string) $error['rule_type'] : 'UNKNOWN';
+            $ruleValue = isset($error['rule_value']) ? (string) $error['rule_value'] : '';
+            $fieldName = isset($error['field_name']) ? (string) $error['field_name'] : '';
+            $message = isset($error['message']) ? (string) $error['message'] : 'Lỗi validation';
+            $key = $fileType . "\0" . $ruleId . "\0" . $ruleType . "\0" . $ruleValue
+                . "\0" . $fieldName . "\0" . $message;
+            if (!isset($groups[$key])) {
+                $groups[$key] = array(
+                    'file_type' => $fileType,
+                    'rule_id' => $ruleId,
+                    'rule_type' => $ruleType,
+                    'rule_value' => $ruleValue,
+                    'field_name' => $fieldName,
+                    'message' => $message,
+                    'count' => 0,
+                    'values' => array()
+                );
+            }
+            $groups[$key]['count']++;
+            if (array_key_exists('value', $error) && $error['value'] !== null
+                && count($groups[$key]['values']) < 3) {
+                $actualValue = preg_replace('/\s+/', ' ', (string) $error['value']);
+                if (!in_array($actualValue, $groups[$key]['values'], true)) {
+                    $groups[$key]['values'][] = $actualValue;
+                }
+            }
+        }
+    }
+    foreach ($groups as $group) {
+        $log(
+            'VALIDATION file=' . $fileName
+            . ' xml=' . $group['file_type']
+            . ' rule_id=' . $group['rule_id']
+            . ' ma_loi=' . $group['rule_type']
+            . ' rule_value=' . ($group['rule_value'] !== '' ? $group['rule_value'] : '(trống)')
+            . ' truong=' . ($group['field_name'] !== '' ? $group['field_name'] : '-')
+            . ' so_lan=' . $group['count']
+            . ' values=' . (!empty($group['values']) ? implode(' | ', $group['values']) : '(trống)')
+            . ' noi_dung=' . preg_replace('/\s+/', ' ', $group['message']),
+            'WARNING'
+        );
+    }
 };
 
 $lastCleanup = 0;
@@ -183,6 +244,7 @@ $process = function ($path) use (
     $uniqueDestination,
     $archive,
     $log,
+    $logValidationErrors,
     $resetDatabase
 ) {
     $processedPath = $uniqueDestination($processedDir, basename($path));
@@ -198,13 +260,13 @@ $process = function ($path) use (
             $failedPath = $archive($path, $failedDir);
             file_put_contents($failedPath . '.error.txt', $exception->getMessage() . PHP_EOL, LOCK_EX);
         } catch (Throwable $archiveException) {
-            $log('Không thể lưu file lỗi ' . basename($path) . ': ' . $archiveException->getMessage());
+            $log('Không thể lưu file lỗi ' . basename($path) . ': ' . $archiveException->getMessage(), 'ERROR');
         }
-        $log('File lỗi ' . basename($path) . ': ' . $exception->getMessage());
+        $log('File lỗi ' . basename($path) . ': ' . $exception->getMessage(), 'ERROR');
         try {
             $resetDatabase();
         } catch (Throwable $resetException) {
-            $log('Không thể kết nối lại database: ' . $resetException->getMessage());
+            $log('Không thể kết nối lại database: ' . $resetException->getMessage(), 'ERROR');
         }
         return;
     }
@@ -274,7 +336,8 @@ $process = function ($path) use (
                     ? substr($normalizedOrganizedPath, strlen($normalizedRoot)) : $normalizedOrganizedPath;
                 $filePeer->updateStorageLocation($result['id'], $organizedStoredPath, 'failed');
             }
-            $log('File không đạt validation (' . $errorCount . ' lỗi): ' . $result['name']);
+            $log('File không đạt validation (' . $errorCount . ' lỗi): ' . $result['name'], 'WARNING');
+            $logValidationErrors($result['name'], $result['validation']);
             return;
         }
         $staleErrorPath = $failedDir . DIRECTORY_SEPARATOR . $result['name'] . '.error.txt';
@@ -289,7 +352,7 @@ $process = function ($path) use (
     } catch (Throwable $exception) {
         // Keep the imported file in processing. On restart it is detected as a
         // duplicate and archiving is retried without inserting another record.
-        $log('Đã nhập dữ liệu nhưng chưa thể lưu trữ file ' . basename($path) . ': ' . $exception->getMessage());
+        $log('Đã nhập dữ liệu nhưng chưa thể lưu trữ file ' . basename($path) . ': ' . $exception->getMessage(), 'ERROR');
     }
 };
 
@@ -302,12 +365,13 @@ $revalidatePending = function () use (
     $failedDir,
     $uniqueDestination,
     $log,
+    $logValidationErrors,
     $resetDatabase
 ) {
     try {
         $pendingFiles = $filePeer->claimPendingRevalidation(2);
     } catch (Throwable $exception) {
-        $log('Không thể đọc hàng đợi quét lại: ' . $exception->getMessage());
+        $log('Không thể đọc hàng đợi quét lại: ' . $exception->getMessage(), 'ERROR');
         try {
             $resetDatabase();
         } catch (Throwable $ignored) {
@@ -382,12 +446,13 @@ $revalidatePending = function () use (
             $filePeer->updateValidationResult($file['id'], $validation);
             $filePeer->updateStorageLocation($file['id'], $finalStoredPath, $newStatus);
             $log('Đã quét lại ' . $file['ten'] . ': ' . $newStatus . ' (' . $errorCount . ' lỗi).');
+            if ($errorCount > 0) $logValidationErrors($file['ten'], $validation);
         } catch (Throwable $exception) {
             try {
                 $filePeer->updateStorageLocation($file['id'], $currentStoredPath, 'failed');
             } catch (Throwable $ignored) {
             }
-            $log('Quét lại thất bại ' . $file['ten'] . ': ' . $exception->getMessage());
+            $log('Quét lại thất bại ' . $file['ten'] . ': ' . $exception->getMessage(), 'ERROR');
             try {
                 $resetDatabase();
             } catch (Throwable $ignored) {

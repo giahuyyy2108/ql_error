@@ -28,13 +28,21 @@ class LogPeer
 
 	function save($_log)
 	{
-		$sql = "INSERT INTO `log` (`ngay`,`ten`,`chucnang`,`noidung`,`noidungcu`) 
-				VALUES ('" . $_log->get("ngay") . "','" . $_log->get("ten") . "','" . $_log->get("chucnang") . "','" . $_log->get("noidung") . "',
-				'" . $_log->get("noidungcu") . "')";
-
-		$this->dbsql->query($sql);
-
-		return ($this->dbsql->insert_id() == 0) ? $_log->get("logID") : $this->dbsql->insert_id();
+		global $connect;
+		$statement = $connect->prepare(
+			"INSERT INTO `log` (`ngay`,`ten`,`chucnang`,`noidung`,`noidungcu`) VALUES (?, ?, ?, ?, ?)"
+		);
+		if (!$statement) throw new RuntimeException('Không thể chuẩn bị dữ liệu log.');
+		$ngay = $_log->get("ngay");
+		$ten = $_log->get("ten");
+		$chucnang = $_log->get("chucnang");
+		$noidung = $_log->get("noidung");
+		$noidungcu = $_log->get("noidungcu");
+		$statement->bind_param('sssss', $ngay, $ten, $chucnang, $noidung, $noidungcu);
+		$statement->execute();
+		$id = $statement->insert_id;
+		$statement->close();
+		return $id == 0 ? $_log->get("logID") : $id;
 	}
 
 	function ghiLog($_log)

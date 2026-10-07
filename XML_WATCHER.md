@@ -46,3 +46,9 @@ Nếu `MA_LK` đã tồn tại, file mới không bị bỏ qua: hệ thống qu
 Nút **Quét lại tất cả** đưa các bản ghi vào trạng thái `pending_revalidation` rồi tự xử lý từng lô 2 file ngay từ giao diện. Worker nền cũng có thể nhận cùng hàng đợi; mỗi lô được khóa nhận việc để hai tiến trình không quét trùng một file.
 
 File bị người dùng xóa được chuyển vào `storage/xml/deleted`, giữ 30 ngày rồi worker mới xóa vĩnh viễn.
+
+## Log worker
+
+- Nhật ký hoạt động: `storage/xml/watcher.log`
+- Lỗi hệ thống: `storage/xml/watcher.error.log`
+- Lỗi validation ghi kèm tên file, loại XML, mã lỗi (`rule_type`), trường dữ liệu, số lần và nội dung lỗi.

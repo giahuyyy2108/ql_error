@@ -2,6 +2,7 @@
 
 require_once 'web_src/bean/XmlValidationRulePeer.php';
 require_once 'web_src/common/TableLookupService.php';
+require_once 'web_src/bean/LogPeer.php';
 
 class rulesAction
 {
@@ -59,6 +60,8 @@ class rulesAction
         try {
             $rule = $this->readRule();
             $id = $this->rulePeer->insert($rule);
+            $rule['id'] = $id;
+            $this->writeRuleLog('Thêm rule', $rule, false);
             return $this->json(array('success' => true, 'id' => $id, 'message' => 'Thêm rule thành công.'));
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
@@ -76,7 +79,14 @@ class rulesAction
         }
 
         try {
-            $this->rulePeer->update($id, $this->readRule());
+            $oldRule = $this->rulePeer->getById($id);
+            if ($oldRule === false) {
+                return $this->json(array('success' => false, 'message' => 'Rule không tồn tại.'));
+            }
+            $newRule = $this->readRule();
+            $this->rulePeer->update($id, $newRule);
+            $newRule['id'] = $id;
+            $this->writeRuleLog('Cập nhật rule', $newRule, $oldRule);
             return $this->json(array('success' => true, 'message' => 'Cập nhật rule thành công.'));
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
@@ -94,9 +104,14 @@ class rulesAction
         }
 
         try {
+            $oldRule = $this->rulePeer->getById($id);
+            if ($oldRule === false) {
+                return $this->json(array('success' => false, 'message' => 'Rule không tồn tại.'));
+            }
             if (!$this->rulePeer->delete($id)) {
                 return $this->json(array('success' => false, 'message' => 'Rule không tồn tại.'));
             }
+            $this->writeRuleLog('Xóa rule', false, $oldRule);
             return $this->json(array('success' => true, 'message' => 'Xóa rule thành công.'));
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
@@ -120,9 +135,16 @@ class rulesAction
         }
 
         try {
+            $oldRule = $this->rulePeer->getById($id);
+            if ($oldRule === false) {
+                return $this->json(array('success' => false, 'message' => 'Rule không tồn tại.'));
+            }
             if (!$this->rulePeer->updateActive($id, (int) $isActive)) {
                 return $this->json(array('success' => false, 'message' => 'Rule không tồn tại.'));
             }
+            $newRule = $oldRule;
+            $newRule['is_active'] = (int) $isActive;
+            $this->writeRuleLog((int) $isActive === 1 ? 'Bật rule' : 'Tắt rule', $newRule, $oldRule);
             return $this->json(array(
                 'success' => true,
                 'is_active' => (int) $isActive,
@@ -235,5 +257,11 @@ class rulesAction
         return $this->request->json_response(
             json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
         );
+    }
+
+    private function writeRuleLog($action, $newRule, $oldRule)
+    {
+        $logPeer = new LogPeer();
+        $logPeer->ghiLogObj($newRule, $oldRule, $action);
     }
 }

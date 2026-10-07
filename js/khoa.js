@@ -21,8 +21,10 @@
                 data.searchText = $('#khoa-search').val().trim();
             }
         },
-        pageLength: 25,
-        lengthMenu: [[10, 25, 50, 100, 200], [10, 25, 50, 100, 200]],
+        paging: false,
+        scrollY: '60vh',
+        scrollCollapse: true,
+        deferRender: true,
         searching: false,
         ordering: false,
         responsive: false,
@@ -57,17 +59,17 @@
     });
 
     $('#btn-search-khoa').on('click', function () {
-        table.ajax.reload();
+        table.ajax.reload(function () { $('#datatable-khoa_wrapper .dataTables_scrollBody').scrollTop(0); });
     });
     $('#btn-reset-khoa').on('click', function () {
         $('#khoa-search').val('');
-        table.ajax.reload();
+        table.ajax.reload(function () { $('#datatable-khoa_wrapper .dataTables_scrollBody').scrollTop(0); });
         $('#khoa-search').focus();
     });
     $('#khoa-search').on('keydown', function (event) {
         if (event.key === 'Enter' || event.which === 13) {
             event.preventDefault();
-            table.ajax.reload();
+            table.ajax.reload(function () { $('#datatable-khoa_wrapper .dataTables_scrollBody').scrollTop(0); });
         }
     });
 })(jQuery);

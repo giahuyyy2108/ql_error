@@ -54,4 +54,6 @@
         white-space:nowrap;
     }
     #datatable-khoa .khoa-status { font-size:17px; cursor:help; }
+    #datatable-khoa_wrapper .dataTables_scrollBody { border-bottom:1px solid #ddd; }
+    #datatable-khoa_wrapper .dataTables_info { padding-top:10px; }
 </style>

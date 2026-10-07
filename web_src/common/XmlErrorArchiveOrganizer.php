@@ -38,6 +38,9 @@ class XmlErrorArchiveOrganizer
             $details = array(
                 'Số lỗi: ' . $group['count'],
                 'File XML: ' . $group['file_type'],
+                'ID rule: ' . $group['rule_id'],
+                'Loại rule: ' . $group['rule_type'],
+                'Giá trị rule: ' . ($group['rule_value'] !== '' ? $group['rule_value'] : '(trống)'),
                 'Tên lỗi: ' . $group['error_name'],
                 'File gốc: ' . $originalName,
                 '',
@@ -59,18 +62,27 @@ class XmlErrorArchiveOrganizer
                 if (isset($error['severity']) && $error['severity'] === 'warning') continue;
                 $message = isset($error['message']) ? trim((string) $error['message']) : 'Lỗi kiểm tra dữ liệu';
                 $errorName = $message;
-                $key = $fileType . "\0" . $message;
+                $ruleId = isset($error['rule_id']) ? (string) $error['rule_id'] : '-';
+                $ruleType = isset($error['rule_type']) ? trim((string) $error['rule_type']) : 'UNKNOWN';
+                $ruleValue = isset($error['rule_value']) ? trim((string) $error['rule_value']) : '';
+                $key = $fileType . "\0" . $ruleId . "\0" . $ruleType . "\0" . $ruleValue . "\0" . $message;
                 if (!isset($groups[$key])) {
                     $groups[$key] = array(
                         'count' => 0,
                         'file_type' => $fileType,
+                        'rule_id' => $ruleId,
+                        'rule_type' => $ruleType,
+                        'rule_value' => $ruleValue,
                         'error_name' => $errorName,
                         'details' => array()
                     );
                 }
                 $groups[$key]['count']++;
                 $path = isset($error['path']) ? trim((string) $error['path']) : '';
-                $groups[$key]['details'][] = ($path !== '' ? $path . ': ' : '') . $message;
+                $actualValue = array_key_exists('value', $error) && $error['value'] !== null
+                    ? preg_replace('/\s+/', ' ', (string) $error['value']) : '(trống)';
+                $groups[$key]['details'][] = ($path !== '' ? $path : '(không có đường dẫn)')
+                    . ' | value=' . $actualValue . ' | ' . $message;
             }
         }
         return array_values($groups);

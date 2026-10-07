@@ -767,9 +767,11 @@ class XmlRulesValidator
     private static function makeError(array $rule, $path, $value, $severity = 'error', $message = null)
     {
         return array(
+            'rule_id' => isset($rule['id']) ? (int) $rule['id'] : null,
             'field_name' => $rule['field_name'],
             'display_name' => $rule['display_name'],
             'rule_type' => $rule['rule_type'],
+            'rule_value' => isset($rule['rule_value']) ? (string) $rule['rule_value'] : '',
             'path' => $path,
             'value' => is_scalar($value) ? (string) $value : null,
             'message' => $message !== null ? $message : $rule['error_message'],

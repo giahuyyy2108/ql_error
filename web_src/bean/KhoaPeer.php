@@ -17,7 +17,7 @@ class KhoaPeer
     public function getPage($start, $length, $search)
     {
         $start = max(0, (int) $start);
-        $length = max(10, min(200, (int) $length));
+        $length = (int) $length;
         $search = trim((string) $search);
 
         $totalResult = $this->connection->query('SELECT COUNT(*) AS total FROM khoa');
@@ -44,6 +44,7 @@ class KhoaPeer
             $filtered = $total;
         }
 
+        $limit = $length < 0 ? '' : ' LIMIT ' . $start . ', ' . max(1, $length);
         $statement = $this->connection->prepare(
             'SELECT khoa.ma, khoa.stt, khoa.ten, khoa.ghi_chu, khoa.ma_khoa_goc,
                     khoa.is_active, khoa.quyet_dinh, khoa.ngay_hieu_luc, khoa.source_url
@@ -51,8 +52,7 @@ class KhoaPeer
              LEFT JOIN khoa AS khoa_goc ON khoa_goc.ma = khoa.ma_khoa_goc' . $where . '
              ORDER BY COALESCE(khoa.stt, khoa_goc.stt) ASC,
                       CASE WHEN khoa.stt IS NULL THEN 1 ELSE 0 END ASC,
-                      khoa.ma ASC
-             LIMIT ' . $start . ', ' . $length
+                      khoa.ma ASC' . $limit
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu danh mục khoa.');
