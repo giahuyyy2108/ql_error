@@ -128,6 +128,15 @@ class XmlRulesValidator
                         continue;
                     }
 
+                    if ($ruleType === 'FORMULA') {
+                        $content = isset($file['NOIDUNGFILE']) && is_array($file['NOIDUNGFILE'])
+                            ? $file['NOIDUNGFILE'] : array();
+                        $ruleErrors = self::validateFormula($rule, $content);
+                        $errors = array_merge($errors, $ruleErrors);
+                        if (!$ruleErrors) self::appendValidMatches($validFields, $rule, $matches, array());
+                        continue;
+                    }
+
                     if (empty($matches)) {
                         if ($ruleType === 'REQUIRED') {
                             $errors[] = self::makeError($rule, $rule['field_name'], null);
@@ -410,6 +419,115 @@ class XmlRulesValidator
             default:
                 return true;
         }
+    }
+
+    private static function validateFormula(array $rule, array $content)
+    {
+        $config = json_decode($rule['rule_value'], true);
+        if (!is_array($config) || empty($config['expression'])) {
+            return array(self::makeError($rule, $rule['field_name'], null, 'error', 'Cấu hình FORMULA không hợp lệ.'));
+        }
+        $resultField = !empty($config['result_field'])
+            ? trim((string) $config['result_field']) : trim((string) $rule['field_name']);
+        $fields = array_values(array_unique(self::formulaFields($config['expression'])));
+        if ($resultField === '' || !$fields) {
+            return array(self::makeError($rule, $rule['field_name'], null, 'error', 'FORMULA thiếu trường kết quả hoặc biến đầu vào.'));
+        }
+        $tolerance = isset($config['tolerance']) ? max(0, (float) $config['tolerance']) : 0.01;
+        $round = isset($config['round']) ? max(0, min(10, (int) $config['round'])) : null;
+        $records = array();
+        self::findFormulaRecords($content, $resultField, $fields, '', $records);
+        if (!$records) {
+            return array(self::makeError($rule, $resultField, null, 'error', 'Không tìm thấy dòng dữ liệu đủ trường để kiểm tra FORMULA.'));
+        }
+
+        $errors = array();
+        foreach ($records as $item) {
+            $record = $item['record'];
+            $actualText = isset($record[$resultField]) && is_scalar($record[$resultField])
+                ? trim((string) $record[$resultField]) : '';
+            $evaluationError = null;
+            $expected = self::evaluateFormulaNode($config['expression'], $record, $evaluationError);
+            if ($evaluationError !== null || $actualText === '' || !is_numeric($actualText)) {
+                $message = $evaluationError !== null ? $evaluationError : 'Giá trị ' . $resultField . ' không phải là số.';
+                $errors[] = self::makeError($rule, $item['path'] . '.' . $resultField, $actualText, 'error', $message);
+                continue;
+            }
+            if ($round !== null) $expected = round($expected, $round);
+            $actual = (float) $actualText;
+            $difference = abs($actual - $expected);
+            if ($difference > $tolerance) {
+                $error = self::makeError($rule, $item['path'] . '.' . $resultField, $actualText);
+                $error['expected_value'] = $expected;
+                $error['difference'] = $difference;
+                $error['tolerance'] = $tolerance;
+                $errors[] = $error;
+            }
+        }
+        return $errors;
+    }
+
+    private static function formulaFields($node)
+    {
+        if (!is_array($node)) return array();
+        if (isset($node['field']) && is_scalar($node['field'])) return array(trim((string) $node['field']));
+        $fields = array();
+        $values = isset($node['values']) && is_array($node['values']) ? $node['values'] : array();
+        foreach ($values as $value) $fields = array_merge($fields, self::formulaFields($value));
+        return $fields;
+    }
+
+    private static function findFormulaRecords($data, $resultField, array $fields, $path, array &$records)
+    {
+        if (!is_array($data)) return;
+        $hasFields = array_key_exists($resultField, $data);
+        foreach ($fields as $field) {
+            if (!array_key_exists($field, $data)) { $hasFields = false; break; }
+        }
+        if ($hasFields) $records[] = array('record' => $data, 'path' => $path !== '' ? $path : 'NOIDUNGFILE');
+        foreach ($data as $key => $value) {
+            if (!is_array($value)) continue;
+            $childPath = $path === '' ? (string) $key
+                : (ctype_digit((string) $key) ? $path . '[' . $key . ']' : $path . '.' . $key);
+            self::findFormulaRecords($value, $resultField, $fields, $childPath, $records);
+        }
+    }
+
+    private static function evaluateFormulaNode($node, array $record, &$error)
+    {
+        if (is_int($node) || is_float($node) || (is_string($node) && is_numeric($node))) return (float) $node;
+        if (!is_array($node)) { $error = 'Thành phần công thức không hợp lệ.'; return 0; }
+        if (isset($node['field'])) {
+            $field = trim((string) $node['field']);
+            $value = isset($record[$field]) && is_scalar($record[$field]) ? trim((string) $record[$field]) : '';
+            if ($value === '' || !is_numeric($value)) {
+                $error = 'Trường ' . $field . ' không có giá trị số hợp lệ.';
+                return 0;
+            }
+            return (float) $value;
+        }
+        $operation = isset($node['operation']) ? strtoupper(trim((string) $node['operation'])) : '';
+        $nodes = isset($node['values']) && is_array($node['values']) ? $node['values'] : array();
+        if (!$nodes || !in_array($operation, array('ADD', 'SUM', 'SUBTRACT', 'MULTIPLY', 'DIVIDE'), true)) {
+            $error = 'Phép toán FORMULA không hợp lệ.';
+            return 0;
+        }
+        $values = array();
+        foreach ($nodes as $child) {
+            $values[] = self::evaluateFormulaNode($child, $record, $error);
+            if ($error !== null) return 0;
+        }
+        if ($operation === 'ADD' || $operation === 'SUM') return array_sum($values);
+        $result = array_shift($values);
+        foreach ($values as $value) {
+            if ($operation === 'SUBTRACT') $result -= $value;
+            elseif ($operation === 'MULTIPLY') $result *= $value;
+            elseif ($operation === 'DIVIDE') {
+                if (abs($value) < 0.000000000001) { $error = 'Không thể chia cho 0 trong FORMULA.'; return 0; }
+                $result /= $value;
+            }
+        }
+        return $result;
     }
 
     private static function validateFieldCompare(array $rule, array $matches, array $fileContexts, $currentFileIndex)

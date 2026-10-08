@@ -186,7 +186,7 @@ class rulesAction
             throw new RuntimeException('Loại rule ' . $rule['rule_type'] . ' bắt buộc phải có giá trị cấu hình.');
         }
         if (in_array($rule['rule_type'], array(
-            'FIELD_COMPARE', 'TABLE_EXISTS', 'API', 'SUBSTRING', 'CCCD_GENDER_CENTURY'
+            'FIELD_COMPARE', 'TABLE_EXISTS', 'API', 'SUBSTRING', 'CCCD_GENDER_CENTURY', 'FORMULA'
         ), true)) {
             $config = json_decode($rule['rule_value'], true);
             if (!is_array($config)) {
@@ -250,6 +250,18 @@ class rulesAction
                     if (isset($config[$valueKey]) && !is_array($config[$valueKey])) {
                         throw new RuntimeException($valueKey . ' phải là một mảng JSON.');
                     }
+                }
+            }
+            if ($rule['rule_type'] === 'FORMULA') {
+                if (empty($config['expression']) || !is_array($config['expression'])) {
+                    throw new RuntimeException('FORMULA cần có expression dạng JSON object.');
+                }
+                if (isset($config['tolerance']) && (!is_numeric($config['tolerance']) || (float) $config['tolerance'] < 0)) {
+                    throw new RuntimeException('tolerance của FORMULA phải là số không âm.');
+                }
+                if (isset($config['round']) && (!is_numeric($config['round'])
+                    || (int) $config['round'] < 0 || (int) $config['round'] > 10)) {
+                    throw new RuntimeException('round của FORMULA phải từ 0 đến 10.');
                 }
             }
         }
