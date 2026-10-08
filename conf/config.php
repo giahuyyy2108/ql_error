@@ -54,5 +54,5 @@ define('_DEFAULT_TON_MAX_', '100');
 define('_DEFAULT_MAX_DAY_', '25');
 define('_DEFAULT_MAX_LIABILITY_', '5000000');
 
-define('_DEFAULT_VERSION_JS_CSS_', '18');
+define('_DEFAULT_VERSION_JS_CSS_', '19');
 ?>

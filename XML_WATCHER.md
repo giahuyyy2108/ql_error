@@ -27,6 +27,9 @@ Quét một lần, phù hợp với Windows Task Scheduler:
 C:\xampp\php\php.exe scripts\watch_xml.php --once
 ```
 
+Worker mặc định nghỉ 1 giây giữa các vòng quét, chờ file ổn định 2 giây và nhận tối đa
+20 hồ sơ trong mỗi lô quét lại.
+
 Các tùy chọn:
 
 ```text

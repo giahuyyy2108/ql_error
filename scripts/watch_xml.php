@@ -9,8 +9,8 @@ date_default_timezone_set('Asia/Saigon');
 
 $options = array(
     'once' => false,
-    'interval' => 2,
-    'settle' => 3,
+    'interval' => 1,
+    'settle' => 2,
     'retention_days' => 30,
     'dir' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml'
 );
@@ -369,7 +369,7 @@ $revalidatePending = function () use (
     $resetDatabase
 ) {
     try {
-        $pendingFiles = $filePeer->claimPendingRevalidation(2);
+        $pendingFiles = $filePeer->claimPendingRevalidation(20);
     } catch (Throwable $exception) {
         $log('Không thể đọc hàng đợi quét lại: ' . $exception->getMessage(), 'ERROR');
         try {

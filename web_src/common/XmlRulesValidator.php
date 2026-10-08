@@ -104,6 +104,30 @@ class XmlRulesValidator
                         continue;
                     }
 
+                    if ($ruleType === 'MAX_ITEMS') {
+                        $maxItems = (int) $rule['rule_value'];
+                        if ($maxItems < 1) {
+                            $errors[] = self::makeError(
+                                $rule,
+                                $rule['field_name'],
+                                null,
+                                'error',
+                                'Cấu hình MAX_ITEMS phải là số nguyên lớn hơn 0.'
+                            );
+                        } elseif (count($matches) > $maxItems) {
+                            $values = array_map(function ($match) {
+                                return isset($match['value']) && is_scalar($match['value'])
+                                    ? (string) $match['value'] : '';
+                            }, $matches);
+                            $path = isset($matches[0]['path']) ? $matches[0]['path'] : $rule['field_name'];
+                            $error = self::makeError($rule, $path, implode(';', $values));
+                            $error['item_count'] = count($matches);
+                            $error['max_items'] = $maxItems;
+                            $errors[] = $error;
+                        }
+                        continue;
+                    }
+
                     if (empty($matches)) {
                         if ($ruleType === 'REQUIRED') {
                             $errors[] = self::makeError($rule, $rule['field_name'], null);
@@ -461,6 +485,14 @@ class XmlRulesValidator
         foreach ($matches as $match) {
             $lookupValue = $match['value'];
             $lookupConfig = $config;
+            if (isset($config['remove_suffix']) && is_scalar($config['remove_suffix'])) {
+                $suffix = (string) $config['remove_suffix'];
+                $text = is_scalar($lookupValue) ? (string) $lookupValue : '';
+                if ($suffix !== '' && strlen($text) >= strlen($suffix)
+                    && substr($text, -strlen($suffix)) === $suffix) {
+                    $lookupValue = substr($text, 0, -strlen($suffix));
+                }
+            }
             if (isset($config['value_substring']) && is_array($config['value_substring'])
                 && array_key_exists('start', $config['value_substring'])) {
                 $lookupValue = self::substringValue(

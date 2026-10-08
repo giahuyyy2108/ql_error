@@ -25,7 +25,7 @@
         <table id="datatable-file" class="table table-striped table-bordered nowrap" cellspacing="0" width="100%">
             <thead>
                 <tr>
-                    <th class="text-center"><input type="checkbox" id="select-all-files" title="Chọn tất cả trên trang"></th>
+                    <th class="text-center"><input type="checkbox" id="select-all-files" title="Chọn tất cả file"></th>
                     <th>STT</th>
                     <th>Tên file</th>
                     <th>MA_LK</th>
@@ -98,12 +98,17 @@
 <style>
     .file-table-scroll {
         width: 100%;
-        max-height: calc(100vh - 250px);
-        min-height: 260px;
-        overflow: auto;
-        -webkit-overflow-scrolling: touch;
+        overflow: visible;
     }
-    #datatable-file_wrapper { min-width: 980px; }
+    #datatable-file_wrapper { width:100%; }
+    #datatable-file_wrapper .dataTables_scrollBody {
+        min-height:260px;
+        border-bottom:1px solid #ddd;
+        overscroll-behavior:contain;
+        -webkit-overflow-scrolling:touch;
+    }
+    #datatable-file_wrapper .dataTables_scrollHead { background:#fff; }
+    #datatable-file_wrapper .dataTables_info { padding-top:10px; }
     .file-table-scroll:focus { outline: 2px solid rgba(51, 122, 183, .25); }
     #datatable-file td.file-name-cell {
         max-width: 280px;

@@ -198,6 +198,10 @@ class rulesAction
             }
             if ($rule['rule_type'] === 'TABLE_EXISTS') {
                 TableLookupService::normalizeConfig($config);
+                if (array_key_exists('remove_suffix', $config)
+                    && (!is_scalar($config['remove_suffix']) || (string) $config['remove_suffix'] === '')) {
+                    throw new RuntimeException('remove_suffix của TABLE_EXISTS phải là chuỗi khác rỗng.');
+                }
             }
             if ($rule['rule_type'] === 'API'
                 && (empty($config['api_config_id']) || !isset($config['request_mapping']))) {

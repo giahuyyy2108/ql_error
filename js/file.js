@@ -225,7 +225,11 @@
                 alert('Không thể tải danh sách file.');
             }
         },
-        pageLength: Number($('#pageLength').val()) || 25,
+        paging: false,
+        scrollY: '60vh',
+        scrollX: true,
+        scrollCollapse: true,
+        deferRender: true,
         order: [[6, 'desc']],
         responsive: false,
         autoWidth: false,
