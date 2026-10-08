@@ -24,4 +24,7 @@ VALUES
     ('tinhthanh', 'Tỉnh thành', 'tinhthanh', '["ma_cu","ma_sau_sapnhap"]', '[]', 1),
     ('ma_doituong_kcb', 'Mã đối tượng KCB', 'doituong_kcb', '["ma"]', '["is_active"]', 1),
     ('doituong_kcb', 'Đối tượng KCB', 'doituong_kcb', '["ma"]', '["is_active"]', 1),
-    ('danhmuc_thuoc', 'Danh mục thuốc', 'danhmuc_thuoc', '["ma_hoat_chat","sdk_gpnk","sdk_chuan_hoa"]', '["is_active","nhom_tieu_chi","goi_thau","tinh_thanh"]', 1);
+    ('danhmuc_thuoc', 'Danh mục thuốc', 'danhmuc_thuoc', '["ma_hoat_chat","sdk_gpnk","sdk_chuan_hoa"]', '["is_active","nhom_tieu_chi","goi_thau","tinh_thanh"]', 1),
+    ('phuongthuc_thanhtoan', 'Phương thức thanh toán', 'phuongthuc_thanhtoan', '["ma"]', '["is_active"]', 1),
+    ('ma_nhom', 'Mã nhóm theo chi phí', 'ma_nhom', '["ma"]', '["is_active"]', 1),
+    ('phamvi_thuoc', 'Phạm vi thuốc BHYT', 'phamvi_thuoc', '["ma"]', '["is_active"]', 1);

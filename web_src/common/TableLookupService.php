@@ -47,6 +47,21 @@ class TableLookupService
             'columns' => array('ma'),
             'conditions' => array('is_active')
         ),
+        'phuongthuc_thanhtoan' => array(
+            'table' => 'phuongthuc_thanhtoan',
+            'columns' => array('ma'),
+            'conditions' => array('is_active')
+        ),
+        'ma_nhom' => array(
+            'table' => 'ma_nhom',
+            'columns' => array('ma'),
+            'conditions' => array('is_active')
+        ),
+        'phamvi_thuoc' => array(
+            'table' => 'phamvi_thuoc',
+            'columns' => array('ma'),
+            'conditions' => array('is_active')
+        ),
         'danhmuc_thuoc' => array(
             'table' => 'danhmuc_thuoc',
             'columns' => array('ma_hoat_chat', 'sdk_gpnk', 'sdk_chuan_hoa'),

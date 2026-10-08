@@ -485,12 +485,20 @@ class XmlRulesValidator
         foreach ($matches as $match) {
             $lookupValue = $match['value'];
             $lookupConfig = $config;
-            if (isset($config['remove_suffix']) && is_scalar($config['remove_suffix'])) {
-                $suffix = (string) $config['remove_suffix'];
+            if (isset($config['remove_suffix'])) {
+                $suffixes = is_array($config['remove_suffix'])
+                    ? array_values($config['remove_suffix']) : array($config['remove_suffix']);
+                usort($suffixes, function ($left, $right) {
+                    return strlen((string) $right) - strlen((string) $left);
+                });
                 $text = is_scalar($lookupValue) ? (string) $lookupValue : '';
-                if ($suffix !== '' && strlen($text) >= strlen($suffix)
-                    && substr($text, -strlen($suffix)) === $suffix) {
-                    $lookupValue = substr($text, 0, -strlen($suffix));
+                foreach ($suffixes as $suffix) {
+                    $suffix = (string) $suffix;
+                    if ($suffix !== '' && strlen($text) >= strlen($suffix)
+                        && substr($text, -strlen($suffix)) === $suffix) {
+                        $lookupValue = substr($text, 0, -strlen($suffix));
+                        break;
+                    }
                 }
             }
             if (isset($config['value_substring']) && is_array($config['value_substring'])
