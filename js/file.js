@@ -66,6 +66,15 @@
     function appendErrorNotes(container, errors) {
         errors.forEach(function (error) {
             var note = error.message;
+            var errorValue = error.value;
+            if (errorValue === null || errorValue === undefined || String(errorValue) === '') {
+                errorValue = '(trống)';
+            } else if (typeof errorValue === 'object') {
+                errorValue = JSON.stringify(errorValue);
+            } else {
+                errorValue = String(errorValue);
+            }
+            note += ' | Giá trị lỗi: ' + errorValue;
             if (error.substring !== undefined) note += ' (Giá trị cắt: ' + error.substring + ')';
             $('<div>')
                 .addClass('json-field-error' + (error.severity === 'warning' ? ' json-field-warning' : ''))

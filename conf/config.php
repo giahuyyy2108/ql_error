@@ -40,8 +40,11 @@ define('_DEFAULT_URL_', $protocol . $domain . '/ql_error/');
 
 // define('_DEFAULT_URL_', 'http://192.168.31.2:80/vpdt/');
 // define('_DEFAULT_URL_', 'http://localhost/vpdt/');
+
+define('_DEFAULT_VERSION_','v1.0');
+
 define('_DEFAULT_LOGO_', _DEFAULT_URL_ . 'images/favicon.png');
-define('_DEFAULT_TITLE_', 'Quản lý lỗi - BỆNH VIỆN THỐNG NHẤT');
+define('_DEFAULT_TITLE_', 'Quản lý lỗi - BỆNH VIỆN THỐNG NHẤT'. ' ' . _DEFAULT_VERSION_);
 define('_DEFAULT_LOGIN_', 'login');
 define('_DEFAULT_LIBS_', _DEFAULT_URL_ . 'libs/');
 // san pham
@@ -51,5 +54,5 @@ define('_DEFAULT_TON_MAX_', '100');
 define('_DEFAULT_MAX_DAY_', '25');
 define('_DEFAULT_MAX_LIABILITY_', '5000000');
 
-define('_DEFAULT_VERSION_JS_CSS_', '16');
+define('_DEFAULT_VERSION_JS_CSS_', '18');
 ?>

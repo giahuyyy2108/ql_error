@@ -11,8 +11,8 @@
             type:'POST',
             data:function(data){data.searchText=$('#icd10-search').val().trim();}
         },
-        pageLength:25, lengthMenu:[[10,25,50,100,200],[10,25,50,100,200]],
-        searching:false, ordering:false, responsive:false, autoWidth:false,
+        paging:false, searching:false, ordering:false, responsive:false, autoWidth:false,
+        scrollY:'60vh', scrollCollapse:true, deferRender:true,
         columns:[
             {data:'code',width:'8%',className:'text-center'},
             {data:'display_vi',width:'29%',render:compact},
@@ -25,9 +25,10 @@
         ],
         language:{processing:'Đang tải dữ liệu...',search:'Tìm mã hoặc tên bệnh:',lengthMenu:'Hiển thị _MENU_ dòng',zeroRecords:'Không tìm thấy mã ICD-10',info:'Hiển thị _START_ đến _END_ trong _TOTAL_ mã',infoEmpty:'Không có dữ liệu',infoFiltered:'(lọc từ _MAX_ mã)',paginate:{first:'Đầu',last:'Cuối',next:'Sau',previous:'Trước'}}
     });
-    $('#btn-search-icd10').on('click',function(){table.ajax.reload();});
-    $('#btn-reset-icd10').on('click',function(){$('#icd10-search').val('');table.ajax.reload();$('#icd10-search').focus();});
+    function reload(){table.ajax.reload(function(){$('#datatable-icd10_wrapper .dataTables_scrollBody').scrollTop(0);});}
+    $('#btn-search-icd10').on('click',reload);
+    $('#btn-reset-icd10').on('click',function(){$('#icd10-search').val('');reload();$('#icd10-search').focus();});
     $('#icd10-search').on('keydown',function(event){
-        if(event.key==='Enter'||event.which===13){event.preventDefault();table.ajax.reload();}
+        if(event.key==='Enter'||event.which===13){event.preventDefault();reload();}
     });
 })(jQuery);

@@ -487,7 +487,25 @@ class XmlRulesValidator
                     );
                 }
             }
-            if (!$tableLookupService->exists($lookupValue, $lookupConfig)) {
+            $lookupValues = array($lookupValue);
+            if (isset($config['value_separator']) && is_string($config['value_separator'])
+                && $config['value_separator'] !== '') {
+                $lookupValues = array_values(array_filter(array_map('trim', explode(
+                    $config['value_separator'],
+                    is_scalar($lookupValue) ? (string) $lookupValue : ''
+                )), function ($item) {
+                    return $item !== '';
+                }));
+                if (!$lookupValues) $lookupValues = array('');
+            }
+            $allExist = true;
+            foreach ($lookupValues as $oneLookupValue) {
+                if (!$tableLookupService->exists($oneLookupValue, $lookupConfig)) {
+                    $allExist = false;
+                    break;
+                }
+            }
+            if (!$allExist) {
                 $errors[] = self::makeError($rule, $match['path'], $match['value']);
             }
         }

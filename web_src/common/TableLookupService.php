@@ -10,7 +10,7 @@ class TableLookupService
         'icd10' => array(
             'table' => 'icd10',
             'columns' => array('code'),
-            'conditions' => array('is_active', 'is_leaf', 'version', 'chapter_code', 'type_code')
+            'conditions' => array('is_active', 'is_leaf', 'version', 'parent_code', 'chapter_code', 'type_code')
         ),
         'nhom_bhyt' => array(
             'table' => 'nhom_BHYT',
@@ -90,8 +90,37 @@ class TableLookupService
                     'Cột điều kiện ' . $conditionColumn . ' không được phép dùng trong bảng ' . $source['table'] . '.'
                 );
             }
-            if (!is_scalar($conditionValue) && $conditionValue !== null) {
-                throw new RuntimeException('Giá trị điều kiện ' . $conditionColumn . ' phải là giá trị đơn hoặc null.');
+            if (is_array($conditionValue)) {
+                if (isset($conditionValue['operator'])) {
+                    $operator = strtoupper(trim((string) $conditionValue['operator']));
+                    $values = isset($conditionValue['values']) ? $conditionValue['values'] : null;
+                    if (!in_array($operator, array('IN', 'NOT_IN'), true)) {
+                        throw new RuntimeException('Toán tử điều kiện ' . $conditionColumn . ' chỉ hỗ trợ IN hoặc NOT_IN.');
+                    }
+                    if (!is_array($values) || !$values || count($values) > 100) {
+                        throw new RuntimeException('values của điều kiện ' . $conditionColumn . ' phải có từ 1 đến 100 giá trị.');
+                    }
+                    foreach ($values as $item) {
+                        if (!is_scalar($item) || $item === '') {
+                            throw new RuntimeException('Mỗi phần tử values của ' . $conditionColumn . ' phải là giá trị đơn khác rỗng.');
+                        }
+                    }
+                    $conditions[$conditionColumn] = array(
+                        'operator' => $operator,
+                        'values' => array_values($values)
+                    );
+                    continue;
+                }
+                if (!$conditionValue || count($conditionValue) > 100) {
+                    throw new RuntimeException('Mảng điều kiện ' . $conditionColumn . ' phải có từ 1 đến 100 giá trị.');
+                }
+                foreach ($conditionValue as $item) {
+                    if (!is_scalar($item) && $item !== null) {
+                        throw new RuntimeException('Mỗi phần tử của điều kiện ' . $conditionColumn . ' phải là giá trị đơn.');
+                    }
+                }
+            } elseif (!is_scalar($conditionValue) && $conditionValue !== null) {
+                throw new RuntimeException('Giá trị điều kiện ' . $conditionColumn . ' phải là giá trị đơn, mảng hoặc null.');
             }
         }
 
@@ -157,6 +186,34 @@ class TableLookupService
             $conditionTable = $bhytDien && $column === 'dien' ? 'nhom_BHYT_dien' : $config['table'];
             if ($conditionValue === null) {
                 $sql .= ' AND `' . $conditionTable . '`.`' . $column . '` IS NULL';
+                continue;
+            }
+            if (is_array($conditionValue)) {
+                if (isset($conditionValue['operator'])) {
+                    $values = $conditionValue['values'];
+                    $operator = $conditionValue['operator'] === 'NOT_IN' ? 'NOT IN' : 'IN';
+                    $conditionSql = '`' . $conditionTable . '`.`' . $column . '` ' . $operator . ' ('
+                        . implode(',', array_fill(0, count($values), '?')) . ')';
+                    if ($conditionValue['operator'] === 'NOT_IN') {
+                        $conditionSql = '(' . $conditionSql . ' OR `'
+                            . $conditionTable . '`.`' . $column . '` IS NULL)';
+                    }
+                    $sql .= ' AND ' . $conditionSql;
+                    foreach ($values as $item) $parameters[] = (string) $item;
+                    continue;
+                }
+                $nonNullValues = array_values(array_filter($conditionValue, function ($item) {
+                    return $item !== null;
+                }));
+                $hasNull = count($nonNullValues) !== count($conditionValue);
+                $parts = array();
+                if ($nonNullValues) {
+                    $parts[] = '`' . $conditionTable . '`.`' . $column . '` IN ('
+                        . implode(',', array_fill(0, count($nonNullValues), '?')) . ')';
+                    foreach ($nonNullValues as $item) $parameters[] = (string) $item;
+                }
+                if ($hasNull) $parts[] = '`' . $conditionTable . '`.`' . $column . '` IS NULL';
+                $sql .= ' AND (' . implode(' OR ', $parts) . ')';
                 continue;
             }
             $sql .= ' AND `' . $conditionTable . '`.`' . $column . '` = ?';

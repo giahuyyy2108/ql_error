@@ -29,4 +29,6 @@
     #datatable-icd10 th { text-align:center; font-size:11px; }
     #datatable-icd10 .icd10-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     #datatable-icd10 .icd10-status { font-size:17px; cursor:help; }
+    #datatable-icd10_wrapper .dataTables_scrollBody { border-bottom:1px solid #ddd; }
+    #datatable-icd10_wrapper .dataTables_info { padding-top:10px; }
 </style>

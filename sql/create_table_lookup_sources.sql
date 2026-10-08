@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS `table_lookup_sources` (
 INSERT IGNORE INTO `table_lookup_sources`
     (`source_key`, `display_name`, `table_name`, `allowed_columns`, `condition_columns`, `is_active`)
 VALUES
-    ('icd10', 'ICD-10', 'icd10', '["code"]', '["is_active","is_leaf","version","chapter_code","type_code"]', 1),
+    ('icd10', 'ICD-10', 'icd10', '["code"]', '["is_active","is_leaf","version","parent_code","chapter_code","type_code"]', 1),
     ('nhom_bhyt', 'Nhóm BHYT', 'nhom_BHYT', '["id"]', '["dien"]', 1),
     ('dan_toc', 'Dân tộc', 'dan_toc', '["ma"]', '["is_active"]', 1),
     ('khoa', 'Khoa', 'khoa', '["ma"]', '["is_active"]', 1),
