@@ -186,7 +186,8 @@ class rulesAction
             throw new RuntimeException('Loại rule ' . $rule['rule_type'] . ' bắt buộc phải có giá trị cấu hình.');
         }
         if (in_array($rule['rule_type'], array(
-            'FIELD_COMPARE', 'TABLE_EXISTS', 'API', 'SUBSTRING', 'CCCD_GENDER_CENTURY', 'FORMULA'
+            'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'TABLE_EXISTS', 'API', 'SUBSTRING',
+            'CCCD_GENDER_CENTURY', 'FORMULA'
         ), true)) {
             $config = json_decode($rule['rule_value'], true);
             if (!is_array($config)) {
@@ -195,6 +196,11 @@ class rulesAction
             if ($rule['rule_type'] === 'FIELD_COMPARE'
                 && (empty($config['other_field']) || empty($config['operator']))) {
                 throw new RuntimeException('FIELD_COMPARE cần có other_field và operator.');
+            }
+            if ($rule['rule_type'] === 'CONDITIONAL_FIELD'
+                && (!array_key_exists('when_value', $config) || empty($config['other_field'])
+                    || !array_key_exists('expected', $config))) {
+                throw new RuntimeException('CONDITIONAL_FIELD cần có when_value, other_field và expected.');
             }
             if ($rule['rule_type'] === 'TABLE_EXISTS') {
                 TableLookupService::normalizeConfig($config);
@@ -240,6 +246,17 @@ class rulesAction
                 }
                 if (!in_array(strtoupper($config['operator']), $operators, true)) {
                     throw new RuntimeException('Toán tử SUBSTRING không được hỗ trợ.');
+                }
+                if (isset($config['when'])) {
+                    if (!is_array($config['when']) || empty($config['when']['field'])
+                        || !array_key_exists('expected', $config['when'])) {
+                        throw new RuntimeException('when của SUBSTRING cần có field và expected.');
+                    }
+                    $whenOperator = isset($config['when']['operator'])
+                        ? strtoupper($config['when']['operator']) : '=';
+                    if (!in_array($whenOperator, array('=', '==', '!=', '<>', '>', '>=', '<', '<='), true)) {
+                        throw new RuntimeException('Toán tử when của SUBSTRING không được hỗ trợ.');
+                    }
                 }
             }
             if ($rule['rule_type'] === 'CCCD_GENDER_CENTURY') {

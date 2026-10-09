@@ -44,7 +44,7 @@
             </div>
         </div>
         <div class="file-table-scroll" tabindex="0" aria-label="Danh sách file có thể cuộn">
-        <table id="datatable-file" class="table table-striped table-bordered nowrap" cellspacing="0" width="100%">
+        <table id="datatable-file" class="table table-striped table-bordered" cellspacing="0" width="100%">
             <thead>
                 <tr>
                     <th class="text-center"><input type="checkbox" id="select-all-files" title="Chọn tất cả file"></th>
@@ -122,12 +122,13 @@
     #datatable-file_wrapper .dataTables_filter { display: none; }
     .file-table-scroll {
         width: 100%;
-        overflow: visible;
+        overflow-x: hidden;
     }
     #datatable-file_wrapper { width:100%; }
     #datatable-file_wrapper .dataTables_scrollBody {
         min-height:260px;
         border-bottom:1px solid #ddd;
+        overflow-x:hidden !important;
         overscroll-behavior:contain;
         -webkit-overflow-scrolling:touch;
     }
@@ -135,14 +136,98 @@
     #datatable-file_wrapper .dataTables_info { padding-top:10px; }
     .file-table-scroll:focus { outline: 2px solid rgba(51, 122, 183, .25); }
     #datatable-file td.file-name-cell {
-        max-width: 280px;
-        width: 24%;
+        max-width: 0;
     }
     #datatable-file .file-name-ellipsis {
         display: block;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+    #datatable-file td.file-status-cell {
+        vertical-align: middle;
+    }
+    #datatable-file {
+        width: 100% !important;
+        table-layout: fixed;
+    }
+    #datatable-file th,
+    #datatable-file td {
+        padding: 7px 6px;
+        vertical-align: middle;
+    }
+    #datatable-file th:nth-child(1), #datatable-file td:nth-child(1) { width: 4%; }
+    #datatable-file th:nth-child(2), #datatable-file td:nth-child(2) { width: 4%; }
+    #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 25%; }
+    #datatable-file th:nth-child(4), #datatable-file td:nth-child(4) {
+        width: 20%;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+    }
+    #datatable-file th:nth-child(5), #datatable-file td:nth-child(5) { width: 9%; }
+    #datatable-file th:nth-child(6), #datatable-file td:nth-child(6) { width: 14%; }
+    #datatable-file th:nth-child(7), #datatable-file td:nth-child(7) { width: 14%; }
+    #datatable-file th:nth-child(8), #datatable-file td:nth-child(8) { width: 10%; }
+    #datatable-file td:last-child { white-space: nowrap; }
+    #datatable-file .btn-file-action {
+        width: 30px;
+        height: 28px;
+        padding: 4px 6px;
+        margin: 0 1px;
+    }
+    .file-status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        width: 108px;
+        min-width: 108px;
+        box-sizing: border-box;
+        padding: 6px 8px;
+        border: 1px solid transparent;
+        border-radius: 18px;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: .25px;
+        white-space: nowrap;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, .12);
+    }
+    .file-status i { font-size: 14px; }
+    .file-status-success {
+        color: #176b3a;
+        background: #dff4e7;
+        border-color: #8fd3a9;
+    }
+    .file-status-failed {
+        color: #a12622;
+        background: #fde3e2;
+        border-color: #ef9a96;
+    }
+    .file-status-processing {
+        color: #875600;
+        background: #fff1c9;
+        border-color: #f0c861;
+    }
+    @media (max-width: 1199px) {
+        #datatable-file th:nth-child(5), #datatable-file td:nth-child(5) { display: none; }
+        #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 28%; }
+        #datatable-file th:nth-child(4), #datatable-file td:nth-child(4) { width: 22%; }
+    }
+    @media (max-width: 767px) {
+        #datatable-file th:nth-child(1), #datatable-file td:nth-child(1),
+        #datatable-file th:nth-child(2), #datatable-file td:nth-child(2),
+        #datatable-file th:nth-child(7), #datatable-file td:nth-child(7) { display: none; }
+        #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 31%; }
+        #datatable-file th:nth-child(4), #datatable-file td:nth-child(4) { width: 27%; }
+        #datatable-file th:nth-child(6), #datatable-file td:nth-child(6) { width: 24%; }
+        #datatable-file th:nth-child(8), #datatable-file td:nth-child(8) { width: 18%; }
+        .file-status {
+            width: 92px;
+            min-width: 92px;
+            padding: 6px;
+            letter-spacing: 0;
+        }
     }
     #modal-view-xml .modal-dialog {
         height: calc(100vh - 40px);

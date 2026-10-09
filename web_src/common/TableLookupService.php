@@ -48,12 +48,12 @@ class TableLookupService
         ),
         'ma_doituong_kcb' => array(
             'table' => 'doituong_kcb',
-            'columns' => array('ma'),
+            'columns' => array('ma', 'truong_hop'),
             'conditions' => array('is_active')
         ),
         'doituong_kcb' => array(
             'table' => 'doituong_kcb',
-            'columns' => array('ma'),
+            'columns' => array('ma', 'truong_hop'),
             'conditions' => array('is_active')
         ),
         'phuongthuc_thanhtoan' => array(

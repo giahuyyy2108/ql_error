@@ -227,7 +227,7 @@
         },
         paging: false,
         scrollY: '60vh',
-        scrollX: true,
+        scrollX: false,
         scrollCollapse: true,
         deferRender: true,
         order: [[6, 'desc']],
@@ -279,18 +279,21 @@
             },
             {
                 data: 'status',
-                className: 'text-center',
+                className: 'text-center file-status-cell',
                 render: function (data, type) {
                     if (type !== 'display') return data;
-                    if (data === 'pending_revalidation') {
-                        return '<span class="label label-warning">Chờ quét lại</span>';
-                    }
-                    if (data === 'revalidating') {
-                        return '<span class="label label-info">Đang quét lại</span>';
+                    if (data === 'pending_revalidation' || data === 'revalidating') {
+                        return '<span class="file-status file-status-processing">' +
+                            '<i class="fa fa-refresh fa-spin" aria-hidden="true"></i>' +
+                            '<span>Đang xử lý</span></span>';
                     }
                     return data === 'failed'
-                        ? '<span class="label label-danger">Failed</span>'
-                        : '<span class="label label-success">Processed</span>';
+                        ? '<span class="file-status file-status-failed">' +
+                            '<i class="fa fa-exclamation-triangle" aria-hidden="true"></i>' +
+                            '<span>Có lỗi</span></span>'
+                        : '<span class="file-status file-status-success">' +
+                            '<i class="fa fa-check-circle" aria-hidden="true"></i>' +
+                            '<span>Thành công</span></span>';
                 }
             },
             {
@@ -307,10 +310,10 @@
                 render: function (data, type, row) {
                     var name = escapeHtml(row.name);
                     var malk = escapeHtml(row.ma_lk);
-                    return '<button type="button" class="btn btn-sm btn-info btn-view-file" data-id="' + row.id + '" data-malk="' + malk + '" title="Xem">' +
-                        '<i class="fa fa-eye"></i> Xem</button> ' +
-                        '<button type="button" class="btn btn-sm btn-danger btn-delete-file" data-id="' + row.id + '" data-name="' + name + '" title="Xóa">' +
-                        '<i class="fa fa-trash"></i> Xóa</button>';
+                    return '<button type="button" class="btn btn-sm btn-info btn-file-action btn-view-file" data-id="' + row.id + '" data-malk="' + malk + '" title="Xem file" aria-label="Xem file">' +
+                        '<i class="fa fa-eye"></i></button>' +
+                        '<button type="button" class="btn btn-sm btn-danger btn-file-action btn-delete-file" data-id="' + row.id + '" data-name="' + name + '" title="Xóa file" aria-label="Xóa file">' +
+                        '<i class="fa fa-trash"></i></button>';
                 }
             }
         ],

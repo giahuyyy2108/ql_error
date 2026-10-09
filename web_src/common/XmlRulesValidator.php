@@ -66,6 +66,13 @@ class XmlRulesValidator
                         continue;
                     }
 
+                    if ($ruleType === 'CONDITIONAL_FIELD') {
+                        $ruleErrors = self::validateConditionalField($rule, $matches, $fileContexts, $fileIndex);
+                        $errors = array_merge($errors, $ruleErrors);
+                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        continue;
+                    }
+
                     if ($ruleType === 'TABLE_EXISTS') {
                         $lookupResults = array();
                         $ruleErrors = self::validateTableExists(
@@ -104,9 +111,18 @@ class XmlRulesValidator
                     }
 
                     if ($ruleType === 'SUBSTRING') {
-                        $ruleErrors = self::validateSubstring($rule, $matches);
+                        $substringApplicable = false;
+                        $ruleErrors = self::validateSubstring(
+                            $rule,
+                            $matches,
+                            $fileContexts,
+                            $fileIndex,
+                            $substringApplicable
+                        );
                         $errors = array_merge($errors, $ruleErrors);
-                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        if ($substringApplicable) {
+                            self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        }
                         continue;
                     }
 
@@ -215,7 +231,9 @@ class XmlRulesValidator
             foreach ($rules as $rule) {
                 self::addRequiredField($required, $fileType, $rule['field_name']);
                 $ruleType = strtoupper(trim($rule['rule_type']));
-                if (!in_array($ruleType, array('FIELD_COMPARE', 'CCCD_GENDER_CENTURY', 'API'), true)) {
+                if (!in_array($ruleType, array(
+                    'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CCCD_GENDER_CENTURY', 'API', 'SUBSTRING'
+                ), true)) {
                     continue;
                 }
 
@@ -228,6 +246,14 @@ class XmlRulesValidator
                     $targetType = !empty($config['other_file_type'])
                         ? strtoupper($config['other_file_type']) : $fileType;
                     self::addRequiredField($required, $targetType, $config['other_field']);
+                } elseif ($ruleType === 'CONDITIONAL_FIELD' && !empty($config['other_field'])) {
+                    $targetType = !empty($config['other_file_type'])
+                        ? strtoupper($config['other_file_type']) : $fileType;
+                    self::addRequiredField($required, $targetType, $config['other_field']);
+                } elseif ($ruleType === 'SUBSTRING' && !empty($config['when']['field'])) {
+                    $targetType = !empty($config['when']['file_type'])
+                        ? strtoupper($config['when']['file_type']) : $fileType;
+                    self::addRequiredField($required, $targetType, $config['when']['field']);
                 } elseif ($ruleType === 'CCCD_GENDER_CENTURY') {
                     if (!empty($config['birth_field'])) {
                         $targetType = !empty($config['birth_file_type'])
@@ -586,6 +612,63 @@ class XmlRulesValidator
         return $errors;
     }
 
+    private static function validateConditionalField(
+        array $rule,
+        array $matches,
+        array $fileContexts,
+        $currentFileIndex
+    ) {
+        $config = json_decode($rule['rule_value'], true);
+        if (!is_array($config) || !array_key_exists('when_value', $config)
+            || empty($config['other_field']) || !array_key_exists('expected', $config)) {
+            return array(self::makeError(
+                $rule, $rule['field_name'], null, 'error', 'Cấu hình CONDITIONAL_FIELD không hợp lệ.'
+            ));
+        }
+        if (empty($matches)) return array();
+
+        $otherMatches = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            !empty($config['other_file_type']) ? $config['other_file_type'] : null,
+            $config['other_field']
+        );
+        $errors = array();
+        foreach ($matches as $match) {
+            if (!self::compareValues(
+                $match['value'],
+                $config['when_value'],
+                isset($config['when_operator']) ? $config['when_operator'] : '=',
+                isset($config['data_type']) ? $config['data_type'] : 'string',
+                null
+            )) {
+                continue;
+            }
+            $passed = false;
+            foreach ($otherMatches as $otherMatch) {
+                if (self::compareValues(
+                    $otherMatch['value'],
+                    $config['expected'],
+                    isset($config['operator']) ? $config['operator'] : '=',
+                    isset($config['other_data_type']) ? $config['other_data_type'] : 'string',
+                    null
+                )) {
+                    $passed = true;
+                    break;
+                }
+            }
+            if (!$passed) {
+                $error = self::makeError($rule, $match['path'], $match['value']);
+                $error['other_field'] = $config['other_field'];
+                $error['other_value'] = isset($otherMatches[0]['value'])
+                    ? (string) $otherMatches[0]['value'] : null;
+                $error['expected'] = (string) $config['expected'];
+                $errors[] = $error;
+            }
+        }
+        return $errors;
+    }
+
     private static function validateTableExists(
         array $rule,
         array $matches,
@@ -696,13 +779,52 @@ class XmlRulesValidator
         return $errors;
     }
 
-    private static function validateSubstring(array $rule, array $matches)
+    private static function validateSubstring(
+        array $rule,
+        array $matches,
+        array $fileContexts = array(),
+        $currentFileIndex = 0,
+        &$applicable = true
+    )
     {
         $config = json_decode($rule['rule_value'], true);
         if (!is_array($config) || !array_key_exists('start', $config)
             || !array_key_exists('length', $config) || empty($config['operator'])
             || !array_key_exists('expected', $config)) {
             return array(self::makeError($rule, $rule['field_name'], null, 'error', 'Cấu hình SUBSTRING không hợp lệ.'));
+        }
+        $applicable = true;
+        if (!empty($config['when']) && is_array($config['when'])) {
+            $when = $config['when'];
+            if (empty($when['field']) || !array_key_exists('expected', $when)) {
+                return array(self::makeError(
+                    $rule,
+                    $rule['field_name'],
+                    null,
+                    'error',
+                    'Cấu hình điều kiện when của SUBSTRING không hợp lệ.'
+                ));
+            }
+            $whenMatches = self::indexedMatches(
+                $fileContexts,
+                $currentFileIndex,
+                !empty($when['file_type']) ? strtoupper($when['file_type']) : null,
+                $when['field']
+            );
+            $applicable = false;
+            foreach ($whenMatches as $whenMatch) {
+                if (self::compareValues(
+                    isset($whenMatch['value']) ? $whenMatch['value'] : null,
+                    $when['expected'],
+                    isset($when['operator']) ? $when['operator'] : '=',
+                    isset($when['data_type']) ? $when['data_type'] : 'string',
+                    null
+                )) {
+                    $applicable = true;
+                    break;
+                }
+            }
+            if (!$applicable) return array();
         }
         if (empty($matches)) {
             return array(self::makeError($rule, $rule['field_name'], null));
