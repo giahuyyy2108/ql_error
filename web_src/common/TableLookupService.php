@@ -12,6 +12,13 @@ class TableLookupService
             'columns' => array('code'),
             'conditions' => array('is_active', 'is_leaf', 'version', 'parent_code', 'chapter_code', 'type_code')
         ),
+        'icd10_yhct' => array(
+            'table' => 'icd10_yhct',
+            'columns' => array(
+                'ma_dung_chung', 'ma_icd10', 'ma_u', 'ma_hoa', 'benh_danh_yhct', 'the_lam_sang'
+            ),
+            'conditions' => array('is_active', 'dot', 'ma_dung_chung_cha')
+        ),
         'nhom_bhyt' => array(
             'table' => 'nhom_BHYT',
             'columns' => array('id'),

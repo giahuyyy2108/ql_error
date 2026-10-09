@@ -117,8 +117,9 @@ class fileAction
                 $this->filePeer->updateStorageLocation($result['id'], $canonicalRelative, 'failed');
                 $this->archiveReplacedFile($result, $canonicalPath);
                 return $this->json(array(
-                    'success' => false,
-                    'message' => 'File đã được lưu vào thư mục failed vì không đạt validation.'
+                    'success' => true,
+                    'validation_failed' => true,
+                    'message' => 'Đã lưu file XML.'
                 ));
             }
             $this->archiveReplacedFile($result, $storedFile['absolute_path']);
