@@ -42,6 +42,53 @@ class FilePeer
         return $files;
     }
 
+    public function getErrorReportRows()
+    {
+        $sql = 'SELECT ma_lk, ngay_lap, processing_status, validation_result
+                FROM `file`
+                WHERE validation_result IS NOT NULL AND validation_result <> \'\'
+                ORDER BY update_at DESC, id DESC';
+        $result = $this->connection->query($sql);
+        if (!$result) {
+            throw new RuntimeException('Không thể tải dữ liệu báo cáo lỗi.');
+        }
+
+        $reportRows = array();
+        while ($file = $result->fetch_assoc()) {
+            $validation = json_decode($file['validation_result'], true);
+            if (!is_array($validation)) continue;
+            $documentDate = $this->formatDocumentDate($file['ngay_lap']);
+
+            foreach ($validation as $validationItem) {
+                $errors = isset($validationItem['errors']) && is_array($validationItem['errors'])
+                    ? $validationItem['errors'] : array();
+                foreach ($errors as $error) {
+                    $reportRows[] = array(
+                        'ma_lk' => (string) $file['ma_lk'],
+                        'xml' => isset($validationItem['file_type']) ? (string) $validationItem['file_type'] : '',
+                        'field' => isset($error['field_name']) ? (string) $error['field_name']
+                            : (isset($error['display_name']) ? (string) $error['display_name'] : ''),
+                        'error' => isset($error['message']) ? (string) $error['message'] : 'Lỗi validation',
+                        'notes' => '',
+                        'date' => $documentDate,
+                        'status' => $file['processing_status'] === 'failed' ? 'CHƯA FIX' : 'ĐÃ FIX'
+                    );
+                }
+            }
+        }
+        $result->free();
+        return $reportRows;
+    }
+
+    private function formatDocumentDate($value)
+    {
+        $value = preg_replace('/\D/', '', (string) $value);
+        if (strlen($value) < 8) return '';
+
+        $date = DateTime::createFromFormat('!Ymd', substr($value, 0, 8));
+        return $date ? $date->format('d.m.Y') : '';
+    }
+
     public function maLkExists($maLk)
     {
         $statement = $this->connection->prepare('SELECT id FROM `file` WHERE ma_lk = ? LIMIT 1');
@@ -74,7 +121,15 @@ class FilePeer
         return $row ?: false;
     }
 
-    public function insert($name, $maLk, $size, $filePath, $validationResult = null, $status = 'processed')
+    public function insert(
+        $name,
+        $maLk,
+        $size,
+        $filePath,
+        $validationResult = null,
+        $status = 'processed',
+        $ngayLap = null
+    )
     {
         $jsonValidation = $validationResult === null
             ? null
@@ -85,15 +140,15 @@ class FilePeer
 
         $statement = $this->connection->prepare(
             'INSERT INTO `file`
-             (ten, ma_lk, kichthuoc, file_path, processing_status, validation_result)
-             VALUES (?, ?, ?, ?, ?, ?)'
+             (ten, ma_lk, ngay_lap, kichthuoc, file_path, processing_status, validation_result)
+             VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu file.');
         }
 
         $size = (string) $size;
-        $statement->bind_param('ssssss', $name, $maLk, $size, $filePath, $status, $jsonValidation);
+        $statement->bind_param('sssssss', $name, $maLk, $ngayLap, $size, $filePath, $status, $jsonValidation);
         if (!$statement->execute()) {
             $statement->close();
             throw new RuntimeException('Không thể lưu file vào cơ sở dữ liệu.');
@@ -104,7 +159,15 @@ class FilePeer
         return $id;
     }
 
-    public function replaceImportedFile($id, $name, $size, $filePath, array $validationResult, $status)
+    public function replaceImportedFile(
+        $id,
+        $name,
+        $size,
+        $filePath,
+        array $validationResult,
+        $status,
+        $ngayLap = null
+    )
     {
         $jsonValidation = json_encode($validationResult, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($jsonValidation === false) {
@@ -112,14 +175,14 @@ class FilePeer
         }
         $statement = $this->connection->prepare(
             'UPDATE `file`
-             SET ten = ?, kichthuoc = ?, file_path = ?, processing_status = ?, validation_result = ?
+             SET ten = ?, ngay_lap = ?, kichthuoc = ?, file_path = ?, processing_status = ?, validation_result = ?
              WHERE id = ?'
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu import lại.');
         }
         $size = (string) $size;
-        $statement->bind_param('sssssi', $name, $size, $filePath, $status, $jsonValidation, $id);
+        $statement->bind_param('ssssssi', $name, $ngayLap, $size, $filePath, $status, $jsonValidation, $id);
         if (!$statement->execute()) {
             $statement->close();
             throw new RuntimeException('Không thể cập nhật file đã tồn tại.');

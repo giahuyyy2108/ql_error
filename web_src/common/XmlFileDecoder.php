@@ -77,6 +77,21 @@ class XmlFileDecoder
         return $values[0];
     }
 
+    public static function extractNgayLap($xmlContent)
+    {
+        $document = self::loadXml($xmlContent, 'XML hồ sơ không hợp lệ');
+        $nodes = $document->xpath(
+            '//*[local-name()="THONGTINHOSO"]/*[local-name()="NGAYLAP"]'
+        );
+
+        if (!$nodes || !isset($nodes[0])) {
+            return null;
+        }
+
+        $value = trim((string) $nodes[0]);
+        return $value === '' ? null : $value;
+    }
+
     private static function collectValuesByKey($data, $targetKey, array &$values)
     {
         if (!is_array($data)) {

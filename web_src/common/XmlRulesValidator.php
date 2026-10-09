@@ -67,9 +67,22 @@ class XmlRulesValidator
                     }
 
                     if ($ruleType === 'TABLE_EXISTS') {
-                        $ruleErrors = self::validateTableExists($rule, $matches, $tableLookupService);
+                        $lookupResults = array();
+                        $ruleErrors = self::validateTableExists(
+                            $rule,
+                            $matches,
+                            $tableLookupService,
+                            $lookupResults
+                        );
                         $errors = array_merge($errors, $ruleErrors);
-                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        self::appendValidMatches(
+                            $validFields,
+                            $rule,
+                            $matches,
+                            $ruleErrors,
+                            false,
+                            $lookupResults
+                        );
                         continue;
                     }
 
@@ -353,7 +366,8 @@ class XmlRulesValidator
         array $rule,
         array $matches,
         array $ruleErrors,
-        $firstOnly = false
+        $firstOnly = false,
+        array $lookupResults = array()
     ) {
         if (empty($matches)) {
             return;
@@ -378,7 +392,8 @@ class XmlRulesValidator
                 }
             }
             if (!$hasError) {
-                $validFields[] = self::makeValid($rule, $match['path'], $match['value']);
+                $lookupResult = isset($lookupResults[$match['path']]) ? $lookupResults[$match['path']] : null;
+                $validFields[] = self::makeValid($rule, $match['path'], $match['value'], $lookupResult);
             }
         }
     }
@@ -571,7 +586,12 @@ class XmlRulesValidator
         return $errors;
     }
 
-    private static function validateTableExists(array $rule, array $matches, $tableLookupService)
+    private static function validateTableExists(
+        array $rule,
+        array $matches,
+        $tableLookupService,
+        array &$lookupResults = array()
+    )
     {
         $config = json_decode($rule['rule_value'], true);
         if (!is_array($config) || empty($config['table']) || empty($config['column'])) {
@@ -657,14 +677,20 @@ class XmlRulesValidator
                 if (!$lookupValues) $lookupValues = array('');
             }
             $allExist = true;
+            $matchedLookups = array();
             foreach ($lookupValues as $oneLookupValue) {
-                if (!$tableLookupService->exists($oneLookupValue, $lookupConfig)) {
+                $lookupResult = $tableLookupService->lookup($oneLookupValue, $lookupConfig);
+                if ($lookupResult === false) {
                     $allExist = false;
                     break;
                 }
+                $matchedLookups[] = $lookupResult;
             }
             if (!$allExist) {
                 $errors[] = self::makeError($rule, $match['path'], $match['value']);
+            } elseif (!empty($config['return_column'])) {
+                $lookupResults[$match['path']] = count($matchedLookups) === 1
+                    ? $matchedLookups[0] : $matchedLookups;
             }
         }
         return $errors;
@@ -955,9 +981,9 @@ class XmlRulesValidator
         );
     }
 
-    private static function makeValid(array $rule, $path, $value)
+    private static function makeValid(array $rule, $path, $value, $lookupResult = null)
     {
-        return array(
+        $valid = array(
             'field_name' => $rule['field_name'],
             'display_name' => $rule['display_name'],
             'rule_type' => $rule['rule_type'],
@@ -965,5 +991,13 @@ class XmlRulesValidator
             'value' => is_scalar($value) ? (string) $value : null,
             'message' => 'Hợp lệ'
         );
+        if (is_array($lookupResult)) {
+            $valid['lookup_result'] = $lookupResult;
+            if (array_key_exists('return_value', $lookupResult)) {
+                $valid['message'] = 'Hợp lệ - ' . $lookupResult['return_column'] . ': '
+                    . (string) $lookupResult['return_value'];
+            }
+        }
+        return $valid;
     }
 }

@@ -87,7 +87,7 @@
         validFields.forEach(function (item) {
             $('<div>')
                 .addClass('json-field-valid')
-                .text(item.display_name + ': Hợp lệ (' + item.rule_type + ')')
+                .text(item.display_name + ': ' + (item.message || 'Hợp lệ') + ' (' + item.rule_type + ')')
                 .appendTo(container);
         });
     }
@@ -325,6 +325,81 @@
             infoEmpty: 'Không có dữ liệu',
             infoFiltered: '(lọc từ _MAX_ file)',
             paginate: { first: 'Đầu', last: 'Cuối', next: 'Sau', previous: 'Trước' }
+        }
+    });
+
+    function searchFiles() {
+        table.search($.trim($('#file-search').val())).draw();
+    }
+
+    $('#btn-search-file').on('click', searchFiles);
+
+    $('#btn-export-file-excel').on('click', function () {
+        var button = $(this).prop('disabled', true);
+        $.ajax({
+            url: baseUrl + 'file/getErrorReport/',
+            type: 'GET',
+            dataType: 'json'
+        }).done(function (response) {
+            if (!response.success) {
+                alert(response.message || 'Không thể tải dữ liệu báo cáo lỗi.');
+                return;
+            }
+
+            var exportTable = $('<table>').css('display', 'none').appendTo(document.body);
+            var exportData = (response.data || []).map(function (row, index) {
+                return [index + 1, row.ma_lk, row.xml, row.field, row.error, row.notes, row.date, row.status];
+            });
+            var exportDataTable = exportTable.DataTable({
+                data: exportData,
+                paging: false,
+                searching: false,
+                ordering: false,
+                dom: 'B',
+                columns: [
+                    { title: 'STT' },
+                    { title: 'MÃ LIÊN KẾT' },
+                    { title: 'XML' },
+                    { title: 'CHỖ LỖI' },
+                    { title: 'LỖI' },
+                    { title: 'GHI CHÚ' },
+                    { title: 'NGÀY' },
+                    { title: 'TÌNH TRẠNG' }
+                ],
+                buttons: [{
+                    extend: 'excelHtml5',
+                    title: null,
+                    filename: 'danh-sach-loi',
+                    sheetName: 'Danh sách lỗi',
+                    customizeData: function (data) {
+                        data.body.forEach(function (row) {
+                            // Force long MA_LK values to text so Excel keeps every digit.
+                            row[1] = '\u200B' + row[1];
+                        });
+                    }
+                }]
+            });
+            exportDataTable.button('.buttons-excel').trigger();
+            window.setTimeout(function () {
+                exportDataTable.destroy();
+                exportTable.remove();
+            }, 1500);
+        }).fail(function () {
+            alert('Không thể xuất báo cáo Excel.');
+        }).always(function () {
+            button.prop('disabled', false);
+        });
+    });
+
+    $('#btn-reset-file-search').on('click', function () {
+        $('#file-search').val('').focus();
+        table.search('').draw();
+    });
+
+    $('#file-search').on('keydown', function (event) {
+        if (event.key === 'Enter' || event.which === 13) {
+            event.preventDefault();
+            searchFiles();
         }
     });
 

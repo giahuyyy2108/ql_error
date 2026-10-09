@@ -55,6 +55,7 @@ class XmlFileImportService
 
         $decodedContent = XmlFileDecoder::decodeDanhSachHoSo($content);
         $maLk = XmlFileDecoder::extractMaLk($decodedContent);
+        $ngayLap = XmlFileDecoder::extractNgayLap($content);
         $validationResult = $this->validationCallback === null
             ? null
             : call_user_func($this->validationCallback, $decodedContent);
@@ -68,7 +69,8 @@ class XmlFileImportService
                 $size,
                 $filePath,
                 is_array($validationResult) ? $validationResult : array(),
-                $status
+                $status,
+                $ngayLap
             );
             return array(
                 'status' => 'reimported',
@@ -80,7 +82,15 @@ class XmlFileImportService
                 'old_file_path' => $existing['file_path']
             );
         }
-        $id = $this->filePeer->insert($fileName, $maLk, $size, $filePath, $validationResult, $status);
+        $id = $this->filePeer->insert(
+            $fileName,
+            $maLk,
+            $size,
+            $filePath,
+            $validationResult,
+            $status,
+            $ngayLap
+        );
         return array(
             'status' => 'imported',
             'processing_status' => $status,

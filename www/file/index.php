@@ -3,6 +3,11 @@
         <h2>Danh sách file XML</h2>
         <ul class="nav navbar-right panel_toolbox">
             <li>
+                <button type="button" id="btn-export-file-excel" class="btn btn-success">
+                    <i class="fa fa-file-excel-o"></i> Xuất Excel
+                </button>
+            </li>
+            <li>
                 <button type="button" id="btn-revalidate-all" class="btn btn-warning">
                     <i class="fa fa-refresh"></i> Quét lại tất cả
                 </button>
@@ -21,6 +26,23 @@
         <div class="clearfix"></div>
     </div>
     <div class="x_content">
+        <div class="row file-search-row">
+            <div class="col-md-8 col-sm-9 col-xs-12">
+                <div class="input-group">
+                    <input type="search" id="file-search" class="form-control"
+                           placeholder="Nhập tên file, MA_LK, trạng thái hoặc thời gian cập nhật..."
+                           autocomplete="off" aria-label="Tìm kiếm file XML">
+                    <span class="input-group-btn">
+                        <button type="button" id="btn-search-file" class="btn btn-primary">
+                            <i class="fa fa-search"></i> Tìm
+                        </button>
+                        <button type="button" id="btn-reset-file-search" class="btn btn-default">
+                            <i class="fa fa-refresh"></i> Làm mới
+                        </button>
+                    </span>
+                </div>
+            </div>
+        </div>
         <div class="file-table-scroll" tabindex="0" aria-label="Danh sách file có thể cuộn">
         <table id="datatable-file" class="table table-striped table-bordered nowrap" cellspacing="0" width="100%">
             <thead>
@@ -96,6 +118,8 @@
 </div>
 
 <style>
+    .file-search-row { margin-bottom: 14px; }
+    #datatable-file_wrapper .dataTables_filter { display: none; }
     .file-table-scroll {
         width: 100%;
         overflow: visible;

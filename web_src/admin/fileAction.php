@@ -233,6 +233,16 @@ class fileAction
         exit;
     }
 
+    public function getErrorReport()
+    {
+        try {
+            $rows = $this->filePeer->getErrorReportRows();
+            return $this->json(array('success' => true, 'data' => $rows));
+        } catch (RuntimeException $exception) {
+            return $this->json(array('success' => false, 'message' => $exception->getMessage()));
+        }
+    }
+
     public function delete()
     {
         if (!$this->validCsrf()) {

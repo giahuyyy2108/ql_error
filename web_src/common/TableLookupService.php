@@ -37,6 +37,15 @@ class TableLookupService
             'columns' => array('ma_cu', 'ma_sau_sapnhap'),
             'conditions' => array()
         ),
+        'quanhuyen_phuongxa' => array(
+            'table' => 'quanhuyen_phuongxa',
+            'columns' => array(
+                'ma_phuongxa_cu', 'ten_phuongxa_cu',
+                'ma_phuongxa_moi', 'ten_phuongxa_moi',
+                'ma_quanhuyen_cu', 'ten_quanhuyen_cu'
+            ),
+            'conditions' => array('ma_tinh_cu', 'ma_tinh_moi', 'ma_quanhuyen_cu', 'sap_nhap_mot_phan')
+        ),
         'ma_doituong_kcb' => array(
             'table' => 'doituong_kcb',
             'columns' => array('ma'),
@@ -76,6 +85,10 @@ class TableLookupService
         $db->connect();
         $db->selectdb();
         $this->connection = $connect;
+        // A watcher can stay alive while lookup sources are added or changed.
+        // Reload the allow-list for each service instance instead of keeping
+        // stale configuration for the lifetime of the PHP process.
+        self::$databaseSources = null;
     }
 
     public static function normalizeConfig(array $config)
@@ -93,6 +106,30 @@ class TableLookupService
         $source = $allowedSources[$tableKey];
         if (!in_array($column, $source['columns'], true)) {
             throw new RuntimeException('Cột ' . $column . ' không được phép đối chiếu trong bảng ' . $source['table'] . '.');
+        }
+
+        $fallbackColumns = isset($config['fallback_columns']) ? $config['fallback_columns'] : array();
+        if (!is_array($fallbackColumns)) {
+            throw new RuntimeException('fallback_columns của TABLE_EXISTS phải là một mảng.');
+        }
+        $fallbackColumns = array_values(array_unique(array_filter(array_map(function ($item) {
+            return trim((string) $item);
+        }, $fallbackColumns), function ($item) use ($column) {
+            return $item !== '' && $item !== $column;
+        })));
+        foreach ($fallbackColumns as $fallbackColumn) {
+            if (!in_array($fallbackColumn, $source['columns'], true)) {
+                throw new RuntimeException(
+                    'Cột dự phòng ' . $fallbackColumn . ' không được phép đối chiếu trong bảng ' . $source['table'] . '.'
+                );
+            }
+        }
+
+        $returnColumn = isset($config['return_column']) ? trim((string) $config['return_column']) : '';
+        if ($returnColumn !== '' && !in_array($returnColumn, $source['columns'], true)) {
+            throw new RuntimeException(
+                'Cột trả về ' . $returnColumn . ' không được phép đọc trong bảng ' . $source['table'] . '.'
+            );
         }
 
         $conditions = isset($config['conditions']) ? $config['conditions'] : array();
@@ -142,6 +179,8 @@ class TableLookupService
         return array(
             'table' => $source['table'],
             'column' => $column,
+            'fallback_columns' => $fallbackColumns,
+            'return_column' => $returnColumn,
             'conditions' => $conditions
         );
     }
@@ -182,6 +221,11 @@ class TableLookupService
 
     public function exists($value, array $config)
     {
+        return $this->lookup($value, $config) !== false;
+    }
+
+    public function lookup($value, array $config)
+    {
         $config = self::normalizeConfig($config);
         $normalizedValue = is_scalar($value) ? trim((string) $value) : '';
         $cacheKey = json_encode(array($config, $normalizedValue));
@@ -190,12 +234,24 @@ class TableLookupService
         }
 
         $bhytDien = $config['table'] === 'nhom_BHYT' && array_key_exists('dien', $config['conditions']);
-        $sql = 'SELECT 1 FROM `' . $config['table'] . '`';
+        $lookupColumns = array_merge(array($config['column']), $config['fallback_columns']);
+        $selectedColumns = $lookupColumns;
+        if ($config['return_column'] !== '') $selectedColumns[] = $config['return_column'];
+        $selectedColumns = array_values(array_unique($selectedColumns));
+        $selectSql = implode(', ', array_map(function ($selectedColumn) use ($config) {
+            return '`' . $config['table'] . '`.`' . $selectedColumn . '`';
+        }, $selectedColumns));
+        $sql = 'SELECT ' . $selectSql . ' FROM `' . $config['table'] . '`';
         if ($bhytDien) {
             $sql .= ' INNER JOIN `nhom_BHYT_dien` ON `nhom_BHYT_dien`.`ma_bhyt` = `nhom_BHYT`.`id`';
         }
-        $sql .= ' WHERE `' . $config['table'] . '`.`' . $config['column'] . '` = ?';
-        $parameters = array($normalizedValue);
+        $columnComparisons = array();
+        $parameters = array();
+        foreach ($lookupColumns as $lookupColumn) {
+            $columnComparisons[] = '`' . $config['table'] . '`.`' . $lookupColumn . '` = ?';
+            $parameters[] = $normalizedValue;
+        }
+        $sql .= ' WHERE (' . implode(' OR ', $columnComparisons) . ')';
 
         foreach ($config['conditions'] as $column => $conditionValue) {
             $conditionTable = $bhytDien && $column === 'dien' ? 'nhom_BHYT_dien' : $config['table'];
@@ -247,15 +303,29 @@ class TableLookupService
             $statement->close();
             throw new RuntimeException('Không thể thực hiện truy vấn TABLE_EXISTS.');
         }
-        $statement->store_result();
-        $exists = $statement->num_rows > 0;
+        $result = $statement->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
         $statement->close();
         // Positive lookups are stable enough to cache during a worker run.
         // Do not cache misses because reference tables can be updated while
         // the long-running XML watcher is still active.
-        if ($cacheKey !== false && $exists) {
-            $this->existsCache[$cacheKey] = true;
+        if ($row === null) return false;
+        $matchedColumn = $config['column'];
+        foreach ($lookupColumns as $lookupColumn) {
+            if (isset($row[$lookupColumn]) && (string) $row[$lookupColumn] === $normalizedValue) {
+                $matchedColumn = $lookupColumn;
+                break;
+            }
         }
-        return $exists;
+        $lookupResult = array(
+            'matched_column' => $matchedColumn,
+            'return_column' => $config['return_column'],
+            'return_value' => $config['return_column'] !== '' && array_key_exists($config['return_column'], $row)
+                ? $row[$config['return_column']] : null
+        );
+        if ($cacheKey !== false) {
+            $this->existsCache[$cacheKey] = $lookupResult;
+        }
+        return $lookupResult;
     }
 }
