@@ -123,16 +123,13 @@
     .file-table-scroll {
         width: 100%;
         overflow-x: hidden;
+        overflow-y: auto;
+        max-height: 65vh;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        border-bottom: 1px solid #ddd;
     }
     #datatable-file_wrapper { width:100%; }
-    #datatable-file_wrapper .dataTables_scrollBody {
-        min-height:260px;
-        border-bottom:1px solid #ddd;
-        overflow-x:hidden !important;
-        overscroll-behavior:contain;
-        -webkit-overflow-scrolling:touch;
-    }
-    #datatable-file_wrapper .dataTables_scrollHead { background:#fff; }
     #datatable-file_wrapper .dataTables_info { padding-top:10px; }
     .file-table-scroll:focus { outline: 2px solid rgba(51, 122, 183, .25); }
     #datatable-file td.file-name-cell {
@@ -156,18 +153,25 @@
         padding: 7px 6px;
         vertical-align: middle;
     }
-    #datatable-file th:nth-child(1), #datatable-file td:nth-child(1) { width: 4%; }
-    #datatable-file th:nth-child(2), #datatable-file td:nth-child(2) { width: 4%; }
-    #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 25%; }
+    #datatable-file thead th {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        background: #fff;
+        box-shadow: 0 1px 0 #ddd;
+    }
+    #datatable-file th:nth-child(1), #datatable-file td:nth-child(1) { width: 4% !important; }
+    #datatable-file th:nth-child(2), #datatable-file td:nth-child(2) { width: 4% !important; }
+    #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 25% !important; }
     #datatable-file th:nth-child(4), #datatable-file td:nth-child(4) {
-        width: 20%;
+        width: 20% !important;
         overflow-wrap: anywhere;
         font-size: 12px;
     }
-    #datatable-file th:nth-child(5), #datatable-file td:nth-child(5) { width: 9%; }
-    #datatable-file th:nth-child(6), #datatable-file td:nth-child(6) { width: 14%; }
-    #datatable-file th:nth-child(7), #datatable-file td:nth-child(7) { width: 14%; }
-    #datatable-file th:nth-child(8), #datatable-file td:nth-child(8) { width: 10%; }
+    #datatable-file th:nth-child(5), #datatable-file td:nth-child(5) { width: 9% !important; }
+    #datatable-file th:nth-child(6), #datatable-file td:nth-child(6) { width: 14% !important; }
+    #datatable-file th:nth-child(7), #datatable-file td:nth-child(7) { width: 14% !important; }
+    #datatable-file th:nth-child(8), #datatable-file td:nth-child(8) { width: 10% !important; }
     #datatable-file td:last-child { white-space: nowrap; }
     #datatable-file .btn-file-action {
         width: 30px;
@@ -211,17 +215,17 @@
     }
     @media (max-width: 1199px) {
         #datatable-file th:nth-child(5), #datatable-file td:nth-child(5) { display: none; }
-        #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 28%; }
-        #datatable-file th:nth-child(4), #datatable-file td:nth-child(4) { width: 22%; }
+        #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 28% !important; }
+        #datatable-file th:nth-child(4), #datatable-file td:nth-child(4) { width: 22% !important; }
     }
     @media (max-width: 767px) {
         #datatable-file th:nth-child(1), #datatable-file td:nth-child(1),
         #datatable-file th:nth-child(2), #datatable-file td:nth-child(2),
         #datatable-file th:nth-child(7), #datatable-file td:nth-child(7) { display: none; }
-        #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 31%; }
-        #datatable-file th:nth-child(4), #datatable-file td:nth-child(4) { width: 27%; }
-        #datatable-file th:nth-child(6), #datatable-file td:nth-child(6) { width: 24%; }
-        #datatable-file th:nth-child(8), #datatable-file td:nth-child(8) { width: 18%; }
+        #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 31% !important; }
+        #datatable-file th:nth-child(4), #datatable-file td:nth-child(4) { width: 27% !important; }
+        #datatable-file th:nth-child(6), #datatable-file td:nth-child(6) { width: 24% !important; }
+        #datatable-file th:nth-child(8), #datatable-file td:nth-child(8) { width: 18% !important; }
         .file-status {
             width: 92px;
             min-width: 92px;

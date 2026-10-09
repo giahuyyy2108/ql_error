@@ -226,9 +226,7 @@
             }
         },
         paging: false,
-        scrollY: '60vh',
         scrollX: false,
-        scrollCollapse: true,
         deferRender: true,
         order: [[6, 'desc']],
         responsive: false,
