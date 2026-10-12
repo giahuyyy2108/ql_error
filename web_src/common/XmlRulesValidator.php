@@ -79,7 +79,9 @@ class XmlRulesValidator
                             $rule,
                             $matches,
                             $tableLookupService,
-                            $lookupResults
+                            $lookupResults,
+                            $fileContexts,
+                            $fileIndex
                         );
                         $errors = array_merge($errors, $ruleErrors);
                         self::appendValidMatches(
@@ -232,7 +234,8 @@ class XmlRulesValidator
                 self::addRequiredField($required, $fileType, $rule['field_name']);
                 $ruleType = strtoupper(trim($rule['rule_type']));
                 if (!in_array($ruleType, array(
-                    'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CCCD_GENDER_CENTURY', 'API', 'SUBSTRING'
+                    'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CCCD_GENDER_CENTURY', 'API', 'SUBSTRING',
+                    'TABLE_EXISTS'
                 ), true)) {
                     continue;
                 }
@@ -254,6 +257,15 @@ class XmlRulesValidator
                     $targetType = !empty($config['when']['file_type'])
                         ? strtoupper($config['when']['file_type']) : $fileType;
                     self::addRequiredField($required, $targetType, $config['when']['field']);
+                } elseif ($ruleType === 'TABLE_EXISTS' && !empty($config['conditions_from_field'])
+                    && is_array($config['conditions_from_field'])) {
+                    foreach ($config['conditions_from_field'] as $fieldConfig) {
+                        $fieldName = is_array($fieldConfig)
+                            ? (isset($fieldConfig['field']) ? $fieldConfig['field'] : '') : $fieldConfig;
+                        $targetType = is_array($fieldConfig) && !empty($fieldConfig['file_type'])
+                            ? strtoupper($fieldConfig['file_type']) : $fileType;
+                        if ($fieldName !== '') self::addRequiredField($required, $targetType, $fieldName);
+                    }
                 } elseif ($ruleType === 'CCCD_GENDER_CENTURY') {
                     if (!empty($config['birth_field'])) {
                         $targetType = !empty($config['birth_file_type'])
@@ -673,11 +685,14 @@ class XmlRulesValidator
         array $rule,
         array $matches,
         $tableLookupService,
-        array &$lookupResults = array()
+        array &$lookupResults = array(),
+        array $fileContexts = array(),
+        $currentFileIndex = 0
     )
     {
         $config = json_decode($rule['rule_value'], true);
-        if (!is_array($config) || empty($config['table']) || empty($config['column'])) {
+        if (!is_array($config) || empty($config['table'])
+            || (empty($config['column']) && empty($config['value_mappings']))) {
             return array(self::makeError(
                 $rule,
                 $rule['field_name'],
@@ -704,6 +719,9 @@ class XmlRulesValidator
 
         $errors = array();
         foreach ($matches as $match) {
+            if (!empty($config['allow_empty']) && self::isNullValue($match['value'])) {
+                continue;
+            }
             $lookupValue = $match['value'];
             $lookupConfig = $config;
             if (isset($config['remove_suffix'])) {
@@ -746,6 +764,35 @@ class XmlRulesValidator
                         array_key_exists('length', $substringConfig)
                             ? (int) $substringConfig['length'] : null
                     );
+                }
+            }
+            if (isset($config['conditions_from_field']) && is_array($config['conditions_from_field'])) {
+                if (!isset($lookupConfig['conditions']) || !is_array($lookupConfig['conditions'])) {
+                    $lookupConfig['conditions'] = array();
+                }
+                foreach ($config['conditions_from_field'] as $conditionColumn => $fieldConfig) {
+                    $fieldName = is_array($fieldConfig)
+                        ? (isset($fieldConfig['field']) ? $fieldConfig['field'] : '') : $fieldConfig;
+                    $targetFileType = is_array($fieldConfig) && !empty($fieldConfig['file_type'])
+                        ? $fieldConfig['file_type'] : null;
+                    $fieldMatches = self::indexedMatches(
+                        $fileContexts,
+                        $currentFileIndex,
+                        $targetFileType,
+                        $fieldName
+                    );
+                    $sameRowPath = preg_replace('/\.[^.]+$/', '.' . $fieldName, $match['path']);
+                    $conditionValue = null;
+                    foreach ($fieldMatches as $fieldMatch) {
+                        if ($fieldMatch['path'] === $sameRowPath) {
+                            $conditionValue = $fieldMatch['value'];
+                            break;
+                        }
+                    }
+                    if ($conditionValue === null && count($fieldMatches) === 1) {
+                        $conditionValue = $fieldMatches[0]['value'];
+                    }
+                    $lookupConfig['conditions'][$conditionColumn] = $conditionValue;
                 }
             }
             $lookupValues = array($lookupValue);

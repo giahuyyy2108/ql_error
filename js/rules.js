@@ -95,7 +95,7 @@
             error: function () { alert('Không thể tải danh sách rules.'); }
         },
         dom: 'lrtip',
-        pageLength: Number($('#pageLength').val()) || 25,
+        paging: false,
         order: [[0, 'asc']],
         responsive: false,
         autoWidth: false,

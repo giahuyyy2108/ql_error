@@ -10,7 +10,7 @@
         ajax: {url: $('#ULocal').val() + 'danhmuc_thuoc/getData/', type: 'POST', data: function (data) {
             data.searchText = $('#danhmuc-thuoc-search').val().trim(); data.province = $('#danhmuc-thuoc-province').val();
         }},
-        pageLength: 25, lengthMenu: [[10,25,50,100,200],[10,25,50,100,200]], searching: false, ordering: false, autoWidth: false,
+        pageLength: 25, pagingType: 'full_numbers', lengthMenu: [[10,25,50,100,200],[10,25,50,100,200]], searching: false, ordering: false, autoWidth: false,
         columnDefs: [
             {targets: 0, width: '48px'},
             {targets: 1, width: '85px'},
@@ -32,7 +32,20 @@
         },
         language: {processing:'Đang tải dữ liệu...',lengthMenu:'Hiển thị _MENU_ dòng',zeroRecords:'Không tìm thấy thuốc',info:'Hiển thị _START_ đến _END_ trong _TOTAL_ dòng',infoEmpty:'Không có dữ liệu',infoFiltered:'(lọc từ _MAX_ dòng)',paginate:{first:'Đầu',last:'Cuối',next:'Sau',previous:'Trước'}}
     });
-    table.on('draw.dt', function () { table.columns.adjust(); });
+    function updatePageNavigation() {
+        var page = table.page.info();
+        var current = page.pages ? page.page + 1 : 0;
+        $('#danhmuc-thuoc-page-info').text('Trang ' + current + ' / ' + page.pages);
+        $('#btn-danhmuc-thuoc-prev').prop('disabled', page.page <= 0);
+        $('#btn-danhmuc-thuoc-next').prop('disabled', page.pages === 0 || page.page >= page.pages - 1);
+    }
+    table.on('draw.dt', function () { table.columns.adjust(); updatePageNavigation(); });
+    $('#btn-danhmuc-thuoc-prev').on('click', function () {
+        if (!this.disabled) table.page('previous').draw('page');
+    });
+    $('#btn-danhmuc-thuoc-next').on('click', function () {
+        if (!this.disabled) table.page('next').draw('page');
+    });
     $(window).on('load resize', function () { table.columns.adjust(); });
     function reload(){ table.ajax.reload(); }
     $('#btn-search-danhmuc-thuoc').on('click', reload);

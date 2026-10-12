@@ -67,6 +67,10 @@
         errors.forEach(function (error) {
             var note = error.message;
             var errorValue = error.value;
+            var copyValue = errorValue;
+            if (copyValue === null || copyValue === undefined) copyValue = '';
+            else if (typeof copyValue === 'object') copyValue = JSON.stringify(copyValue);
+            else copyValue = String(copyValue);
             if (errorValue === null || errorValue === undefined || String(errorValue) === '') {
                 errorValue = '(trống)';
             } else if (typeof errorValue === 'object') {
@@ -74,12 +78,18 @@
             } else {
                 errorValue = String(errorValue);
             }
-            note += ' | Giá trị lỗi: ' + errorValue;
-            if (error.substring !== undefined) note += ' (Giá trị cắt: ' + error.substring + ')';
-            $('<div>')
+            var errorBox = $('<div>')
                 .addClass('json-field-error' + (error.severity === 'warning' ? ' json-field-warning' : ''))
-                .text(error.display_name + ': ' + note)
                 .appendTo(container);
+            $('<span>').text(error.display_name + ': ' + note + ' | Giá trị lỗi: ').appendTo(errorBox);
+            $('<span role="button" tabindex="0" title="Bấm để sao chép giá trị lỗi">')
+                .addClass('copy-error-value copy-error-trigger')
+                .attr('data-copy-value', copyValue)
+                .text(errorValue)
+                .appendTo(errorBox);
+            if (error.substring !== undefined) {
+                $('<span>').text(' (Giá trị cắt: ' + error.substring + ')').appendTo(errorBox);
+            }
         });
     }
 
@@ -131,12 +141,24 @@
             return;
         }
 
-        var row = $('<div>').addClass('json-value');
+        var row = $('<div>').addClass('json-value' + (fieldErrors.length ? ' json-error-row' : ''));
         var keyStateClass = fieldErrors.length ? ' json-error-key' : (fieldValids.length ? ' json-valid-key' : '');
         $('<span>').addClass('json-key' + keyStateClass).text(key + ': ').appendTo(row);
         var valueClass = value === null ? 'json-null' : (typeof value === 'number' ? 'json-number' : 'json-string');
         var displayValue = value === null ? 'null' : String(value);
-        $('<span>').addClass(valueClass).text(displayValue).appendTo(row);
+        if (fieldErrors.length) {
+            var fieldCopyValue = fieldErrors[0].value;
+            if (fieldCopyValue === null || fieldCopyValue === undefined) fieldCopyValue = '';
+            else if (typeof fieldCopyValue === 'object') fieldCopyValue = JSON.stringify(fieldCopyValue);
+            else fieldCopyValue = String(fieldCopyValue);
+            $('<span role="button" tabindex="0" title="Bấm để sao chép giá trị lỗi">')
+                .addClass(valueClass + ' copy-error-value copy-error-trigger')
+                .attr('data-copy-value', fieldCopyValue)
+                .text(displayValue)
+                .appendTo(row);
+        } else {
+            $('<span>').addClass(valueClass).text(displayValue).appendTo(row);
+        }
         container.append(row);
         appendErrorNotes(container, fieldErrors);
         appendValidNotes(container, fieldValids);
@@ -583,6 +605,49 @@
     });
 
     $('#decoded-file-select').on('change', renderSelectedDecodedFile);
+
+    function copyErrorValue(element) {
+        var target = $(element);
+        var value = String(target.attr('data-copy-value') || '');
+        function copied() {
+            $('.copy-error-status').remove();
+            target.addClass('copy-success');
+            $('<span class="copy-error-status">Đã sao chép</span>').insertAfter(target);
+            window.setTimeout(function () {
+                target.removeClass('copy-success');
+                $('.copy-error-status').fadeOut(150, function () { $(this).remove(); });
+            }, 1200);
+        }
+        function copyWithEvent() {
+            var successful = false;
+            function handleCopy(event) {
+                if (!event.clipboardData) return;
+                event.clipboardData.setData('text/plain', value);
+                event.preventDefault();
+                successful = true;
+            }
+            document.addEventListener('copy', handleCopy);
+            try { document.execCommand('copy'); } catch (ignore) {}
+            document.removeEventListener('copy', handleCopy);
+            if (successful) copied();
+            else window.prompt('Nhấn Ctrl+C để sao chép giá trị lỗi:', value);
+        }
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(value).then(copied).catch(copyWithEvent);
+        } else copyWithEvent();
+    }
+    $('#modal-view-xml').on('click', '.copy-error-trigger', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        copyErrorValue(this);
+    });
+    $('#modal-view-xml').on('keydown', '.copy-error-value', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            copyErrorValue(this);
+        }
+    });
+
 
     $('#datatable-file').on('click', '.btn-delete-file', function () {
         fileIdsToDelete = [Number($(this).attr('data-id'))];

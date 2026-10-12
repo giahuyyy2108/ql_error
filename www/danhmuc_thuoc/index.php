@@ -29,5 +29,20 @@
                 </tr></thead><tbody></tbody>
             </table>
         </div>
+        <div class="danhmuc-thuoc-page-nav">
+            <button type="button" id="btn-danhmuc-thuoc-prev" class="btn btn-default">
+                <i class="fa fa-chevron-left"></i> Trang trước
+            </button>
+            <span id="danhmuc-thuoc-page-info" class="danhmuc-thuoc-page-info">Trang 1 / 1</span>
+            <button type="button" id="btn-danhmuc-thuoc-next" class="btn btn-primary">
+                Trang tiếp <i class="fa fa-chevron-right"></i>
+            </button>
+        </div>
     </div>
 </div>
+
+<style>
+    .danhmuc-thuoc-page-nav { display:flex; justify-content:center; align-items:center; gap:12px; margin-top:14px; }
+    .danhmuc-thuoc-page-info { min-width:110px; text-align:center; font-weight:600; }
+    .danhmuc-thuoc-page-nav .btn[disabled] { opacity:.45; }
+</style>

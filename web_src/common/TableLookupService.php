@@ -80,8 +80,11 @@ class TableLookupService
         ),
         'danhmuc_thuoc' => array(
             'table' => 'danhmuc_thuoc',
-            'columns' => array('ma_hoat_chat', 'sdk_gpnk', 'sdk_chuan_hoa'),
-            'conditions' => array('is_active', 'nhom_tieu_chi', 'goi_thau', 'tinh_thanh')
+            'columns' => array(
+                'ma_hoat_chat', 'sdk_gpnk', 'sdk_chuan_hoa', 'ten_thuoc',
+                'so_quyet_dinh', 'goi_thau', 'nhom_tieu_chi', 'ngay_cong_bo', 'tinh_thanh'
+            ),
+            'conditions' => array('is_active', 'ma_hoat_chat', 'nhom_tieu_chi', 'goi_thau', 'tinh_thanh')
         )
     );
 
@@ -92,6 +95,7 @@ class TableLookupService
         $db->connect();
         $db->selectdb();
         $this->connection = $connect;
+        $this->connection->set_charset('utf8mb4');
         // A watcher can stay alive while lookup sources are added or changed.
         // Reload the allow-list for each service instance instead of keeping
         // stale configuration for the lifetime of the PHP process.
@@ -102,8 +106,9 @@ class TableLookupService
     {
         $tableKey = isset($config['table']) ? strtolower(trim((string) $config['table'])) : '';
         $column = isset($config['column']) ? trim((string) $config['column']) : '';
-        if ($tableKey === '' || $column === '') {
-            throw new RuntimeException('TABLE_EXISTS cần có table và column.');
+        $valueMappings = isset($config['value_mappings']) ? $config['value_mappings'] : array();
+        if ($tableKey === '' || ($column === '' && empty($valueMappings))) {
+            throw new RuntimeException('TABLE_EXISTS cần có table và column hoặc value_mappings.');
         }
         $allowedSources = self::getAllowedSources();
         if (!isset($allowedSources[$tableKey])) {
@@ -111,8 +116,33 @@ class TableLookupService
         }
 
         $source = $allowedSources[$tableKey];
-        if (!in_array($column, $source['columns'], true)) {
+        if ($column !== '' && !in_array($column, $source['columns'], true)) {
             throw new RuntimeException('Cột ' . $column . ' không được phép đối chiếu trong bảng ' . $source['table'] . '.');
+        }
+
+        if (!is_array($valueMappings)) {
+            throw new RuntimeException('value_mappings của TABLE_EXISTS phải là một mảng.');
+        }
+        $separator = isset($config['separator']) ? (string) $config['separator'] : ';';
+        if ($valueMappings && $separator === '') {
+            throw new RuntimeException('separator của TABLE_EXISTS không được để trống.');
+        }
+        $normalizedMappings = array();
+        foreach ($valueMappings as $mapping) {
+            $mappingColumn = is_array($mapping) && isset($mapping['column'])
+                ? trim((string) $mapping['column']) : '';
+            $index = is_array($mapping) && array_key_exists('index', $mapping) ? (int) $mapping['index'] : -1;
+            $transform = is_array($mapping) && isset($mapping['transform'])
+                ? strtolower(trim((string) $mapping['transform'])) : '';
+            if ($index < 0 || !in_array($mappingColumn, $source['columns'], true)) {
+                throw new RuntimeException('Mỗi value_mappings cần có index hợp lệ và column được phép.');
+            }
+            if (!in_array($transform, array('', 'digits_only', 'year'), true)) {
+                throw new RuntimeException('Transform ' . $transform . ' không được hỗ trợ.');
+            }
+            $normalizedMappings[] = array(
+                'index' => $index, 'column' => $mappingColumn, 'transform' => $transform
+            );
         }
 
         $fallbackColumns = isset($config['fallback_columns']) ? $config['fallback_columns'] : array();
@@ -188,6 +218,8 @@ class TableLookupService
             'column' => $column,
             'fallback_columns' => $fallbackColumns,
             'return_column' => $returnColumn,
+            'separator' => $separator,
+            'value_mappings' => $normalizedMappings,
             'conditions' => $conditions
         );
     }
@@ -241,6 +273,9 @@ class TableLookupService
         }
 
         $bhytDien = $config['table'] === 'nhom_BHYT' && array_key_exists('dien', $config['conditions']);
+        if ($config['value_mappings']) {
+            return $this->lookupMappedRow($normalizedValue, $config, $cacheKey);
+        }
         $lookupColumns = array_merge(array($config['column']), $config['fallback_columns']);
         $selectedColumns = $lookupColumns;
         if ($config['return_column'] !== '') $selectedColumns[] = $config['return_column'];
@@ -333,6 +368,65 @@ class TableLookupService
         if ($cacheKey !== false) {
             $this->existsCache[$cacheKey] = $lookupResult;
         }
+        return $lookupResult;
+    }
+
+    private function lookupMappedRow($value, array $config, $cacheKey)
+    {
+        $parts = array_map('trim', explode($config['separator'], $value));
+        $selectedColumns = array();
+        $comparisons = array();
+        $parameters = array();
+        foreach ($config['value_mappings'] as $mapping) {
+            if (!array_key_exists($mapping['index'], $parts)) return false;
+            $mappedValue = $parts[$mapping['index']];
+            if ($mapping['transform'] === 'digits_only') {
+                $mappedValue = preg_replace('/\D+/', '', $mappedValue);
+                $mappedValue = $mappedValue === '' ? '' : (string) ((int) $mappedValue);
+            }
+            $selectedColumns[] = $mapping['column'];
+            $comparisons[] = $mapping['transform'] === 'year'
+                ? 'YEAR(`' . $config['table'] . '`.`' . $mapping['column'] . '`) = ?'
+                : '`' . $config['table'] . '`.`' . $mapping['column'] . '` = ?';
+            $parameters[] = $mappedValue;
+        }
+        if ($config['return_column'] !== '') $selectedColumns[] = $config['return_column'];
+        $selectedColumns = array_values(array_unique($selectedColumns));
+        $selectSql = implode(', ', array_map(function ($selectedColumn) use ($config) {
+            return '`' . $config['table'] . '`.`' . $selectedColumn . '`';
+        }, $selectedColumns));
+        $sql = 'SELECT ' . $selectSql . ' FROM `' . $config['table'] . '` WHERE '
+            . implode(' AND ', $comparisons);
+        foreach ($config['conditions'] as $conditionColumn => $conditionValue) {
+            if ($conditionValue === null) {
+                $sql .= ' AND `' . $config['table'] . '`.`' . $conditionColumn . '` IS NULL';
+            } elseif (is_scalar($conditionValue)) {
+                $sql .= ' AND `' . $config['table'] . '`.`' . $conditionColumn . '` = ?';
+                $parameters[] = (string) $conditionValue;
+            } else {
+                throw new RuntimeException('value_mappings chỉ hỗ trợ condition dạng giá trị đơn hoặc null.');
+            }
+        }
+        $sql .= ' LIMIT 1';
+        $statement = $this->connection->prepare($sql);
+        if (!$statement) throw new RuntimeException('Không thể chuẩn bị truy vấn TABLE_EXISTS theo mảng.');
+        $types = str_repeat('s', count($parameters));
+        $statement->bind_param($types, ...$parameters);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể thực hiện truy vấn TABLE_EXISTS theo mảng.');
+        }
+        $result = $statement->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
+        $statement->close();
+        if ($row === null) return false;
+        $lookupResult = array(
+            'matched_column' => implode(',', array_column($config['value_mappings'], 'column')),
+            'return_column' => $config['return_column'],
+            'return_value' => $config['return_column'] !== '' && array_key_exists($config['return_column'], $row)
+                ? $row[$config['return_column']] : null
+        );
+        if ($cacheKey !== false) $this->existsCache[$cacheKey] = $lookupResult;
         return $lookupResult;
     }
 }

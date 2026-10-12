@@ -314,6 +314,18 @@
         font-family: Arial, sans-serif;
     }
     .json-tree .json-error-key { color: #a94442; }
+    .json-tree .json-error-row .json-key,
+    .json-tree .json-error-row .json-string,
+    .json-tree .json-error-row .json-number,
+    .json-tree .json-error-row .json-null { color: #a94442; }
+    .json-tree .copy-error-value {
+        color: #a94442;
+        font-weight: 700;
+        cursor: copy;
+        user-select: none;
+    }
+    .json-tree .copy-error-value.copy-success { color: #218838; }
+    .json-tree .copy-error-status { margin-left: 5px; color: #218838; font-weight: 600; }
     .json-tree .json-warning-key { color: #8a6d3b; }
     .json-tree .json-error-count,
     .json-tree .json-warning-count {
