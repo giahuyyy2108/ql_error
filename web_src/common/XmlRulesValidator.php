@@ -73,6 +73,18 @@ class XmlRulesValidator
                         continue;
                     }
 
+                    if ($ruleType === 'CROSS_FILE_REQUIRED_BY_KEY') {
+                        $ruleErrors = self::validateCrossFileRequiredByKey(
+                            $rule,
+                            $matches,
+                            $fileContexts,
+                            $fileIndex
+                        );
+                        $errors = array_merge($errors, $ruleErrors);
+                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        continue;
+                    }
+
                     if ($ruleType === 'TABLE_EXISTS') {
                         $lookupResults = array();
                         $ruleErrors = self::validateTableExists(
@@ -234,7 +246,8 @@ class XmlRulesValidator
                 self::addRequiredField($required, $fileType, $rule['field_name']);
                 $ruleType = strtoupper(trim($rule['rule_type']));
                 if (!in_array($ruleType, array(
-                    'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CCCD_GENDER_CENTURY', 'API', 'SUBSTRING',
+                    'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CROSS_FILE_REQUIRED_BY_KEY',
+                    'CCCD_GENDER_CENTURY', 'API', 'SUBSTRING',
                     'TABLE_EXISTS'
                 ), true)) {
                     continue;
@@ -253,6 +266,20 @@ class XmlRulesValidator
                     $targetType = !empty($config['other_file_type'])
                         ? strtoupper($config['other_file_type']) : $fileType;
                     self::addRequiredField($required, $targetType, $config['other_field']);
+                } elseif ($ruleType === 'CROSS_FILE_REQUIRED_BY_KEY') {
+                    if (!empty($config['source_key'])) {
+                        self::addRequiredField($required, $fileType, $config['source_key']);
+                    }
+                    $when = isset($config['when_match']) && is_array($config['when_match'])
+                        ? $config['when_match'] : array();
+                    $targetType = !empty($when['file_type'])
+                        ? strtoupper($when['file_type']) : $fileType;
+                    if (!empty($when['target_key'])) {
+                        self::addRequiredField($required, $targetType, $when['target_key']);
+                    }
+                    if (!empty($when['field'])) {
+                        self::addRequiredField($required, $targetType, $when['field']);
+                    }
                 } elseif ($ruleType === 'SUBSTRING' && !empty($config['when']['field'])) {
                     $targetType = !empty($config['when']['file_type'])
                         ? strtoupper($config['when']['file_type']) : $fileType;
@@ -679,6 +706,114 @@ class XmlRulesValidator
             }
         }
         return $errors;
+    }
+
+    private static function validateCrossFileRequiredByKey(
+        array $rule,
+        array $matches,
+        array $fileContexts,
+        $currentFileIndex
+    ) {
+        $config = json_decode($rule['rule_value'], true);
+        $when = is_array($config) && isset($config['when_match']) && is_array($config['when_match'])
+            ? $config['when_match'] : array();
+        if (!is_array($config) || empty($config['source_key']) || empty($when['file_type'])
+            || empty($when['target_key']) || empty($when['field'])
+            || !array_key_exists('value', $when)) {
+            return array(self::makeError(
+                $rule,
+                $rule['field_name'],
+                null,
+                'error',
+                'Cấu hình CROSS_FILE_REQUIRED_BY_KEY không hợp lệ.'
+            ));
+        }
+
+        $sourceKeys = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            null,
+            $config['source_key']
+        );
+        $targetKeys = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            $when['file_type'],
+            $when['target_key']
+        );
+        $conditions = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            $when['file_type'],
+            $when['field']
+        );
+
+        $qualifyingKeys = array();
+        foreach ($targetKeys as $targetKey) {
+            $targetParent = self::parentPath($targetKey['path']);
+            foreach ($conditions as $condition) {
+                if (self::parentPath($condition['path']) !== $targetParent) continue;
+                if (self::compareValues(
+                    $condition['value'],
+                    $when['value'],
+                    isset($when['operator']) ? $when['operator'] : '=',
+                    isset($when['data_type']) ? $when['data_type'] : 'string',
+                    null
+                )) {
+                    $key = is_scalar($targetKey['value']) ? trim((string) $targetKey['value']) : '';
+                    if ($key !== '') $qualifyingKeys[$key] = true;
+                }
+                break;
+            }
+        }
+
+        $errors = array();
+        $foundSourceKeys = array();
+        foreach ($sourceKeys as $sourceKey) {
+            $key = is_scalar($sourceKey['value']) ? trim((string) $sourceKey['value']) : '';
+            if ($key === '' || !isset($qualifyingKeys[$key])) continue;
+            $foundSourceKeys[$key] = true;
+            $sourceParent = self::parentPath($sourceKey['path']);
+            $requiredMatch = null;
+            foreach ($matches as $match) {
+                if (self::parentPath($match['path']) === $sourceParent) {
+                    $requiredMatch = $match;
+                    break;
+                }
+            }
+            $requiredValue = $requiredMatch !== null ? $requiredMatch['value'] : null;
+            if (self::isNullValue($requiredValue)) {
+                $path = $sourceParent === ''
+                    ? $rule['field_name'] : $sourceParent . '.' . $rule['field_name'];
+                $error = self::makeError($rule, $path, $requiredValue);
+                $error['key_field'] = $config['source_key'];
+                $error['key_value'] = $key;
+                $errors[] = $error;
+            }
+        }
+
+        if (!empty($config['error_when_source_missing'])) {
+            foreach ($qualifyingKeys as $key => $_) {
+                if (isset($foundSourceKeys[$key])) continue;
+                $error = self::makeError(
+                    $rule,
+                    $rule['field_name'] . '[' . $config['source_key'] . '=' . $key . ']',
+                    null
+                );
+                $error['key_field'] = $config['source_key'];
+                $error['key_value'] = $key;
+                $error['source_missing'] = true;
+                $errors[] = $error;
+            }
+        }
+        return $errors;
+    }
+
+    private static function parentPath($path)
+    {
+        $path = (string) $path;
+        $position = strrpos($path, '.');
+        return $position === false ? '' : substr($path, 0, $position);
     }
 
     private static function validateTableExists(

@@ -76,8 +76,16 @@
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="xmlFile">Chọn file <span class="text-danger">*</span></label>
-                        <input type="file" class="form-control" id="xmlFile" name="xmlFile" accept=".xml,text/xml,application/xml" required>
-                        <small class="form-text text-muted">Chỉ nhận file .xml hợp lệ, dung lượng tối đa 5 MB.</small>
+                        <div id="xml-drop-zone" class="xml-drop-zone" role="button" tabindex="0"
+                             aria-label="Kéo thả hoặc chọn file XML để tải lên">
+                            <i class="fa fa-cloud-upload xml-drop-zone-icon" aria-hidden="true"></i>
+                            <strong>Kéo và thả file XML vào đây</strong>
+                            <span>hoặc bấm để chọn file</span>
+                            <span id="xml-drop-file-name" class="xml-drop-file-name"></span>
+                            <input type="file" id="xmlFile" name="xmlFile"
+                                   accept=".xml,text/xml,application/xml" required>
+                        </div>
+                        <small class="form-text text-muted">File sẽ tự động tải lên sau khi chọn hoặc thả vào vùng trên. Dung lượng tối đa 5 MB.</small>
                     </div>
                     <div id="upload-message" class="alert" style="display:none"></div>
                 </div>
@@ -119,6 +127,53 @@
 
 <style>
     .file-search-row { margin-bottom: 14px; }
+    .xml-drop-zone {
+        display: flex;
+        min-height: 175px;
+        padding: 24px;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 7px;
+        color: #52606d;
+        background: #f8fbfe;
+        border: 2px dashed #8bb8db;
+        border-radius: 8px;
+        cursor: pointer;
+        text-align: center;
+        transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+    }
+    .xml-drop-zone:hover,
+    .xml-drop-zone:focus,
+    .xml-drop-zone.is-dragging {
+        color: #245580;
+        background: #eaf5fd;
+        border-color: #337ab7;
+        box-shadow: 0 0 0 3px rgba(51, 122, 183, .15);
+        outline: 0;
+    }
+    .xml-drop-zone.is-uploading { cursor: wait; opacity: .7; }
+    .xml-drop-zone-icon { font-size: 42px; color: #337ab7; }
+    .xml-drop-file-name {
+        display: none;
+        max-width: 100%;
+        margin-top: 5px;
+        padding: 5px 10px;
+        overflow: hidden;
+        color: #245580;
+        background: #d9edf7;
+        border-radius: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    #xmlFile {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+    }
     #datatable-file_wrapper .dataTables_filter { display: none; }
     .file-table-scroll {
         width: 100%;

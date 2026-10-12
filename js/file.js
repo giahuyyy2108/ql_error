@@ -9,6 +9,7 @@
     var decodedFiles = [];
     var xmlDisplaySettings = { show_errors: true, show_valid: true };
     var revalidationInProgress = false;
+    var uploadInProgress = false;
 
     function escapeHtml(value) {
         return $('<div>').text(value == null ? '' : value).html();
@@ -540,21 +541,31 @@
 
     $('#btn-open-upload').on('click', function () {
         $('#form-upload-xml')[0].reset();
+        $('#xml-drop-file-name').hide().text('');
+        $('#xml-drop-zone').removeClass('is-dragging is-uploading');
         $('#upload-message').hide();
         $('#modal-upload-xml').modal('show');
     });
 
-    $('#form-upload-xml').on('submit', function (event) {
-        event.preventDefault();
-        var input = $('#xmlFile')[0];
-        if (!input.files.length || !/\.xml$/i.test(input.files[0].name)) {
+    function uploadXmlFile(file) {
+        if (uploadInProgress) return;
+        if (!file || !/\.xml$/i.test(file.name || '')) {
             showUploadMessage('Vui lòng chọn đúng file có đuôi .xml.', false);
             return;
         }
+        if (!file.size || file.size > 5242880) {
+            showUploadMessage('File XML phải có dung lượng từ 1 byte đến 5 MB.', false);
+            return;
+        }
 
-        var formData = new FormData(this);
+        var formData = new FormData();
+        formData.append('xmlFile', file, file.name);
         formData.append('csrf_token', csrfToken);
+        uploadInProgress = true;
+        $('#xml-drop-file-name').text(file.name).show();
+        $('#xml-drop-zone').addClass('is-uploading');
         $('#btn-upload-xml').prop('disabled', true);
+        showUploadMessage('Đang tải và kiểm tra file XML...', true);
 
         $.ajax({
             url: baseUrl + 'file/upload/',
@@ -573,8 +584,58 @@
         }).fail(function () {
             showUploadMessage('Có lỗi xảy ra khi tải file lên.', false);
         }).always(function () {
+            uploadInProgress = false;
+            $('#xml-drop-zone').removeClass('is-uploading');
             $('#btn-upload-xml').prop('disabled', false);
         });
+    }
+
+    $('#form-upload-xml').on('submit', function (event) {
+        event.preventDefault();
+        var input = $('#xmlFile')[0];
+        uploadXmlFile(input.files.length ? input.files[0] : null);
+    });
+
+    $('#xmlFile').on('change', function () {
+        if (this.files.length) uploadXmlFile(this.files[0]);
+    });
+
+    $('#xml-drop-zone')
+        .on('click', function (event) {
+            if (!uploadInProgress && event.target.id !== 'xmlFile') $('#xmlFile').trigger('click');
+        })
+        .on('keydown', function (event) {
+            if (!uploadInProgress && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                $('#xmlFile').trigger('click');
+            }
+        })
+        .on('dragenter dragover', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!uploadInProgress) $(this).addClass('is-dragging');
+        })
+        .on('dragleave dragend', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            $(this).removeClass('is-dragging');
+        })
+        .on('drop', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            $(this).removeClass('is-dragging');
+            if (uploadInProgress) return;
+            var files = event.originalEvent.dataTransfer.files;
+            if (!files || files.length !== 1) {
+                showUploadMessage('Mỗi lần chỉ được tải lên một file XML.', false);
+                return;
+            }
+            uploadXmlFile(files[0]);
+        });
+
+    $(document).on('dragover drop', function (event) {
+        if ($(event.target).closest('#xml-drop-zone').length) return;
+        event.preventDefault();
     });
 
     $('#datatable-file').on('click', '.btn-view-file', function () {

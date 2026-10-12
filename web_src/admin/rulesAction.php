@@ -186,7 +186,8 @@ class rulesAction
             throw new RuntimeException('Loại rule ' . $rule['rule_type'] . ' bắt buộc phải có giá trị cấu hình.');
         }
         if (in_array($rule['rule_type'], array(
-            'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'TABLE_EXISTS', 'API', 'SUBSTRING',
+            'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CROSS_FILE_REQUIRED_BY_KEY',
+            'TABLE_EXISTS', 'API', 'SUBSTRING',
             'CCCD_GENDER_CENTURY', 'FORMULA'
         ), true)) {
             $config = json_decode($rule['rule_value'], true);
@@ -201,6 +202,17 @@ class rulesAction
                 && (!array_key_exists('when_value', $config) || empty($config['other_field'])
                     || !array_key_exists('expected', $config))) {
                 throw new RuntimeException('CONDITIONAL_FIELD cần có when_value, other_field và expected.');
+            }
+            if ($rule['rule_type'] === 'CROSS_FILE_REQUIRED_BY_KEY') {
+                $when = isset($config['when_match']) && is_array($config['when_match'])
+                    ? $config['when_match'] : array();
+                if (empty($config['source_key']) || empty($when['file_type'])
+                    || empty($when['target_key']) || empty($when['field'])
+                    || !array_key_exists('value', $when)) {
+                    throw new RuntimeException(
+                        'CROSS_FILE_REQUIRED_BY_KEY cần có source_key và đầy đủ cấu hình when_match.'
+                    );
+                }
             }
             if ($rule['rule_type'] === 'TABLE_EXISTS') {
                 TableLookupService::normalizeConfig($config);
