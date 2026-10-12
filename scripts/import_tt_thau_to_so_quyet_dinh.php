@@ -75,11 +75,14 @@ function firstWorksheetPath(ZipArchive $zip)
 
 function parseTenderInformation($value)
 {
-    $parts = array_map('normalizeExcelText', explode(';', normalizeExcelText($value)));
+    $normalizedValue = normalizeExcelText($value);
+    $parts = array_map('normalizeExcelText', explode(';', $normalizedValue));
     if (count($parts) < 4 || $parts[0] === '' || $parts[1] === '' || $parts[2] === ''
         || !preg_match('/^(19|20)\d{2}$/', $parts[3])) return false;
     return array(
-        'so_quyet_dinh' => $parts[0],
+        // TT_THAU is validated against this column, so retain the complete
+        // Excel representation, including any component after the year.
+        'so_quyet_dinh' => $normalizedValue,
         'goi_thau' => $parts[1],
         'nhom_tieu_chi' => $parts[2],
         'nam_thau' => (int) $parts[3]

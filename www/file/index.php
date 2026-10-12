@@ -325,6 +325,13 @@
         user-select: none;
     }
     .json-tree .copy-error-value.copy-success { color: #218838; }
+    .json-tree .copy-valid-value {
+        color: #218838;
+        font-weight: 700;
+        cursor: copy;
+        user-select: none;
+    }
+    .json-tree .copy-valid-value.copy-success { color: #155724; }
     .json-tree .copy-error-status { margin-left: 5px; color: #218838; font-weight: 600; }
     .json-tree .json-warning-key { color: #8a6d3b; }
     .json-tree .json-error-count,

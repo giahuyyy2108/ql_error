@@ -95,10 +95,26 @@
 
     function appendValidNotes(container, validFields) {
         validFields.forEach(function (item) {
-            $('<div>')
+            var validValue = item.value;
+            var copyValue = validValue;
+            if (copyValue === null || copyValue === undefined) copyValue = '';
+            else if (typeof copyValue === 'object') copyValue = JSON.stringify(copyValue);
+            else copyValue = String(copyValue);
+            if (validValue === null || validValue === undefined || String(validValue) === '') {
+                validValue = '(trống)';
+            } else if (typeof validValue === 'object') {
+                validValue = JSON.stringify(validValue);
+            } else validValue = String(validValue);
+            var validBox = $('<div>')
                 .addClass('json-field-valid')
-                .text(item.display_name + ': ' + (item.message || 'Hợp lệ') + ' (' + item.rule_type + ')')
                 .appendTo(container);
+            $('<span>').text(item.display_name + ': ' + (item.message || 'Hợp lệ')
+                + ' (' + item.rule_type + ') | Giá trị hợp lệ: ').appendTo(validBox);
+            $('<span role="button" tabindex="0" title="Bấm để sao chép giá trị hợp lệ">')
+                .addClass('copy-valid-value copy-value-trigger')
+                .attr('data-copy-value', copyValue)
+                .text(validValue)
+                .appendTo(validBox);
         });
     }
 
@@ -146,13 +162,16 @@
         $('<span>').addClass('json-key' + keyStateClass).text(key + ': ').appendTo(row);
         var valueClass = value === null ? 'json-null' : (typeof value === 'number' ? 'json-number' : 'json-string');
         var displayValue = value === null ? 'null' : String(value);
-        if (fieldErrors.length) {
-            var fieldCopyValue = fieldErrors[0].value;
+        if (fieldErrors.length || fieldValids.length) {
+            var validationItem = fieldErrors.length ? fieldErrors[0] : fieldValids[0];
+            var fieldCopyValue = validationItem.value;
             if (fieldCopyValue === null || fieldCopyValue === undefined) fieldCopyValue = '';
             else if (typeof fieldCopyValue === 'object') fieldCopyValue = JSON.stringify(fieldCopyValue);
             else fieldCopyValue = String(fieldCopyValue);
-            $('<span role="button" tabindex="0" title="Bấm để sao chép giá trị lỗi">')
-                .addClass(valueClass + ' copy-error-value copy-error-trigger')
+            var isError = fieldErrors.length > 0;
+            $('<span role="button" tabindex="0">')
+                .attr('title', isError ? 'Bấm để sao chép giá trị lỗi' : 'Bấm để sao chép giá trị hợp lệ')
+                .addClass(valueClass + ' ' + (isError ? 'copy-error-value copy-error-trigger' : 'copy-valid-value copy-value-trigger'))
                 .attr('data-copy-value', fieldCopyValue)
                 .text(displayValue)
                 .appendTo(row);
@@ -630,18 +649,18 @@
             try { document.execCommand('copy'); } catch (ignore) {}
             document.removeEventListener('copy', handleCopy);
             if (successful) copied();
-            else window.prompt('Nhấn Ctrl+C để sao chép giá trị lỗi:', value);
+            else window.prompt('Nhấn Ctrl+C để sao chép giá trị:', value);
         }
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(value).then(copied).catch(copyWithEvent);
         } else copyWithEvent();
     }
-    $('#modal-view-xml').on('click', '.copy-error-trigger', function (event) {
+    $('#modal-view-xml').on('click', '.copy-error-trigger, .copy-value-trigger', function (event) {
         event.preventDefault();
         event.stopPropagation();
         copyErrorValue(this);
     });
-    $('#modal-view-xml').on('keydown', '.copy-error-value', function (event) {
+    $('#modal-view-xml').on('keydown', '.copy-error-value, .copy-valid-value', function (event) {
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             copyErrorValue(this);
