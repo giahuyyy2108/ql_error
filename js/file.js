@@ -438,22 +438,48 @@
         });
         if (!headers.length) headers.push('MA_LK');
 
-        function cellXml(columnIndex, rowIndex, value, style) {
+        function shouldExportAsNumber(header, value) {
+            var textValue = value == null ? '' : String(value).trim();
+            if (!/^-?(?:\d+|\d*\.\d+)$/.test(textValue)) return false;
+
+            // Mã, ngày và số định danh phải giữ dạng text để không mất
+            // số 0 ở đầu hoặc bị Excel làm tròn quá 15 chữ số.
+            if (/^(?:MA_|NGAY_|GT_|SO_CCCD$|SO_CMND$|TT_THAU$)/i.test(header)) return false;
+            if (/^0\d+/.test(textValue) || textValue.replace(/[-.]/g, '').length > 15) return false;
+            return true;
+        }
+
+        function excelNumberStyle(header, currentStyle) {
+            // Giữ màu nền của ô validation; các ô bình thường dùng
+            // Number Format thật thay vì General.
+            if (currentStyle) return currentStyle;
+            if (/^(?:STT|PHAM_VI)$/i.test(header)) return 5; // #,##0
+            if (/^DON_GIA_/i.test(header)) return 7; // #,##0.000
+            if (/^(?:TYLE_|MUC_HUONG$)/i.test(header)) return 8; // 0.##
+            if (/^(?:SO_LUONG$|THANH_TIEN_|T_)/i.test(header)) return 6; // #,##0.00
+            return 6;
+        }
+
+        function cellXml(columnIndex, rowIndex, value, style, header, forceText) {
             var reference = excelColumnName(columnIndex) + rowIndex;
+            if (!forceText && shouldExportAsNumber(header, value)) {
+                return '<c r="' + reference + '" s="' + excelNumberStyle(header, style) + '"><v>'
+                    + String(value).trim() + '</v></c>';
+            }
             return '<c r="' + reference + '" t="inlineStr" s="' + style + '"><is><t xml:space="preserve">'
                 + excelXmlText(value) + '</t></is></c>';
         }
 
         var xmlRows = [];
         xmlRows.push('<row r="1">' + headers.map(function (header, index) {
-            return cellXml(index, 1, header, 1);
+            return cellXml(index, 1, header, 1, header, true);
         }).join('') + '</row>');
         records.forEach(function (record, recordIndex) {
             var rowNumber = recordIndex + 2;
             xmlRows.push('<row r="' + rowNumber + '">' + headers.map(function (header, columnIndex) {
                 var value = record.data[header];
                 if (value !== null && typeof value === 'object') value = JSON.stringify(value);
-                return cellXml(columnIndex, rowNumber, value, record.styles[header] || 0);
+                return cellXml(columnIndex, rowNumber, value, record.styles[header] || 0, header, false);
             }).join('') + '</row>');
         });
         var lastColumn = excelColumnName(headers.length - 1);
@@ -534,7 +560,7 @@
         zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
         zip.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + workbookSheets.join('') + '</sheets></workbook>');
         zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + workbookRelationships.join('') + '</Relationships>');
-        zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="13"/><name val="Times New Roman"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="13"/><name val="Times New Roman"/></font><font><b/><sz val="13"/><name val="Times New Roman"/></font></fonts><fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF337AB7"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4CCCC"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF2CC"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9EAD3"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+        zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="0.##"/></numFmts><fonts count="3"><font><sz val="13"/><name val="Times New Roman"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="13"/><name val="Times New Roman"/></font><font><b/><sz val="13"/><name val="Times New Roman"/></font></fonts><fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF337AB7"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4CCCC"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF2CC"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9EAD3"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="9"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
         var options = {
             type: 'blob',
             mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -729,6 +755,25 @@
         if (!groups.length) items.append($('<div>').addClass('text-muted').text('Không có nhóm XML.'));
     }
 
+    function formatDecodedTableValue(header, value) {
+        var textValue = value == null ? '' : String(value).trim();
+        if (!/^-?(?:\d+|\d*\.\d+)$/.test(textValue)) return null;
+        if (/^(?:MA_|NGAY_|GT_|SO_CCCD$|SO_CMND$|TT_THAU$)/i.test(header)) return null;
+        if (/^0\d+/.test(textValue) || textValue.replace(/[-.]/g, '').length > 15) return null;
+
+        var minimumFractionDigits = 0;
+        var maximumFractionDigits = 2;
+        if (/^(?:STT|PHAM_VI)$/i.test(header)) maximumFractionDigits = 0;
+        else if (/^DON_GIA_/i.test(header)) minimumFractionDigits = maximumFractionDigits = 3;
+        else if (/^(?:SO_LUONG$|THANH_TIEN_|T_)/i.test(header)) {
+            minimumFractionDigits = maximumFractionDigits = 2;
+        }
+        return Number(textValue).toLocaleString('vi-VN', {
+            minimumFractionDigits: minimumFractionDigits,
+            maximumFractionDigits: maximumFractionDigits
+        });
+    }
+
     function renderDecodedTable(selected) {
         var records = collectExcelRecords(selected.content || {}, []);
         var container = $('#decoded-table-view').empty();
@@ -754,29 +799,58 @@
                 return priorityHeaders.indexOf(header) === -1;
             }));
         }
+        if (String(selected.type || '').toUpperCase() === 'XML3') {
+            var xml3PriorityHeaders = ['STT', 'TEN_DICH_VU'];
+            headers = xml3PriorityHeaders.filter(function (header) {
+                return known[header];
+            }).concat(headers.filter(function (header) {
+                return xml3PriorityHeaders.indexOf(header) === -1;
+            }));
+        }
         var tableElement = $('<table>').addClass('table table-bordered table-striped table-condensed');
         var headerRow = $('<tr>');
         headers.forEach(function (header) {
-            var cell = $('<th>').text(header);
+            var cell = $('<th>')
+                .attr('aria-sort', 'none')
+                .append(
+                    $('<button>')
+                        .attr({ type: 'button', title: 'Sắp xếp theo ' + header })
+                        .addClass('decoded-table-sort')
+                        .append($('<span>').addClass('decoded-table-sort-label').text(header))
+                        .append($('<span>').addClass('decoded-table-sort-icon').attr('aria-hidden', 'true').text('↕'))
+                );
             if (String(selected.type || '').toUpperCase() === 'XML2') {
                 if (header === 'STT') cell.addClass('xml2-frozen-stt');
                 if (header === 'TEN_THUOC') cell.addClass('xml2-frozen-ten-thuoc');
                 if (header === 'MA_THUOC') cell.addClass('xml2-frozen-ma-thuoc');
             }
+            if (String(selected.type || '').toUpperCase() === 'XML3') {
+                if (header === 'STT') cell.addClass('xml3-frozen-stt');
+                if (header === 'TEN_DICH_VU') cell.addClass('xml3-frozen-ten-dich-vu');
+            }
             cell.appendTo(headerRow);
         });
         tableElement.append($('<thead>').append(headerRow));
         var body = $('<tbody>');
-        records.forEach(function (record) {
-            var row = $('<tr>');
+        records.forEach(function (record, recordIndex) {
+            var row = $('<tr>').attr('data-original-index', recordIndex);
             var rowSeverity = '';
             headers.forEach(function (header) {
                 var value = record.data[header];
-                var cell = $('<td>').text(value == null ? '' : String(value)).attr('title', value == null ? '' : String(value));
+                var rawValue = value == null ? '' : String(value);
+                var formattedValue = formatDecodedTableValue(header, value);
+                var cell = $('<td>')
+                    .text(formattedValue === null ? rawValue : formattedValue)
+                    .attr('title', rawValue);
+                if (formattedValue !== null) cell.addClass('table-number-cell');
                 if (String(selected.type || '').toUpperCase() === 'XML2') {
                     if (header === 'STT') cell.addClass('xml2-frozen-stt');
                     if (header === 'TEN_THUOC') cell.addClass('xml2-frozen-ten-thuoc');
                     if (header === 'MA_THUOC') cell.addClass('xml2-frozen-ma-thuoc');
+                }
+                if (String(selected.type || '').toUpperCase() === 'XML3') {
+                    if (header === 'STT') cell.addClass('xml3-frozen-stt');
+                    if (header === 'TEN_DICH_VU') cell.addClass('xml3-frozen-ten-dich-vu');
                 }
                 var fieldPath = record.path ? record.path + '.' + header : header;
                 (selected.errors || []).some(function (error) {
@@ -792,6 +866,41 @@
             });
             if (rowSeverity) row.addClass('table-row-' + rowSeverity);
             body.append(row);
+        });
+        headerRow.on('click', '.decoded-table-sort', function () {
+            var button = $(this);
+            var selectedCell = button.closest('th');
+            var columnIndex = selectedCell.index();
+            var ascending = selectedCell.attr('aria-sort') !== 'ascending';
+            var rows = body.children('tr').get();
+
+            rows.sort(function (left, right) {
+                var leftIndex = Number($(left).attr('data-original-index'));
+                var rightIndex = Number($(right).attr('data-original-index'));
+                var leftValue = records[leftIndex].data[headers[columnIndex]];
+                var rightValue = records[rightIndex].data[headers[columnIndex]];
+                var leftText = leftValue == null ? '' : String(leftValue).trim();
+                var rightText = rightValue == null ? '' : String(rightValue).trim();
+                var leftNumber = /^-?(?:\d+|\d*\.\d+)$/.test(leftText) ? Number(leftText) : null;
+                var rightNumber = /^-?(?:\d+|\d*\.\d+)$/.test(rightText) ? Number(rightText) : null;
+                var comparison;
+
+                if (leftNumber !== null && rightNumber !== null) {
+                    comparison = leftNumber - rightNumber;
+                } else if (leftText === '' || rightText === '') {
+                    comparison = leftText === rightText ? 0 : (leftText === '' ? 1 : -1);
+                } else {
+                    comparison = leftText.localeCompare(rightText, 'vi', { numeric: true, sensitivity: 'base' });
+                }
+                if (comparison === 0) comparison = leftIndex - rightIndex;
+                return ascending ? comparison : -comparison;
+            });
+
+            headerRow.children('th').attr('aria-sort', 'none')
+                .find('.decoded-table-sort-icon').text('↕');
+            selectedCell.attr('aria-sort', ascending ? 'ascending' : 'descending');
+            button.find('.decoded-table-sort-icon').text(ascending ? '▲' : '▼');
+            $.each(rows, function (_, row) { body.append(row); });
         });
         tableElement.append(body).appendTo(container);
     }
@@ -882,7 +991,7 @@
         paging: false,
         scrollX: false,
         deferRender: true,
-        order: [[6, 'desc']],
+        order: [],
         responsive: false,
         autoWidth: false,
         "lengthChange": false,
@@ -908,27 +1017,9 @@
                     return meta.row + meta.settings._iDisplayStart + 1;
                 }
             },
-            {
-                data: 'name',
-                className: 'file-name-cell',
-                width: '24%',
-                render: function (data, type) {
-                    if (type !== 'display') return data;
-                    return $('<span>')
-                        .addClass('file-name-ellipsis')
-                        .attr('title', data || '')
-                        .text(data || '')
-                        .prop('outerHTML');
-                }
-            },
             { data: 'ma_lk' },
-            {
-                data: 'size',
-                className: 'text-right',
-                render: function (data, type) {
-                    return type === 'display' ? formatBytes(data) : data;
-                }
-            },
+            { data: 'ma_bn', defaultContent: '' },
+            { data: 'ho_ten', defaultContent: '' },
             {
                 data: 'status',
                 className: 'text-center file-status-cell',
@@ -946,12 +1037,6 @@
                         : '<span class="file-status file-status-success">' +
                             '<i class="fa fa-check-circle" aria-hidden="true"></i>' +
                             '<span>Thành công</span></span>';
-                }
-            },
-            {
-                data: 'timestamp',
-                render: function (data, type, row) {
-                    return type === 'display' || type === 'filter' ? row.modified : data;
                 }
             },
             {

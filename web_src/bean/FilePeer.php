@@ -17,7 +17,8 @@ class FilePeer
 
     public function getList()
     {
-        $sql = 'SELECT id, ten, ma_lk, kichthuoc, processing_status, update_at, create_at
+        $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, kichthuoc, processing_status,
+                       validation_result, update_at, create_at
                 FROM `file` ORDER BY update_at DESC, id DESC';
         $result = $this->connection->query($sql);
         if (!$result) {
@@ -27,10 +28,15 @@ class FilePeer
         $files = array();
         while ($row = $result->fetch_assoc()) {
             $timestamp = strtotime($row['update_at']);
+            $patientInfo = $this->patientInfoFromValidation($row['validation_result']);
             $files[] = array(
                 'id' => (int) $row['id'],
                 'name' => $row['ten'],
                 'ma_lk' => $row['ma_lk'],
+                'ma_bn' => $row['ma_bn'] !== null && $row['ma_bn'] !== ''
+                    ? $row['ma_bn'] : $patientInfo['ma_bn'],
+                'ho_ten' => $row['ho_ten'] !== null && $row['ho_ten'] !== ''
+                    ? $row['ho_ten'] : $patientInfo['ho_ten'],
                 'size' => (int) $row['kichthuoc'],
                 'status' => $row['processing_status'],
                 'modified' => $timestamp ? date('d/m/Y H:i:s', $timestamp) : '',
@@ -40,6 +46,26 @@ class FilePeer
         $result->free();
 
         return $files;
+    }
+
+    private function patientInfoFromValidation($validationJson)
+    {
+        $info = array('ma_bn' => '', 'ho_ten' => '');
+        $validation = json_decode((string) $validationJson, true);
+        if (!is_array($validation)) return $info;
+
+        foreach ($validation as $item) {
+            foreach (array('valid_fields', 'errors') as $group) {
+                if (empty($item[$group]) || !is_array($item[$group])) continue;
+                foreach ($item[$group] as $field) {
+                    $name = isset($field['field_name']) ? strtoupper((string) $field['field_name']) : '';
+                    $value = isset($field['value']) ? trim((string) $field['value']) : '';
+                    if ($name === 'MA_BN' && $info['ma_bn'] === '') $info['ma_bn'] = $value;
+                    if ($name === 'HO_TEN' && $info['ho_ten'] === '') $info['ho_ten'] = $value;
+                }
+            }
+        }
+        return $info;
     }
 
     public function getErrorReportRows()
@@ -128,7 +154,10 @@ class FilePeer
         $filePath,
         $validationResult = null,
         $status = 'processed',
-        $ngayLap = null
+        $ngayLap = null,
+        $maBn = null,
+        $hoTen = null,
+        array $thongTinBn = null
     )
     {
         $jsonValidation = $validationResult === null
@@ -137,18 +166,23 @@ class FilePeer
         if ($validationResult !== null && $jsonValidation === false) {
             throw new RuntimeException('Không thể chuyển kết quả kiểm tra sang JSON.');
         }
+        $jsonThongTinBn = $thongTinBn === null ? null
+            : json_encode($thongTinBn, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($thongTinBn !== null && $jsonThongTinBn === false) {
+            throw new RuntimeException('Không thể chuyển thông tin bệnh nhân sang JSON.');
+        }
 
         $statement = $this->connection->prepare(
             'INSERT INTO `file`
-             (ten, ma_lk, ngay_lap, kichthuoc, file_path, processing_status, validation_result)
-             VALUES (?, ?, ?, ?, ?, ?, ?)'
+             (ten, ma_lk, ma_bn, ho_ten, thongtin_bn, ngay_lap, kichthuoc, file_path, processing_status, validation_result)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu file.');
         }
 
         $size = (string) $size;
-        $statement->bind_param('sssssss', $name, $maLk, $ngayLap, $size, $filePath, $status, $jsonValidation);
+        $statement->bind_param('ssssssssss', $name, $maLk, $maBn, $hoTen, $jsonThongTinBn, $ngayLap, $size, $filePath, $status, $jsonValidation);
         if (!$statement->execute()) {
             $statement->close();
             throw new RuntimeException('Không thể lưu file vào cơ sở dữ liệu.');
@@ -166,23 +200,31 @@ class FilePeer
         $filePath,
         array $validationResult,
         $status,
-        $ngayLap = null
+        $ngayLap = null,
+        $maBn = null,
+        $hoTen = null,
+        array $thongTinBn = null
     )
     {
         $jsonValidation = json_encode($validationResult, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($jsonValidation === false) {
             throw new RuntimeException('Không thể chuyển kết quả kiểm tra sang JSON.');
         }
+        $jsonThongTinBn = $thongTinBn === null ? null
+            : json_encode($thongTinBn, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($thongTinBn !== null && $jsonThongTinBn === false) {
+            throw new RuntimeException('Không thể chuyển thông tin bệnh nhân sang JSON.');
+        }
         $statement = $this->connection->prepare(
             'UPDATE `file`
-             SET ten = ?, ngay_lap = ?, kichthuoc = ?, file_path = ?, processing_status = ?, validation_result = ?
+             SET ten = ?, ma_bn = ?, ho_ten = ?, thongtin_bn = ?, ngay_lap = ?, kichthuoc = ?, file_path = ?, processing_status = ?, validation_result = ?
              WHERE id = ?'
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu import lại.');
         }
         $size = (string) $size;
-        $statement->bind_param('ssssssi', $name, $ngayLap, $size, $filePath, $status, $jsonValidation, $id);
+        $statement->bind_param('sssssssssi', $name, $maBn, $hoTen, $jsonThongTinBn, $ngayLap, $size, $filePath, $status, $jsonValidation, $id);
         if (!$statement->execute()) {
             $statement->close();
             throw new RuntimeException('Không thể cập nhật file đã tồn tại.');

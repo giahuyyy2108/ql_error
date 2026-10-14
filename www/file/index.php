@@ -49,11 +49,10 @@
                 <tr>
                     <th class="text-center"><input type="checkbox" id="select-all-files" title="Chọn tất cả file"></th>
                     <th>STT</th>
-                    <th>Tên file</th>
-                    <th>MA_LK</th>
-                    <th>Dung lượng</th>
+                    <th>Mã LK</th>
+                    <th>Mã bệnh nhân</th>
+                    <th>Tên bệnh nhân</th>
                     <th>Trạng thái</th>
-                    <th>Cập nhật lúc</th>
                     <th>Thao tác</th>
                 </tr>
             </thead>
@@ -267,6 +266,40 @@
         background: #fff;
         box-shadow: 0 1px 0 #ddd;
     }
+    #datatable-file.dataTable thead th.sorting,
+    #datatable-file.dataTable thead th.sorting_asc,
+    #datatable-file.dataTable thead th.sorting_desc {
+        padding-right: 28px;
+        cursor: pointer;
+    }
+    #datatable-file.dataTable thead th.sorting:after,
+    #datatable-file.dataTable thead th.sorting_asc:after,
+    #datatable-file.dataTable thead th.sorting_desc:after {
+        position: absolute;
+        top: 50%;
+        right: 8px;
+        bottom: auto;
+        display: block;
+        width: 14px;
+        color: #337ab7;
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        line-height: 1;
+        text-align: center;
+        transform: translateY(-50%);
+    }
+    #datatable-file.dataTable thead th.sorting:after {
+        content: "\2195" !important;
+        opacity: .45;
+    }
+    #datatable-file.dataTable thead th.sorting_asc:after {
+        content: "\25B2" !important;
+        opacity: 1;
+    }
+    #datatable-file.dataTable thead th.sorting_desc:after {
+        content: "\25BC" !important;
+        opacity: 1;
+    }
     #datatable-file th:nth-child(1), #datatable-file td:nth-child(1) { width: 4% !important; }
     #datatable-file th:nth-child(2), #datatable-file td:nth-child(2) { width: 4% !important; }
     #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 25% !important; }
@@ -340,6 +373,20 @@
             letter-spacing: 0;
         }
     }
+    /* Bảng file hiện có 7 cột, bao gồm mã và tên bệnh nhân. */
+    .file-table-scroll { overflow-x: auto; }
+    #datatable-file { min-width: 850px; }
+    #datatable-file th:nth-child(1), #datatable-file td:nth-child(1) { width: 5% !important; }
+    #datatable-file th:nth-child(2), #datatable-file td:nth-child(2) { width: 6% !important; }
+    #datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 25% !important; }
+    #datatable-file th:nth-child(4), #datatable-file td:nth-child(4) { width: 16% !important; }
+    #datatable-file th:nth-child(5), #datatable-file td:nth-child(5) { width: 24% !important; }
+    #datatable-file th:nth-child(6), #datatable-file td:nth-child(6) { width: 14% !important; }
+    #datatable-file th:nth-child(7), #datatable-file td:nth-child(7) { width: 10% !important; }
+    @media (max-width: 1199px) {
+        #datatable-file th, #datatable-file td { display: table-cell !important; }
+    }
+
     #modal-view-xml .modal-dialog {
         width: calc(100vw - 40px);
         max-width: 1500px;
@@ -519,12 +566,41 @@
         background: #eef3f7;
         border-bottom: 2px solid #aeb8c2 !important;
     }
+    .decoded-table-view .decoded-table-sort {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        padding: 0;
+        color: inherit;
+        background: transparent;
+        border: 0;
+        font: inherit;
+        font-weight: 700;
+        text-align: left;
+        cursor: pointer;
+    }
+    .decoded-table-view .decoded-table-sort:focus {
+        outline: 2px solid rgba(51, 122, 183, .45);
+        outline-offset: 2px;
+    }
+    .decoded-table-view .decoded-table-sort-icon {
+        flex: 0 0 14px;
+        color: #337ab7;
+        font-family: Arial, sans-serif;
+        font-size: 10px;
+        text-align: center;
+    }
     .decoded-table-view td:hover {
         overflow: visible;
         white-space: normal;
         overflow-wrap: anywhere;
     }
-    .decoded-table-view tbody tr.table-row-error > td { border-top-color: #e6a3a3; border-bottom-color: #e6a3a3; }
+    .decoded-table-view td.table-number-cell {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
     .decoded-table-view tbody tr.table-row-warning > td { border-top-color: #e5cf86; border-bottom-color: #e5cf86; }
     .decoded-table-view td.table-cell-error {
         color: #a94442 !important;
@@ -577,6 +653,33 @@
     .decoded-table-view tbody tr:nth-of-type(odd) .xml2-frozen-stt,
     .decoded-table-view tbody tr:nth-of-type(odd) .xml2-frozen-ten-thuoc,
     .decoded-table-view tbody tr:nth-of-type(odd) .xml2-frozen-ma-thuoc { background: #f9f9f9; }
+    .decoded-table-view .xml3-frozen-stt {
+        position: sticky;
+        left: 0;
+        z-index: 3;
+        min-width: 70px;
+        width: 70px;
+        max-width: 70px;
+        background: #fff;
+        box-shadow: 1px 0 0 #ccd4db;
+    }
+    .decoded-table-view .xml3-frozen-ten-dich-vu {
+        position: sticky;
+        left: 70px;
+        z-index: 3;
+        min-width: 300px;
+        width: 300px;
+        max-width: 300px;
+        background: #fff;
+        box-shadow: 2px 0 3px rgba(0, 0, 0, .14);
+    }
+    .decoded-table-view thead .xml3-frozen-stt,
+    .decoded-table-view thead .xml3-frozen-ten-dich-vu {
+        z-index: 5;
+        background: #eef3f7;
+    }
+    .decoded-table-view tbody tr:nth-of-type(odd) .xml3-frozen-stt,
+    .decoded-table-view tbody tr:nth-of-type(odd) .xml3-frozen-ten-dich-vu { background: #f9f9f9; }
     .cost-reconciliation {
         display: flex;
         flex-direction: column;

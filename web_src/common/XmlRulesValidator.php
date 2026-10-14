@@ -208,6 +208,10 @@ class XmlRulesValidator
                     }
                 }
 
+                $content = isset($file['NOIDUNGFILE']) && is_array($file['NOIDUNGFILE'])
+                    ? $file['NOIDUNGFILE'] : array();
+                self::interpolateErrorMessages($errors, $content);
+
                 $results[] = array(
                     'hoso_index' => (int) $hoSoIndex,
                     'file_index' => (int) $fileIndex,
@@ -226,6 +230,46 @@ class XmlRulesValidator
         }
 
         return $results;
+    }
+
+    private static function interpolateErrorMessages(array &$errors, array $content)
+    {
+        foreach ($errors as &$error) {
+            if (empty($error['message']) || strpos($error['message'], '{') === false) continue;
+            $context = self::recordAtErrorPath(
+                $content,
+                isset($error['path']) ? (string) $error['path'] : ''
+            );
+            $errorValue = isset($error['value']) && is_scalar($error['value'])
+                ? (string) $error['value'] : '';
+            $error['message'] = preg_replace_callback(
+                '/\{([A-Za-z0-9_]+)\}/',
+                function ($match) use ($context, $errorValue) {
+                    if (strtolower($match[1]) === 'value') return $errorValue;
+                    $field = strtoupper($match[1]);
+                    foreach ($context as $key => $value) {
+                        if (strtoupper((string) $key) !== $field || !is_scalar($value)) continue;
+                        return trim((string) $value);
+                    }
+                    return $match[0];
+                },
+                (string) $error['message']
+            );
+        }
+        unset($error);
+    }
+
+    private static function recordAtErrorPath(array $content, $path)
+    {
+        preg_match_all('/(?:^|\.)([^.\[\]]+)|\[(\d+)\]/', (string) $path, $matches, PREG_SET_ORDER);
+        if (count($matches) > 0) array_pop($matches); // Bá» tÃªn trÆ°á»ng Ä‘ang lá»—i.
+        $current = $content;
+        foreach ($matches as $match) {
+            $key = isset($match[1]) && $match[1] !== '' ? $match[1] : (int) $match[2];
+            if (!is_array($current) || !array_key_exists($key, $current)) return array();
+            $current = $current[$key];
+        }
+        return is_array($current) ? $current : array();
     }
 
     private static function collectNullableFields(array $rulesByType)
@@ -559,7 +603,14 @@ class XmlRulesValidator
             $actual = (float) $actualText;
             $difference = abs($actual - $expected);
             if ($difference > $tolerance) {
-                $error = self::makeError($rule, $item['path'] . '.' . $errorField, $errorValue);
+                $message = self::formulaErrorMessage($rule['error_message'], $record);
+                $error = self::makeError(
+                    $rule,
+                    $item['path'] . '.' . $errorField,
+                    $errorValue,
+                    'error',
+                    $message
+                );
                 $error['expected_value'] = $expected;
                 $error['difference'] = $difference;
                 $error['tolerance'] = $tolerance;
@@ -567,6 +618,15 @@ class XmlRulesValidator
             }
         }
         return $errors;
+    }
+
+    private static function formulaErrorMessage($message, array $record)
+    {
+        return preg_replace_callback('/\{([A-Z0-9_]+)\}/', function ($match) use ($record) {
+            $field = $match[1];
+            if (!isset($record[$field]) || !is_scalar($record[$field])) return '';
+            return trim((string) $record[$field]);
+        }, (string) $message);
     }
 
     private static function formulaFields($node)
@@ -705,8 +765,15 @@ class XmlRulesValidator
             )) {
                 continue;
             }
+            $sameRowPath = preg_replace('/\.[^.]+$/', '.' . $config['other_field'], $match['path']);
+            $rowMatches = array_values(array_filter($otherMatches, function ($otherMatch) use ($sameRowPath) {
+                return isset($otherMatch['path']) && $otherMatch['path'] === $sameRowPath;
+            }));
+            if (empty($rowMatches) && count($otherMatches) === 1) {
+                $rowMatches = $otherMatches;
+            }
             $passed = false;
-            foreach ($otherMatches as $otherMatch) {
+            foreach ($rowMatches as $otherMatch) {
                 if (self::compareValues(
                     $otherMatch['value'],
                     $config['expected'],
@@ -721,8 +788,8 @@ class XmlRulesValidator
             if (!$passed) {
                 $error = self::makeError($rule, $match['path'], $match['value']);
                 $error['other_field'] = $config['other_field'];
-                $error['other_value'] = isset($otherMatches[0]['value'])
-                    ? (string) $otherMatches[0]['value'] : null;
+                $error['other_value'] = isset($rowMatches[0]['value'])
+                    ? (string) $rowMatches[0]['value'] : null;
                 $error['expected'] = (string) $config['expected'];
                 $errors[] = $error;
             }

@@ -55,6 +55,18 @@ class XmlFileImportService
 
         $decodedContent = XmlFileDecoder::decodeDanhSachHoSo($content);
         $maLk = XmlFileDecoder::extractMaLk($decodedContent);
+        $xml1Patient = XmlFileDecoder::extractValuesFromFileType(
+            $decodedContent,
+            'XML1',
+            array('MA_BN', 'MA_THE_BHYT', 'HO_TEN', 'NGAY_SINH')
+        );
+        $maBn = $xml1Patient['MA_BN'];
+        $hoTen = $xml1Patient['HO_TEN'];
+        $thongTinBn = array(
+            'MA_THE_BHYT' => $xml1Patient['MA_THE_BHYT'],
+            'HO_TEN' => $xml1Patient['HO_TEN'],
+            'NGAY_SINH' => $xml1Patient['NGAY_SINH']
+        );
         $ngayLap = XmlFileDecoder::extractNgayLap($content);
         $validationResult = $this->validationCallback === null
             ? null
@@ -70,7 +82,10 @@ class XmlFileImportService
                 $filePath,
                 is_array($validationResult) ? $validationResult : array(),
                 $status,
-                $ngayLap
+                $ngayLap,
+                $maBn,
+                $hoTen,
+                $thongTinBn
             );
             return array(
                 'status' => 'reimported',
@@ -89,7 +104,10 @@ class XmlFileImportService
             $filePath,
             $validationResult,
             $status,
-            $ngayLap
+            $ngayLap,
+            $maBn,
+            $hoTen,
+            $thongTinBn
         );
         return array(
             'status' => 'imported',

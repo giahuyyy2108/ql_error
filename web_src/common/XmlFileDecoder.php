@@ -92,6 +92,43 @@ class XmlFileDecoder
         return $value === '' ? null : $value;
     }
 
+    public static function extractFirstValue(array $decodedContent, $fieldName)
+    {
+        $values = array();
+        self::collectValuesByKey($decodedContent, (string) $fieldName, $values);
+        foreach ($values as $value) {
+            $value = trim((string) $value);
+            if ($value !== '') return $value;
+        }
+        return null;
+    }
+
+    public static function extractValuesFromFileType(array $decodedContent, $fileType, array $fieldNames)
+    {
+        $result = array();
+        foreach ($fieldNames as $fieldName) {
+            $result[(string) $fieldName] = null;
+        }
+
+        $hoSoList = isset($decodedContent['DANHSACHHOSO']['HOSO'])
+            && is_array($decodedContent['DANHSACHHOSO']['HOSO'])
+            ? $decodedContent['DANHSACHHOSO']['HOSO'] : array();
+        foreach ($hoSoList as $hoSo) {
+            $files = isset($hoSo['FILEHOSO']) && is_array($hoSo['FILEHOSO'])
+                ? $hoSo['FILEHOSO'] : array();
+            foreach ($files as $file) {
+                if (strtoupper(trim((string) ($file['LOAIHOSO'] ?? ''))) !== strtoupper($fileType)) continue;
+                $content = isset($file['NOIDUNGFILE']) && is_array($file['NOIDUNGFILE'])
+                    ? $file['NOIDUNGFILE'] : array();
+                foreach ($fieldNames as $fieldName) {
+                    if ($result[$fieldName] !== null) continue;
+                    $result[$fieldName] = self::extractFirstValue($content, $fieldName);
+                }
+            }
+        }
+        return $result;
+    }
+
     private static function collectValuesByKey($data, $targetKey, array &$values)
     {
         if (!is_array($data)) {
