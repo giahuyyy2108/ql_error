@@ -79,13 +79,13 @@
                         <div id="xml-drop-zone" class="xml-drop-zone" role="button" tabindex="0"
                              aria-label="Kéo thả hoặc chọn file XML để tải lên">
                             <i class="fa fa-cloud-upload xml-drop-zone-icon" aria-hidden="true"></i>
-                            <strong>Kéo và thả file XML vào đây</strong>
-                            <span>hoặc bấm để chọn file</span>
+                            <strong>Kéo và thả một hoặc nhiều file XML vào đây</strong>
+                            <span>hoặc bấm để chọn các file</span>
                             <span id="xml-drop-file-name" class="xml-drop-file-name"></span>
                             <input type="file" id="xmlFile" name="xmlFile"
-                                   accept=".xml,text/xml,application/xml" required>
+                                   accept=".xml,text/xml,application/xml" multiple required>
                         </div>
-                        <small class="form-text text-muted">File sẽ tự động tải lên sau khi chọn hoặc thả vào vùng trên. Dung lượng tối đa 5 MB.</small>
+                        <small class="form-text text-muted">Các file sẽ tự động tải lần lượt. Dung lượng tối đa mỗi file là 5 MB.</small>
                     </div>
                     <div id="upload-message" class="alert" style="display:none"></div>
                 </div>
@@ -102,20 +102,50 @@
     <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Xem file XML: 
+                <h5 class="modal-title">Xem hồ sơ bệnh nhân
                     <span id="view-file-name"></span></h5>
+                <div class="xml-view-toolbar btn-group" role="group" aria-label="Chế độ xem XML">
+                    <button type="button" class="btn btn-sm btn-primary active" data-xml-view="source"><i class="fa fa-code"></i> XML</button>
+                    <button type="button" class="btn btn-sm btn-default" data-xml-view="tree"><i class="fa fa-sitemap"></i> Dạng cây</button>
+                    <button type="button" class="btn btn-sm btn-default" data-xml-view="table"><i class="fa fa-table"></i> Dạng bảng</button>
+                </div>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Đóng"><span aria-hidden="true">&times;</span></button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label for="decoded-file-select"><strong>Chọn nội dung hồ sơ</strong></label>
-                    <select id="decoded-file-select" class="form-control"></select>
+                <div class="xml-view-layout">
+                    <div class="xml-view-content">
+                        <div class="form-group xml-file-selector">
+                            <div class="xml-file-picker">
+                                <label for="decoded-file-select" class="sr-only">Chọn nội dung hồ sơ</label>
+                                <select id="decoded-file-select" class="sr-only" aria-hidden="true" tabindex="-1"></select>
+                                <div id="decoded-file-tabs" class="decoded-file-tabs" role="tablist"
+                                     aria-label="Chọn loại XML"></div>
+                            </div>
+                        </div>
+                        <div id="validation-summary" class="alert" style="display:none"></div>
+                        <div id="validation-valid-summary" class="alert alert-success" style="display:none"></div>
+                        <div id="decoded-json-tree" class="json-tree"></div>
+                        <div id="decoded-xml-source" class="xml-source-view" aria-label="Nội dung XML chỉ đọc"></div>
+                        <div id="decoded-table-view" class="decoded-table-view" aria-label="Nội dung XML dạng bảng"></div>
+                    </div>
+                    <aside id="cost-reconciliation" class="cost-reconciliation">
+                        <div class="cost-reconciliation-panel">
+                            <h4>Đối chiếu chi phí</h4>
+                            <div id="cost-reconciliation-content" class="text-muted">Đang tính...</div>
+                        </div>
+                        <div id="xml-source-navigation" class="xml-source-navigation">
+                            <h4>Cây nội dung XML</h4>
+                            <input type="text" id="xml-navigation-search" class="form-control"
+                                   placeholder="Tìm kiếm" aria-label="Tìm nhóm trong XML">
+                            <div id="xml-navigation-items" class="xml-navigation-items"></div>
+                        </div>
+                    </aside>
                 </div>
-                <div id="validation-summary" class="alert" style="display:none"></div>
-                <div id="validation-valid-summary" class="alert alert-success" style="display:none"></div>
-                <div id="decoded-json-tree" class="json-tree"></div>
             </div>
             <div class="modal-footer">
+                <button type="button" id="btn-export-view-excel" class="btn btn-primary" disabled>
+                    <i class="fa fa-file-excel-o"></i> Xuất Excel
+                </button>
                 <a id="btn-download-view-file" class="btn btn-success" href="#" download rel="noopener">
                     <i class="fa fa-download"></i> Tải file XML
                 </a>
@@ -174,8 +204,10 @@
         clip: rect(0, 0, 0, 0);
         white-space: nowrap;
     }
+    #upload-message { white-space: pre-line; }
     #datatable-file_wrapper .dataTables_filter { display: none; }
     .file-table-scroll {
+        position: relative;
         width: 100%;
         overflow-x: hidden;
         overflow-y: auto;
@@ -183,6 +215,26 @@
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
         border-bottom: 1px solid #ddd;
+    }
+    .file-table-scroll.is-dragging-file {
+        background: #eaf5fd;
+        box-shadow: inset 0 0 0 3px #337ab7;
+    }
+    .file-table-scroll.is-dragging-file:after {
+        content: 'Thả file XML để tải lên';
+        position: absolute;
+        z-index: 10;
+        top: 50%;
+        left: 50%;
+        padding: 12px 20px;
+        color: #245580;
+        background: rgba(255, 255, 255, .95);
+        border: 2px dashed #337ab7;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: 600;
+        pointer-events: none;
+        transform: translate(-50%, -50%);
     }
     #datatable-file_wrapper { width:100%; }
     #datatable-file_wrapper .dataTables_info { padding-top:10px; }
@@ -289,6 +341,8 @@
         }
     }
     #modal-view-xml .modal-dialog {
+        width: calc(100vw - 40px);
+        max-width: 1500px;
         height: calc(100vh - 40px);
         margin-top: 20px;
         margin-bottom: 20px;
@@ -306,7 +360,25 @@
         z-index: 2;
     }
     #modal-view-xml .modal-header {
+        position: relative;
+        display: block;
         border-bottom: 1px solid #e5e5e5;
+    }
+    #modal-view-xml .modal-header .modal-title {
+        padding-right: 40px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    #modal-view-xml .modal-header .close {
+        position: absolute;
+        top: 14px;
+        right: 15px;
+        margin: 0;
+    }
+    #modal-view-xml .modal-header .xml-view-toolbar {
+        display: inline-flex;
+        margin-top: 10px;
     }
     #modal-view-xml .modal-footer {
         border-top: 1px solid #e5e5e5;
@@ -314,8 +386,268 @@
     #modal-view-xml .modal-body {
         flex: 1 1 auto;
         min-height: 0;
-        overflow-y: auto;
+        overflow: hidden;
         overscroll-behavior: contain;
+    }
+    .xml-view-layout {
+        display: grid;
+        grid-template-columns: minmax(420px, 1fr) minmax(0, 2fr);
+        gap: 15px;
+        height: 100%;
+    }
+    .xml-view-layout.is-content-only { grid-template-columns: minmax(0, 1fr); }
+    .xml-view-content {
+        min-width: 0;
+        min-height: 0;
+        overflow-y: auto;
+        order: 2;
+    }
+    .xml-view-content.is-table-mode {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .xml-view-content.is-table-mode .xml-file-selector { flex: 0 0 auto; }
+    .xml-file-selector {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        margin: 0 0 12px;
+        padding: 2px 0 10px;
+        background: #fff;
+        border-bottom: 1px solid #e5e5e5;
+    }
+    .xml-view-toolbar { margin-top: 8px; }
+    .decoded-file-tabs {
+        display: flex;
+        width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border-bottom: 1px solid #c8d0d8;
+        scrollbar-width: thin;
+    }
+    .decoded-file-tab {
+        flex: 0 0 auto;
+        min-width: 74px;
+        padding: 9px 15px 8px;
+        color: #0066cc;
+        background: transparent;
+        border: 1px solid transparent;
+        border-bottom: 0;
+        border-radius: 9px 9px 0 0;
+        font-family: "Times New Roman", serif;
+        font-size: 14px;
+        font-weight: 700;
+        text-align: center;
+    }
+    .decoded-file-tab:hover,
+    .decoded-file-tab:focus { color: #004b99; background: #f3f6f9; outline: 0; }
+    .decoded-file-tab.is-active {
+        color: #111;
+        background: #f3f4f6;
+        border-color: #c8d0d8;
+        box-shadow: 0 2px 0 #fff;
+    }
+    .xml-source-view {
+        min-width: max-content;
+        padding: 8px 0;
+        color: #202124;
+        background: #fff;
+        font: 13px/1.55 Consolas, "Courier New", monospace;
+        counter-reset: xml-line;
+    }
+    .xml-source-line {
+        display: block;
+        min-height: 20px;
+        padding: 0 14px 0 62px;
+        white-space: pre;
+        counter-increment: xml-line;
+    }
+    .xml-source-line:before {
+        content: counter(xml-line);
+        display: inline-block;
+        width: 45px;
+        margin-left: -58px;
+        margin-right: 13px;
+        color: #999;
+        text-align: right;
+        user-select: none;
+        border-right: 1px solid #e5e5e5;
+        padding-right: 8px;
+    }
+    .xml-source-line:hover { background: #f5f7fa; }
+    .xml-source-line.is-target-line {
+        min-width: 0;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        background: #fff2cc;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+    .xml-token-tag { color: #005cc5; }
+    .xml-token-value { color: #24292e; }
+    .decoded-table-view {
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+        overflow: auto;
+        border: 1px solid #dfe3e8;
+    }
+    .decoded-table-view table {
+        width: max-content;
+        min-width: 100%;
+        margin: 0;
+        background: #fff;
+        font-family: "Times New Roman", serif;
+        font-size: 13px;
+    }
+    .decoded-table-view th,
+    .decoded-table-view td {
+        min-width: 110px;
+        max-width: 360px;
+        padding: 7px 9px !important;
+        overflow: hidden;
+        vertical-align: top !important;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+    .decoded-table-view th {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        color: #1f2d3d;
+        background: #eef3f7;
+        border-bottom: 2px solid #aeb8c2 !important;
+    }
+    .decoded-table-view td:hover {
+        overflow: visible;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .decoded-table-view tbody tr.table-row-error > td { border-top-color: #e6a3a3; border-bottom-color: #e6a3a3; }
+    .decoded-table-view tbody tr.table-row-warning > td { border-top-color: #e5cf86; border-bottom-color: #e5cf86; }
+    .decoded-table-view td.table-cell-error {
+        color: #a94442 !important;
+        background: #f4cccc !important;
+        font-weight: 700;
+        box-shadow: inset 0 0 0 2px #d9534f;
+    }
+    .decoded-table-view td.table-cell-warning {
+        color: #8a6d3b !important;
+        background: #fff2cc !important;
+        font-weight: 700;
+        box-shadow: inset 0 0 0 2px #f0ad4e;
+    }
+    .decoded-table-view .xml2-frozen-stt {
+        position: sticky;
+        left: 0;
+        z-index: 3;
+        min-width: 70px;
+        width: 70px;
+        max-width: 70px;
+        background: #fff;
+        box-shadow: 1px 0 0 #ccd4db;
+    }
+    .decoded-table-view .xml2-frozen-ten-thuoc {
+        position: sticky;
+        left: 70px;
+        z-index: 3;
+        min-width: 260px;
+        width: 260px;
+        max-width: 260px;
+        background: #fff;
+        box-shadow: 2px 0 3px rgba(0, 0, 0, .14);
+    }
+    .decoded-table-view .xml2-frozen-ma-thuoc {
+        position: sticky;
+        left: 330px;
+        z-index: 3;
+        min-width: 130px;
+        width: 130px;
+        max-width: 130px;
+        background: #fff;
+        box-shadow: 2px 0 3px rgba(0, 0, 0, .14);
+    }
+    .decoded-table-view thead .xml2-frozen-stt,
+    .decoded-table-view thead .xml2-frozen-ten-thuoc,
+    .decoded-table-view thead .xml2-frozen-ma-thuoc {
+        z-index: 5;
+        background: #eef3f7;
+    }
+    .decoded-table-view tbody tr:nth-of-type(odd) .xml2-frozen-stt,
+    .decoded-table-view tbody tr:nth-of-type(odd) .xml2-frozen-ten-thuoc,
+    .decoded-table-view tbody tr:nth-of-type(odd) .xml2-frozen-ma-thuoc { background: #f9f9f9; }
+    .cost-reconciliation {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-width: 0;
+        min-height: 0;
+        order: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+    .cost-reconciliation-panel,
+    .xml-source-navigation {
+        padding: 12px;
+        background: #f8fbfe;
+        border: 1px solid #d9e6ef;
+        border-radius: 5px;
+    }
+    .cost-reconciliation-panel { overflow-x: auto; }
+    .cost-reconciliation h4 { margin: 0 0 10px; }
+    .cost-reconciliation .table { margin-bottom: 8px; background: #fff; }
+    .cost-reconciliation th,
+    .cost-reconciliation td {
+        padding: 5px 6px !important;
+        text-align: right;
+        white-space: nowrap;
+        font-size: 11px;
+    }
+    .cost-reconciliation th:first-child,
+    .cost-reconciliation td:first-child { text-align: left; }
+    .cost-reconciliation .cost-match { color: #218838; font-weight: 700; }
+    .cost-reconciliation .cost-mismatch { color: #a94442; font-weight: 700; }
+    .xml-source-navigation {
+        flex: 1 1 auto;
+        min-height: 180px;
+        overflow-y: auto;
+    }
+    .xml-navigation-items { margin-top: 9px; }
+    .xml-navigation-item {
+        display: block;
+        width: 100%;
+        padding: 5px 7px;
+        overflow: hidden;
+        color: #1f2d3d;
+        background: transparent;
+        border: 0;
+        text-align: left;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .xml-navigation-item:hover,
+    .xml-navigation-item:focus { color: #005cc5; background: #eaf5fd; outline: 0; }
+    .xml-navigation-item.is-active { color: #fff; background: #337ab7; }
+    .xml-navigation-item.is-active .fa { color: #fff; }
+    .xml-navigation-item .fa { width: 20px; color: #54a7ff; }
+    .xml-navigation-folder { font-weight: 600; }
+    .xml-navigation-folder .xml-folder-toggle { color: #7aaeff; }
+    .xml-navigation-children {
+        display: none;
+        margin-left: 17px;
+        padding-left: 8px;
+        border-left: 1px dotted #b7c5d1;
+    }
+    .xml-navigation-group.is-open > .xml-navigation-children { display: block; }
+    .xml-navigation-field { font-weight: 400; }
+    .xml-navigation-field .fa { color: #67c7cf; }
+    @media (max-width: 1100px) {
+        #modal-view-xml .modal-body { overflow-y: auto; }
+        .xml-view-layout { grid-template-columns: 1fr; height: auto; }
+        .cost-reconciliation { order: 1; overflow-x: hidden; }
+        .xml-view-content { order: 2; overflow-y: visible; }
+        .xml-file-selector { top: -15px; }
     }
     .json-tree {
         max-height: none;
@@ -367,6 +699,9 @@
         background: #f2dede;
         border-left: 3px solid #a94442;
         font-family: Arial, sans-serif;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
     }
     .json-tree .json-error-key { color: #a94442; }
     .json-tree .json-error-row .json-key,

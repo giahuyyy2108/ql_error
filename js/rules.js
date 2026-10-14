@@ -180,6 +180,67 @@
         }
     });
 
+    function fileTypeSortValue(fileType) {
+        var text = fileType == null ? '' : String(fileType).trim().toUpperCase();
+        var match = /^XML\s*(\d+)$/.exec(text);
+        return {
+            group: match ? 0 : 1,
+            number: match ? Number(match[1]) : Number.MAX_SAFE_INTEGER,
+            text: text
+        };
+    }
+
+    $('#btn-export-rules-excel').on('click', function () {
+        var rows = table.rows({ search: 'applied' }).data().toArray().slice();
+        rows.sort(function (left, right) {
+            var leftType = fileTypeSortValue(left.file_type);
+            var rightType = fileTypeSortValue(right.file_type);
+            if (leftType.group !== rightType.group) return leftType.group - rightType.group;
+            if (leftType.number !== rightType.number) return leftType.number - rightType.number;
+            if (leftType.text !== rightType.text) return leftType.text.localeCompare(rightType.text);
+            var leftField = left.field_name == null ? '' : String(left.field_name).trim().toUpperCase();
+            var rightField = right.field_name == null ? '' : String(right.field_name).trim().toUpperCase();
+            if (leftField !== rightField) return leftField.localeCompare(rightField);
+            return Number(left.id) - Number(right.id);
+        });
+
+        var exportTable = $('<table>').css('display', 'none').appendTo(document.body);
+        var exportDataTable = exportTable.DataTable({
+            data: rows.map(function (row, index) {
+                return [
+                    index + 1,
+                    row.file_type,
+                    row.field_name,
+                    row.display_name,
+                    row.rule_type,
+                    row.error_message
+                ];
+            }),
+            paging: false,
+            searching: false,
+            ordering: false,
+            dom: 'B',
+            columns: [
+                { title: 'STT' },
+                { title: 'Loại XML' },
+                { title: 'Tên trường' },
+                { title: 'Tên hiển thị' },
+                { title: 'Loại rule' },
+                { title: 'Thông báo lỗi' }
+            ],
+            buttons: [{
+                extend: 'excelHtml5',
+                title: null,
+                filename: 'danh-sach-rules',
+                sheetName: 'Rules'
+            }]
+        });
+
+        exportDataTable.button('.buttons-excel').trigger();
+        exportDataTable.destroy();
+        exportTable.remove();
+    });
+
     $('#btn-add-rule').on('click', function () {
         resetForm();
         $('#modal-rule .modal-title').text('Thêm rule');

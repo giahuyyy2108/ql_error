@@ -85,6 +85,18 @@ class XmlRulesValidator
                         continue;
                     }
 
+                    if ($ruleType === 'VTYT_HAS_DVKT') {
+                        $ruleErrors = self::validateVtytHasDvkt(
+                            $rule,
+                            $matches,
+                            $fileContexts,
+                            $fileIndex
+                        );
+                        $errors = array_merge($errors, $ruleErrors);
+                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        continue;
+                    }
+
                     if ($ruleType === 'TABLE_EXISTS') {
                         $lookupResults = array();
                         $ruleErrors = self::validateTableExists(
@@ -248,8 +260,14 @@ class XmlRulesValidator
                 if (!in_array($ruleType, array(
                     'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CROSS_FILE_REQUIRED_BY_KEY',
                     'CCCD_GENDER_CENTURY', 'API', 'SUBSTRING',
-                    'TABLE_EXISTS'
+                    'TABLE_EXISTS', 'VTYT_HAS_DVKT'
                 ), true)) {
+                    continue;
+                }
+
+                if ($ruleType === 'VTYT_HAS_DVKT') {
+                    self::addRequiredField($required, $fileType, 'MA_DICH_VU');
+                    self::addRequiredField($required, $fileType, 'MA_VAT_TU');
                     continue;
                 }
 
@@ -509,6 +527,8 @@ class XmlRulesValidator
         }
         $resultField = !empty($config['result_field'])
             ? trim((string) $config['result_field']) : trim((string) $rule['field_name']);
+        $errorField = !empty($config['error_field'])
+            ? trim((string) $config['error_field']) : $resultField;
         $fields = array_values(array_unique(self::formulaFields($config['expression'])));
         if ($resultField === '' || !$fields) {
             return array(self::makeError($rule, $rule['field_name'], null, 'error', 'FORMULA thiếu trường kết quả hoặc biến đầu vào.'));
@@ -524,20 +544,22 @@ class XmlRulesValidator
         $errors = array();
         foreach ($records as $item) {
             $record = $item['record'];
+            $errorValue = isset($record[$errorField]) && is_scalar($record[$errorField])
+                ? trim((string) $record[$errorField]) : '';
             $actualText = isset($record[$resultField]) && is_scalar($record[$resultField])
                 ? trim((string) $record[$resultField]) : '';
             $evaluationError = null;
             $expected = self::evaluateFormulaNode($config['expression'], $record, $evaluationError);
             if ($evaluationError !== null || $actualText === '' || !is_numeric($actualText)) {
                 $message = $evaluationError !== null ? $evaluationError : 'Giá trị ' . $resultField . ' không phải là số.';
-                $errors[] = self::makeError($rule, $item['path'] . '.' . $resultField, $actualText, 'error', $message);
+                $errors[] = self::makeError($rule, $item['path'] . '.' . $errorField, $errorValue, 'error', $message);
                 continue;
             }
             if ($round !== null) $expected = round($expected, $round);
             $actual = (float) $actualText;
             $difference = abs($actual - $expected);
             if ($difference > $tolerance) {
-                $error = self::makeError($rule, $item['path'] . '.' . $resultField, $actualText);
+                $error = self::makeError($rule, $item['path'] . '.' . $errorField, $errorValue);
                 $error['expected_value'] = $expected;
                 $error['difference'] = $difference;
                 $error['tolerance'] = $tolerance;
@@ -814,6 +836,76 @@ class XmlRulesValidator
         $path = (string) $path;
         $position = strrpos($path, '.');
         return $position === false ? '' : substr($path, 0, $position);
+    }
+
+    private static function validateVtytHasDvkt(
+        array $rule,
+        array $packageMatches,
+        array $fileContexts,
+        $currentFileIndex
+    ) {
+        $serviceMatches = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            null,
+            'MA_DICH_VU'
+        );
+        $materialMatches = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            null,
+            'MA_VAT_TU'
+        );
+
+        $servicesByParent = array();
+        $materialsByParent = array();
+        foreach ($serviceMatches as $match) {
+            $servicesByParent[self::parentPath($match['path'])] = $match;
+        }
+        foreach ($materialMatches as $match) {
+            $materialsByParent[self::parentPath($match['path'])] = $match;
+        }
+
+        $dvktCodes = array();
+        foreach ($servicesByParent as $parent => $serviceMatch) {
+            $materialValue = isset($materialsByParent[$parent])
+                ? $materialsByParent[$parent]['value'] : null;
+            $serviceCode = is_scalar($serviceMatch['value'])
+                ? trim((string) $serviceMatch['value']) : '';
+            if ($serviceCode !== '' && self::isNullValue($materialValue)) {
+                $dvktCodes[$serviceCode] = true;
+            }
+        }
+
+        $errors = array();
+        foreach ($packageMatches as $packageMatch) {
+            if (self::isNullValue($packageMatch['value'])) continue;
+            $parent = self::parentPath($packageMatch['path']);
+            $materialValue = isset($materialsByParent[$parent])
+                ? $materialsByParent[$parent]['value'] : null;
+            if (self::isNullValue($materialValue)) continue;
+
+            $serviceCode = isset($servicesByParent[$parent])
+                && is_scalar($servicesByParent[$parent]['value'])
+                ? trim((string) $servicesByParent[$parent]['value']) : '';
+            if ($serviceCode !== '' && isset($dvktCodes[$serviceCode])) continue;
+
+            $errorPath = isset($servicesByParent[$parent])
+                ? $servicesByParent[$parent]['path']
+                : ($parent === '' ? 'MA_DICH_VU' : $parent . '.MA_DICH_VU');
+            $error = self::makeError(
+                $rule,
+                $errorPath,
+                $serviceCode
+            );
+            $error['field_name'] = 'MA_DICH_VU';
+            $error['display_name'] = 'Mã dịch vụ';
+            $error['service_code'] = $serviceCode;
+            $error['material_code'] = is_scalar($materialValue)
+                ? trim((string) $materialValue) : '';
+            $errors[] = $error;
+        }
+        return $errors;
     }
 
     private static function validateTableExists(

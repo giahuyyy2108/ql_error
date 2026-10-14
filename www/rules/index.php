@@ -2,6 +2,7 @@
     <div class="x_title">
         <h2>XML Validation Rules</h2>
         <ul class="nav navbar-right panel_toolbox">
+            <li><button type="button" id="btn-export-rules-excel" class="btn btn-success"><i class="fa fa-file-excel-o"></i> Xuất Excel</button></li>
             <li><button type="button" id="btn-add-rule" class="btn btn-primary"><i class="fa fa-plus"></i> Thêm rule</button></li>
         </ul>
         <div class="clearfix"></div>

@@ -7,6 +7,10 @@
     var fileIdsToDelete = [];
     var selectedFileIds = {};
     var decodedFiles = [];
+    var currentDecodedContent = null;
+    var currentValidationResults = [];
+    var currentViewFileName = '';
+    var xmlViewMode = 'source';
     var xmlDisplaySettings = { show_errors: true, show_valid: true };
     var revalidationInProgress = false;
     var uploadInProgress = false;
@@ -221,14 +225,355 @@
         return result;
     }
 
+    function numericValue(value) {
+        if (value === null || value === undefined || value === '') return 0;
+        var number = Number(String(value).replace(/,/g, ''));
+        return isFinite(number) ? number : 0;
+    }
+
+    function firstFieldValue(data, fieldName) {
+        if (!data || typeof data !== 'object') return null;
+        if (Object.prototype.hasOwnProperty.call(data, fieldName)) return data[fieldName];
+        var keys = Object.keys(data);
+        for (var index = 0; index < keys.length; index++) {
+            var found = firstFieldValue(data[keys[index]], fieldName);
+            if (found !== null) return found;
+        }
+        return null;
+    }
+
+    function detailRows(data, result) {
+        result = result || [];
+        if (!data || typeof data !== 'object') return result;
+        if (!Array.isArray(data) && Object.prototype.hasOwnProperty.call(data, 'THANH_TIEN_BV')) {
+            result.push(data);
+            return result;
+        }
+        Object.keys(data).forEach(function (key) { detailRows(data[key], result); });
+        return result;
+    }
+
+    function emptyCostRow() {
+        return { thuoc: 0, vtyt: 0, bv: 0, bh: 0, bhtt: 0, bncct: 0, bntt: 0 };
+    }
+
+    function addDetailCosts(target, rows, includeMedicine, includeSupplies) {
+        rows.forEach(function (row) {
+            var bv = numericValue(row.THANH_TIEN_BV);
+            if (includeMedicine) target.thuoc += bv;
+            if (includeSupplies && String(row.MA_VAT_TU || '').trim() !== '') target.vtyt += bv;
+            target.bv += bv;
+            target.bh += numericValue(row.THANH_TIEN_BH);
+            target.bhtt += numericValue(row.T_BHTT);
+            target.bncct += numericValue(row.T_BNCCT);
+            target.bntt += numericValue(row.T_BNTT);
+        });
+    }
+
+    function calculateCostReconciliation(decoded) {
+        var totals = { XML1: emptyCostRow(), XML2: emptyCostRow(), XML3: emptyCostRow() };
+        var hoSoList = decoded && decoded.DANHSACHHOSO && decoded.DANHSACHHOSO.HOSO;
+        if (!Array.isArray(hoSoList)) return totals;
+        hoSoList.forEach(function (hoSo) {
+            var files = hoSo && hoSo.FILEHOSO;
+            if (!Array.isArray(files)) return;
+            files.forEach(function (file) {
+                var type = String(file.LOAIHOSO || '').toUpperCase();
+                var content = file.NOIDUNGFILE || {};
+                if (type === 'XML1') {
+                    totals.XML1.thuoc += numericValue(firstFieldValue(content, 'T_THUOC'));
+                    totals.XML1.vtyt += numericValue(firstFieldValue(content, 'T_VTYT'));
+                    totals.XML1.bv += numericValue(firstFieldValue(content, 'T_TONGCHI_BV'));
+                    totals.XML1.bh += numericValue(firstFieldValue(content, 'T_TONGCHI_BH'));
+                    totals.XML1.bhtt += numericValue(firstFieldValue(content, 'T_BHTT'));
+                    totals.XML1.bncct += numericValue(firstFieldValue(content, 'T_BNCCT'));
+                    totals.XML1.bntt += numericValue(firstFieldValue(content, 'T_BNTT'));
+                } else if (type === 'XML2') {
+                    addDetailCosts(totals.XML2, detailRows(content), true, false);
+                } else if (type === 'XML3') {
+                    addDetailCosts(totals.XML3, detailRows(content), false, true);
+                }
+            });
+        });
+        return totals;
+    }
+
+    function formatCost(value) {
+        return numericValue(value).toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+    function renderCostReconciliation(decoded) {
+        var totals = calculateCostReconciliation(decoded);
+        var keys = ['thuoc', 'vtyt', 'bv', 'bh', 'bhtt', 'bncct', 'bntt'];
+        var headers = ['THUỐC', 'VTYT', 'BV', 'BH', 'BHTT', 'BNCCT', 'BNTT'];
+        var detail = emptyCostRow();
+        keys.forEach(function (key) { detail[key] = totals.XML2[key] + totals.XML3[key]; });
+        var difference = emptyCostRow();
+        keys.forEach(function (key) { difference[key] = totals.XML1[key] - detail[key]; });
+
+        var tableElement = $('<table>').addClass('table table-bordered table-condensed');
+        var headerRow = $('<tr>').append($('<th>').text('Nguồn'));
+        headers.forEach(function (header) { headerRow.append($('<th>').text(header)); });
+        tableElement.append($('<thead>').append(headerRow));
+        var body = $('<tbody>');
+        [
+            { label: 'XML1', values: totals.XML1 },
+            { label: 'XML2', values: totals.XML2 },
+            { label: 'XML3', values: totals.XML3 },
+            { label: 'LỆCH', values: difference, difference: true }
+        ].forEach(function (row) {
+            var element = $('<tr>').append($('<th>').text(row.label));
+            keys.forEach(function (key) {
+                var cell = $('<td>').text(formatCost(row.values[key]));
+                if (row.difference) {
+                    cell.addClass(Math.abs(row.values[key]) <= 1 ? 'cost-match' : 'cost-mismatch');
+                }
+                element.append(cell);
+            });
+            body.append(element);
+        });
+        tableElement.append(body);
+        $('#cost-reconciliation-content').empty().append(tableElement).append(
+            $('<small>').addClass('text-muted').text('Lệch = XML1 − (XML2 + XML3); chấp nhận sai số ±1 đồng.')
+        );
+    }
+
+    function excelColumnName(index) {
+        var name = '';
+        var value = index + 1;
+        while (value > 0) {
+            value--;
+            name = String.fromCharCode(65 + (value % 26)) + name;
+            value = Math.floor(value / 26);
+        }
+        return name;
+    }
+
+    function excelXmlText(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;')
+            .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+    }
+
+    function collectExcelRecords(data, records, path) {
+        records = records || [];
+        path = path || '';
+        if (!data || typeof data !== 'object') return records;
+        if (Array.isArray(data)) {
+            data.forEach(function (item, index) {
+                collectExcelRecords(item, records, path + '[' + index + ']');
+            });
+            return records;
+        }
+        if (Object.prototype.hasOwnProperty.call(data, 'MA_LK')) {
+            records.push({ data: data, path: path, styles: {} });
+            return records;
+        }
+        Object.keys(data).forEach(function (key) {
+            collectExcelRecords(data[key], records, path ? path + '.' + key : key);
+        });
+        return records;
+    }
+
+    function excelSheetsFromDecoded(decoded, validation) {
+        var grouped = {};
+        var order = [];
+        var hoSoList = decoded && decoded.DANHSACHHOSO && decoded.DANHSACHHOSO.HOSO;
+        if (!Array.isArray(hoSoList)) return [];
+        hoSoList.forEach(function (hoSo, hoSoIndex) {
+            var files = hoSo && hoSo.FILEHOSO;
+            if (!Array.isArray(files)) return;
+            files.forEach(function (file, fileIndex) {
+                var type = String(file.LOAIHOSO || 'XML').toUpperCase();
+                if (!grouped[type]) {
+                    grouped[type] = [];
+                    order.push(type);
+                }
+                var newRecords = collectExcelRecords(file.NOIDUNGFILE || {}, []);
+                var validationItem = null;
+                (validation || []).some(function (item) {
+                    if (Number(item.hoso_index) === hoSoIndex && Number(item.file_index) === fileIndex) {
+                        validationItem = item;
+                        return true;
+                    }
+                    return false;
+                });
+                newRecords.forEach(function (record) {
+                    (validationItem && validationItem.errors || []).forEach(function (error) {
+                        var field = String(error.field_name || '');
+                        var expectedPath = record.path ? record.path + '.' + field : field;
+                        if (String(error.path || '') === expectedPath) {
+                            record.styles[field] = error.severity === 'warning' ? 3 : 2;
+                        }
+                    });
+                    grouped[type].push(record);
+                });
+            });
+        });
+        order.sort(function (left, right) {
+            var leftNumber = Number((/\d+/.exec(left) || [Number.MAX_SAFE_INTEGER])[0]);
+            var rightNumber = Number((/\d+/.exec(right) || [Number.MAX_SAFE_INTEGER])[0]);
+            return leftNumber - rightNumber || left.localeCompare(right);
+        });
+        return order.map(function (name) { return { name: name, rows: grouped[name] }; });
+    }
+
+    function buildWorksheetXml(records) {
+        var headers = [];
+        var knownHeaders = {};
+        records.forEach(function (record) {
+            Object.keys(record.data).forEach(function (key) {
+                if (!knownHeaders[key] && record.data[key] !== null && typeof record.data[key] !== 'object') {
+                    knownHeaders[key] = true;
+                    headers.push(key);
+                }
+            });
+        });
+        if (!headers.length) headers.push('MA_LK');
+
+        function cellXml(columnIndex, rowIndex, value, style) {
+            var reference = excelColumnName(columnIndex) + rowIndex;
+            return '<c r="' + reference + '" t="inlineStr" s="' + style + '"><is><t xml:space="preserve">'
+                + excelXmlText(value) + '</t></is></c>';
+        }
+
+        var xmlRows = [];
+        xmlRows.push('<row r="1">' + headers.map(function (header, index) {
+            return cellXml(index, 1, header, 1);
+        }).join('') + '</row>');
+        records.forEach(function (record, recordIndex) {
+            var rowNumber = recordIndex + 2;
+            xmlRows.push('<row r="' + rowNumber + '">' + headers.map(function (header, columnIndex) {
+                var value = record.data[header];
+                if (value !== null && typeof value === 'object') value = JSON.stringify(value);
+                return cellXml(columnIndex, rowNumber, value, record.styles[header] || 0);
+            }).join('') + '</row>');
+        });
+        var lastColumn = excelColumnName(headers.length - 1);
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            + '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+            + '<cols><col min="1" max="' + headers.length + '" width="18" customWidth="1"/></cols>'
+            + '<sheetData>' + xmlRows.join('') + '</sheetData>'
+            + '<autoFilter ref="A1:' + lastColumn + Math.max(1, records.length + 1) + '"/>'
+            + '</worksheet>';
+    }
+
+    function exportDecodedToExcel(decoded, validation, filename) {
+        var sheets = excelSheetsFromDecoded(decoded, validation);
+        if (!sheets.length) return $.Deferred().reject('Không có dữ liệu để xuất.').promise();
+
+        var warningRows = [];
+        (validation || []).forEach(function (item) {
+            (item.errors || []).forEach(function (error) {
+                warningRows.push({ data: {
+                    STT: warningRows.length + 1,
+                    LOAI_XML: item.file_type || '',
+                    MUC_DO: error.severity === 'warning' ? 'Cảnh báo' : 'Lỗi',
+                    TEN_TRUONG: error.field_name || '',
+                    TEN_HIEN_THI: error.display_name || '',
+                    DUONG_DAN: error.path || '',
+                    GIA_TRI_LOI: error.value == null ? '' : error.value,
+                    THONG_BAO: error.message || ''
+                }, path: '', styles: { MUC_DO: error.severity === 'warning' ? 3 : 2, THONG_BAO: error.severity === 'warning' ? 3 : 2 } });
+            });
+        });
+        if (!warningRows.length) {
+            warningRows.push({ data: {
+                STT: '', LOAI_XML: '', MUC_DO: 'Hợp lệ', TEN_TRUONG: '',
+                TEN_HIEN_THI: '', DUONG_DAN: '', GIA_TRI_LOI: '',
+                THONG_BAO: 'Không có lỗi hoặc cảnh báo validation.'
+            }, path: '', styles: { MUC_DO: 4, THONG_BAO: 4 } });
+        }
+        sheets.push({ name: 'CẢNH BÁO', rows: warningRows });
+
+        var costTotals = calculateCostReconciliation(decoded);
+        var costKeys = ['thuoc', 'vtyt', 'bv', 'bh', 'bhtt', 'bncct', 'bntt'];
+        var costDetails = emptyCostRow();
+        var costDifference = emptyCostRow();
+        costKeys.forEach(function (key) {
+            costDetails[key] = costTotals.XML2[key] + costTotals.XML3[key];
+            costDifference[key] = costTotals.XML1[key] - costDetails[key];
+        });
+        function costRecord(label, values, difference) {
+            var data = { NGUON: label };
+            var styles = {};
+            var names = { thuoc: 'THUOC', vtyt: 'VTYT', bv: 'BV', bh: 'BH', bhtt: 'BHTT', bncct: 'BNCCT', bntt: 'BNTT' };
+            costKeys.forEach(function (key) {
+                data[names[key]] = formatCost(values[key]);
+                if (difference) styles[names[key]] = Math.abs(values[key]) <= 1 ? 4 : 2;
+            });
+            return { data: data, path: '', styles: styles };
+        }
+        sheets.push({ name: 'ĐỐI CHIẾU', rows: [
+            costRecord('XML1', costTotals.XML1, false),
+            costRecord('XML2', costTotals.XML2, false),
+            costRecord('XML3', costTotals.XML3, false),
+            costRecord('LỆCH', costDifference, true)
+        ] });
+        var zip = new JSZip();
+        var contentTypes = [];
+        var workbookSheets = [];
+        var workbookRelationships = [];
+        sheets.forEach(function (sheet, index) {
+            var number = index + 1;
+            contentTypes.push('<Override PartName="/xl/worksheets/sheet' + number + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>');
+            workbookSheets.push('<sheet name="' + excelXmlText(sheet.name.substring(0, 31)) + '" sheetId="' + number + '" r:id="rId' + number + '"/>');
+            workbookRelationships.push('<Relationship Id="rId' + number + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + number + '.xml"/>');
+            zip.file('xl/worksheets/sheet' + number + '.xml', buildWorksheetXml(sheet.rows));
+        });
+        workbookRelationships.push('<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>');
+        zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' + contentTypes.join('') + '</Types>');
+        zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+        zip.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + workbookSheets.join('') + '</sheets></workbook>');
+        zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + workbookRelationships.join('') + '</Relationships>');
+        zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="13"/><name val="Times New Roman"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="13"/><name val="Times New Roman"/></font><font><b/><sz val="13"/><name val="Times New Roman"/></font></fonts><fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF337AB7"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4CCCC"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF2CC"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9EAD3"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+        var options = {
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        };
+        if (typeof zip.generateAsync === 'function') {
+            return zip.generateAsync(options).then(function (blob) {
+                $.fn.dataTable.fileSave(blob, filename);
+            });
+        }
+
+        var deferred = $.Deferred();
+        try {
+            $.fn.dataTable.fileSave(zip.generate(options), filename);
+            deferred.resolve();
+        } catch (error) {
+            deferred.reject(error);
+        }
+        return deferred.promise();
+    }
+
     function renderSelectedDecodedFile() {
         var index = Number($('#decoded-file-select').val());
+        $('#decoded-file-tabs .decoded-file-tab')
+            .removeClass('is-active').attr('aria-selected', 'false')
+            .filter('[data-file-index="' + index + '"]')
+            .addClass('is-active').attr('aria-selected', 'true');
         var tree = $('#decoded-json-tree').empty();
+        $('#decoded-xml-source, #decoded-table-view').empty();
         if (!decodedFiles[index]) {
             tree.text('Không có nội dung đã giải mã.');
+            $('#decoded-xml-source, #decoded-table-view').text('Không có nội dung đã giải mã.');
+            applyXmlViewMode();
             return;
         }
         var selected = decodedFiles[index];
+        renderXmlNavigation(
+            xmlViewMode === 'source' ? currentDecodedContent : null,
+            xmlViewMode === 'source' ? null : selected
+        );
         var summary = $('#validation-summary').empty().toggle(xmlDisplaySettings.show_errors);
         var validSummary = $('#validation-valid-summary').empty().hide();
         if (xmlDisplaySettings.show_errors && selected.errors.length) {
@@ -256,7 +601,274 @@
             selected.validFields,
             ''
         );
+        renderXmlSource(selected);
+        renderDecodedTable(selected);
+        applyXmlViewMode();
     }
+
+    function xmlElementName(name) {
+        var normalized = String(name == null ? 'ITEM' : name).replace(/[^A-Za-z0-9_.-]/g, '_');
+        return /^[A-Za-z_]/.test(normalized) ? normalized : 'ITEM_' + normalized;
+    }
+
+    function decodedValueToXml(name, value, depth, lines) {
+        var tag = xmlElementName(name);
+        var indent = new Array(depth + 1).join('  ');
+        if (Array.isArray(value)) {
+            value.forEach(function (item) { decodedValueToXml(tag, item, depth, lines); });
+            return;
+        }
+        if (value !== null && typeof value === 'object') {
+            lines.push(indent + '<' + tag + '>');
+            Object.keys(value).forEach(function (key) {
+                decodedValueToXml(key, value[key], depth + 1, lines);
+            });
+            lines.push(indent + '</' + tag + '>');
+            return;
+        }
+        var textValue = value == null ? '' : String(value);
+        if (textValue === '') {
+            lines.push(indent + '<' + tag + ' />');
+        } else {
+            if (/[<>&]/.test(textValue)) {
+                textValue = '<![CDATA[' + textValue.replace(/\]\]>/g, ']]]]><![CDATA[>') + ']]>';
+            }
+            lines.push(indent + '<' + tag + '>' + textValue + '</' + tag + '>');
+        }
+    }
+
+    function appendXmlSourceLine(container, line) {
+        var element = $('<span>').addClass('xml-source-line').attr('data-xml-line', line.trim());
+        var match = /^(\s*)(<[^>]+>)([\s\S]*?)(<\/[^>]+>)?$/.exec(line);
+        if (!match) {
+            element.text(line).appendTo(container);
+            return;
+        }
+        element.append(document.createTextNode(match[1]));
+        $('<span>').addClass('xml-token-tag').text(match[2]).appendTo(element);
+        if (match[3]) $('<span>').addClass('xml-token-value').text(match[3]).appendTo(element);
+        if (match[4]) $('<span>').addClass('xml-token-tag').text(match[4]).appendTo(element);
+        element.appendTo(container);
+    }
+
+    function renderXmlSource(selected) {
+        var lines = ['<?xml version="1.0" encoding="utf-8"?>'];
+        if (currentDecodedContent) {
+            decodedValueToXml('GIAMDINHHS', currentDecodedContent, 0, lines);
+        } else {
+            decodedValueToXml(selected.type || 'NOIDUNGFILE', selected.content, 0, lines);
+        }
+        var source = $('#decoded-xml-source').empty();
+        lines.forEach(function (line) { appendXmlSourceLine(source, line); });
+    }
+
+    function renderXmlNavigation(decoded, selected) {
+        var groups = [];
+        var known = {};
+
+        function collectFieldNames(value, fields, found) {
+            if (Array.isArray(value)) {
+                value.forEach(function (item) { collectFieldNames(item, fields, found); });
+                return;
+            }
+            if (!value || typeof value !== 'object') return;
+            Object.keys(value).forEach(function (key) {
+                if (value[key] !== null && typeof value[key] === 'object') {
+                    collectFieldNames(value[key], fields, found);
+                } else if (!found[key]) {
+                    found[key] = true;
+                    fields.push(key);
+                }
+            });
+        }
+
+        if (selected && selected.content && typeof selected.content === 'object') {
+            Object.keys(selected.content).forEach(function (key) {
+                var fields = [];
+                collectFieldNames(selected.content[key], fields, {});
+                groups.push({ name: key, fields: fields });
+            });
+        } else {
+            var hoSoList = decoded && decoded.DANHSACHHOSO && decoded.DANHSACHHOSO.HOSO;
+            if (Array.isArray(hoSoList)) {
+            hoSoList.forEach(function (hoSo) {
+                (hoSo && Array.isArray(hoSo.FILEHOSO) ? hoSo.FILEHOSO : []).forEach(function (file) {
+                    var content = file.NOIDUNGFILE || {};
+                    Object.keys(content).forEach(function (key) {
+                        if (!known[key]) {
+                            known[key] = true;
+                            var fields = [];
+                            collectFieldNames(content[key], fields, {});
+                            groups.push({ name: key, fields: fields });
+                        }
+                    });
+                });
+            });
+            }
+        }
+        var items = $('#xml-navigation-items').empty();
+        groups.forEach(function (group) {
+            var wrapper = $('<div>').addClass('xml-navigation-group').appendTo(items);
+            $('<button type="button">')
+                .addClass('xml-navigation-item xml-navigation-folder')
+                .attr('data-xml-tag', xmlElementName(group.name))
+                .append($('<i>').addClass('fa fa-plus xml-folder-toggle'))
+                .append($('<i>').addClass('fa fa-folder'))
+                .append(document.createTextNode(group.name))
+                .appendTo(wrapper);
+            var children = $('<div>').addClass('xml-navigation-children').appendTo(wrapper);
+            group.fields.forEach(function (field) {
+                $('<button type="button">')
+                    .addClass('xml-navigation-item xml-navigation-field')
+                    .attr('data-xml-tag', xmlElementName(field))
+                    .append($('<i>').addClass('fa fa-circle'))
+                    .append(document.createTextNode(field))
+                    .appendTo(children);
+            });
+        });
+        if (!groups.length) items.append($('<div>').addClass('text-muted').text('Không có nhóm XML.'));
+    }
+
+    function renderDecodedTable(selected) {
+        var records = collectExcelRecords(selected.content || {}, []);
+        var container = $('#decoded-table-view').empty();
+        if (!records.length) {
+            container.text('Không có dữ liệu dạng bảng.');
+            return;
+        }
+        var headers = [];
+        var known = {};
+        records.forEach(function (record) {
+            Object.keys(record.data).forEach(function (key) {
+                if (!known[key] && (record.data[key] === null || typeof record.data[key] !== 'object')) {
+                    known[key] = true;
+                    headers.push(key);
+                }
+            });
+        });
+        if (String(selected.type || '').toUpperCase() === 'XML2') {
+            var priorityHeaders = ['STT', 'TEN_THUOC' ,'MA_THUOC'];
+            headers = priorityHeaders.filter(function (header) {
+                return known[header];
+            }).concat(headers.filter(function (header) {
+                return priorityHeaders.indexOf(header) === -1;
+            }));
+        }
+        var tableElement = $('<table>').addClass('table table-bordered table-striped table-condensed');
+        var headerRow = $('<tr>');
+        headers.forEach(function (header) {
+            var cell = $('<th>').text(header);
+            if (String(selected.type || '').toUpperCase() === 'XML2') {
+                if (header === 'STT') cell.addClass('xml2-frozen-stt');
+                if (header === 'TEN_THUOC') cell.addClass('xml2-frozen-ten-thuoc');
+                if (header === 'MA_THUOC') cell.addClass('xml2-frozen-ma-thuoc');
+            }
+            cell.appendTo(headerRow);
+        });
+        tableElement.append($('<thead>').append(headerRow));
+        var body = $('<tbody>');
+        records.forEach(function (record) {
+            var row = $('<tr>');
+            var rowSeverity = '';
+            headers.forEach(function (header) {
+                var value = record.data[header];
+                var cell = $('<td>').text(value == null ? '' : String(value)).attr('title', value == null ? '' : String(value));
+                if (String(selected.type || '').toUpperCase() === 'XML2') {
+                    if (header === 'STT') cell.addClass('xml2-frozen-stt');
+                    if (header === 'TEN_THUOC') cell.addClass('xml2-frozen-ten-thuoc');
+                    if (header === 'MA_THUOC') cell.addClass('xml2-frozen-ma-thuoc');
+                }
+                var fieldPath = record.path ? record.path + '.' + header : header;
+                (selected.errors || []).some(function (error) {
+                    if (String(error.path || '') !== fieldPath) return false;
+                    var warning = error.severity === 'warning';
+                    cell.addClass(warning ? 'table-cell-warning' : 'table-cell-error');
+                    if (!warning) rowSeverity = 'error';
+                    else if (!rowSeverity) rowSeverity = 'warning';
+                    cell.attr('title', (error.message || '') + (value == null ? '' : ' | Giá trị: ' + value));
+                    return true;
+                });
+                cell.appendTo(row);
+            });
+            if (rowSeverity) row.addClass('table-row-' + rowSeverity);
+            body.append(row);
+        });
+        tableElement.append(body).appendTo(container);
+    }
+
+    function applyXmlViewMode() {
+        var sourceMode = xmlViewMode === 'source';
+        $('#decoded-xml-source').toggle(sourceMode);
+        $('#decoded-json-tree').toggle(xmlViewMode === 'tree');
+        $('#decoded-table-view').toggle(xmlViewMode === 'table');
+        $('.xml-file-picker').toggle(!sourceMode);
+        $('#xml-source-navigation').toggle(sourceMode);
+        $('.cost-reconciliation').toggle(sourceMode);
+        $('.xml-view-layout').toggleClass('is-content-only', !sourceMode);
+        $('.xml-view-content').toggleClass('is-table-mode', xmlViewMode === 'table');
+        $('[data-xml-view]').each(function () {
+            var active = $(this).attr('data-xml-view') === xmlViewMode;
+            $(this).toggleClass('btn-primary active', active).toggleClass('btn-default', !active);
+        });
+    }
+
+    $('[data-xml-view]').on('click', function () {
+        var requestedMode = $(this).attr('data-xml-view');
+        xmlViewMode = requestedMode === 'tree' || requestedMode === 'table' ? requestedMode : 'source';
+        renderSelectedDecodedFile();
+    });
+
+    $('#xml-navigation-search').on('input', function () {
+        var keyword = String($(this).val() || '').trim().toLowerCase();
+        $('.xml-navigation-group').each(function () {
+            var group = $(this);
+            var folder = group.children('.xml-navigation-folder');
+            var folderMatches = !keyword || folder.text().toLowerCase().indexOf(keyword) !== -1;
+            var childMatches = false;
+            group.find('.xml-navigation-field').each(function () {
+                var matches = !keyword || folderMatches || $(this).text().toLowerCase().indexOf(keyword) !== -1;
+                $(this).toggle(matches);
+                if (matches) childMatches = true;
+            });
+            group.toggle(folderMatches || childMatches);
+            if (keyword && childMatches) {
+                group.addClass('is-open');
+                folder.find('.xml-folder-toggle').removeClass('fa-plus').addClass('fa-minus');
+            }
+        });
+    });
+
+    $('#xml-navigation-items').on('click', '.xml-navigation-item', function () {
+        var selectedItem = $(this);
+        if ($(this).hasClass('xml-navigation-folder')) {
+            var group = $(this).closest('.xml-navigation-group').toggleClass('is-open');
+            $(this).find('.xml-folder-toggle')
+                .toggleClass('fa-plus', !group.hasClass('is-open'))
+                .toggleClass('fa-minus', group.hasClass('is-open'));
+        }
+        var openingTag = '<' + $(this).attr('data-xml-tag') + '>';
+        var selfClosingTag = '<' + $(this).attr('data-xml-tag');
+        var target = $('#decoded-xml-source .xml-source-line').filter(function () {
+            var line = String($(this).attr('data-xml-line') || '');
+            return line === openingTag || line.indexOf(openingTag) === 0
+                || (line.indexOf(selfClosingTag) === 0 && /\/>$/.test(line));
+        }).first();
+        if (!target.length) return;
+        $('.xml-navigation-item').removeClass('is-active');
+        selectedItem.addClass('is-active');
+        var content = $('.xml-view-content');
+        $('#decoded-xml-source .xml-source-line').removeClass('is-target-line');
+        target.addClass('is-target-line');
+        content.stop(true).animate({
+            scrollTop: Math.max(
+                0,
+                content.scrollTop() + target.position().top
+                    - $('.xml-file-selector').outerHeight() - content.innerHeight() / 3
+            ),
+            scrollLeft: 0
+        }, 180);
+        window.setTimeout(function () { target.removeClass('is-target-line'); }, 2500);
+    });
 
     var table = $('#datatable-file').DataTable({
         ajax: {
@@ -547,57 +1159,102 @@
         $('#modal-upload-xml').modal('show');
     });
 
-    function uploadXmlFile(file) {
-        if (uploadInProgress) return;
-        if (!file || !/\.xml$/i.test(file.name || '')) {
-            showUploadMessage('Vui lòng chọn đúng file có đuôi .xml.', false);
-            return;
-        }
-        if (!file.size || file.size > 5242880) {
-            showUploadMessage('File XML phải có dung lượng từ 1 byte đến 5 MB.', false);
-            return;
-        }
-
+    function uploadSingleXmlFile(file) {
         var formData = new FormData();
         formData.append('xmlFile', file, file.name);
         formData.append('csrf_token', csrfToken);
-        uploadInProgress = true;
-        $('#xml-drop-file-name').text(file.name).show();
-        $('#xml-drop-zone').addClass('is-uploading');
-        $('#btn-upload-xml').prop('disabled', true);
-        showUploadMessage('Đang tải và kiểm tra file XML...', true);
-
-        $.ajax({
+        return $.ajax({
             url: baseUrl + 'file/upload/',
             type: 'POST',
             data: formData,
             processData: false,
             contentType: false,
             dataType: 'json'
-        }).done(function (response) {
-            showUploadMessage(response.message, response.success);
-            if (response.success) {
-                table.ajax.reload(null, false);
-                $('#form-upload-xml')[0].reset();
-                setTimeout(function () { $('#modal-upload-xml').modal('hide'); }, 700);
-            }
-        }).fail(function () {
-            showUploadMessage('Có lỗi xảy ra khi tải file lên.', false);
-        }).always(function () {
+        });
+    }
+
+    function uploadXmlFiles(fileList) {
+        if (uploadInProgress) return;
+        var files = Array.prototype.slice.call(fileList || []);
+        if (!files.length) {
+            showUploadMessage('Vui lòng chọn ít nhất một file XML.', false);
+            return;
+        }
+
+        uploadInProgress = true;
+        $('#xml-drop-zone').addClass('is-uploading');
+        $('#btn-upload-xml').prop('disabled', true);
+        var succeeded = 0;
+        var failed = 0;
+        var details = [];
+
+        function finishQueue() {
             uploadInProgress = false;
             $('#xml-drop-zone').removeClass('is-uploading');
             $('#btn-upload-xml').prop('disabled', false);
-        });
+            $('#form-upload-xml')[0].reset();
+            $('#xml-drop-file-name').text('Đã xử lý ' + files.length + ' file').show();
+            if (succeeded) table.ajax.reload(null, false);
+
+            var summary = 'Hoàn tất: ' + succeeded + ' thành công, ' + failed + ' thất bại.';
+            if (details.length) summary += '\n' + details.join('\n');
+            showUploadMessage(summary, failed === 0);
+        }
+
+        function processFile(index) {
+            if (index >= files.length) {
+                finishQueue();
+                return;
+            }
+
+            var file = files[index];
+            $('#xml-drop-file-name').text(file.name).show();
+            showUploadMessage(
+                'Đang tải file ' + (index + 1) + '/' + files.length + ': ' + file.name,
+                true
+            );
+
+            if (!/\.xml$/i.test(file.name || '')) {
+                failed++;
+                details.push(file.name + ': không phải file .xml.');
+                processFile(index + 1);
+                return;
+            }
+            if (!file.size || file.size > 5242880) {
+                failed++;
+                details.push(file.name + ': dung lượng phải từ 1 byte đến 5 MB.');
+                processFile(index + 1);
+                return;
+            }
+
+            uploadSingleXmlFile(file).done(function (response) {
+                if (response.success) {
+                    succeeded++;
+                } else {
+                    failed++;
+                    details.push(file.name + ': ' + (response.message || 'Không thể nhập file.'));
+                }
+            }).fail(function (xhr) {
+                failed++;
+                var message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message : 'Có lỗi xảy ra khi tải file lên.';
+                details.push(file.name + ': ' + message);
+            }).always(function () {
+                processFile(index + 1);
+            });
+        }
+
+        processFile(0);
     }
 
     $('#form-upload-xml').on('submit', function (event) {
         event.preventDefault();
         var input = $('#xmlFile')[0];
-        uploadXmlFile(input.files.length ? input.files[0] : null);
+        uploadXmlFiles(input.files);
     });
 
     $('#xmlFile').on('change', function () {
-        if (this.files.length) uploadXmlFile(this.files[0]);
+        if (this.files.length) uploadXmlFiles(this.files);
     });
 
     $('#xml-drop-zone')
@@ -626,27 +1283,58 @@
             $(this).removeClass('is-dragging');
             if (uploadInProgress) return;
             var files = event.originalEvent.dataTransfer.files;
-            if (!files || files.length !== 1) {
-                showUploadMessage('Mỗi lần chỉ được tải lên một file XML.', false);
-                return;
+            uploadXmlFiles(files);
+        });
+
+    $('.file-table-scroll')
+        .on('dragenter dragover', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!uploadInProgress) $(this).addClass('is-dragging-file');
+        })
+        .on('dragleave dragend', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.relatedTarget || !$.contains(this, event.relatedTarget)) {
+                $(this).removeClass('is-dragging-file');
             }
-            uploadXmlFile(files[0]);
+        })
+        .on('drop', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            $(this).removeClass('is-dragging-file');
+            if (uploadInProgress) return;
+            var files = event.originalEvent.dataTransfer.files;
+            if (!files || !files.length) return;
+            $('#modal-upload-xml').modal('show');
+            uploadXmlFiles(files);
         });
 
     $(document).on('dragover drop', function (event) {
-        if ($(event.target).closest('#xml-drop-zone').length) return;
+        if ($(event.target).closest('#xml-drop-zone, .file-table-scroll').length) return;
         event.preventDefault();
     });
 
     $('#datatable-file').on('click', '.btn-view-file', function () {
         var id = $(this).attr('data-id');
         var name = $(this).attr('data-malk');
-        $('#view-file-name').text(name);
+        currentDecodedContent = null;
+        currentValidationResults = [];
+        currentViewFileName = '';
+        $('#btn-export-view-excel').prop('disabled', true);
+        $('#decoded-file-tabs').empty();
+        $('#view-file-name').text('Đang tải...');
         $('#btn-download-view-file').attr('href', downloadBaseUrl + 'file/download/?id=' + Number(id));
         $('#decoded-file-select').empty().prop('disabled', true);
         $('#validation-summary').hide().empty();
         $('#validation-valid-summary').hide().empty();
         $('#decoded-json-tree').text('Đang tải...');
+        $('#decoded-xml-source').empty().append(
+            $('<span>').addClass('xml-source-line').text('Đang tải...')
+        );
+        $('#decoded-table-view').text('Đang tải...');
+        applyXmlViewMode();
+        $('#cost-reconciliation-content').text('Đang tính...');
         $('#modal-view-xml').modal('show');
 
         $.ajax({
@@ -664,10 +1352,28 @@
                 { show_errors: true, show_valid: true },
                 response.display_settings || {}
             );
+            currentDecodedContent = response.decoded;
+            currentValidationResults = response.validation || [];
+            var patientName = firstFieldValue(response.decoded, 'HO_TEN');
+            $('#view-file-name').text(
+                patientName == null || String(patientName).trim() === '' ? name : String(patientName).trim()
+            );
+            $('#xml-navigation-search').val('');
+            currentViewFileName = String(response.name || name || 'ho-so')
+                .replace(/\.[^.]+$/, '') + '.xlsx';
+            $('#btn-export-view-excel').prop('disabled', false);
             decodedFiles = collectDecodedFiles(response.decoded, response.validation);
+            renderCostReconciliation(response.decoded);
             var select = $('#decoded-file-select').empty();
+            var tabs = $('#decoded-file-tabs').empty();
             decodedFiles.forEach(function (file, index) {
                 $('<option>').val(index).text(file.label).appendTo(select);
+                $('<button type="button" role="tab">')
+                    .addClass('decoded-file-tab')
+                    .attr('data-file-index', index)
+                    .attr('aria-selected', 'false')
+                    .text(file.type || ('XML ' + (index + 1)))
+                    .appendTo(tabs);
             });
             select.prop('disabled', decodedFiles.length === 0);
             renderSelectedDecodedFile();
@@ -684,7 +1390,27 @@
         });
     });
 
+    $('#btn-export-view-excel').on('click', function () {
+        if (!currentDecodedContent) return;
+        var button = $(this).prop('disabled', true);
+        exportDecodedToExcel(
+            currentDecodedContent,
+            currentValidationResults,
+            currentViewFileName || 'ho-so.xlsx'
+        )
+            .then(function () {
+                button.prop('disabled', false);
+            }, function (error) {
+                alert(typeof error === 'string' ? error : 'Không thể tạo file Excel.');
+                button.prop('disabled', false);
+            });
+    });
+
     $('#decoded-file-select').on('change', renderSelectedDecodedFile);
+
+    $('#decoded-file-tabs').on('click', '.decoded-file-tab', function () {
+        $('#decoded-file-select').val($(this).attr('data-file-index')).trigger('change');
+    });
 
     function copyErrorValue(element) {
         var target = $(element);
