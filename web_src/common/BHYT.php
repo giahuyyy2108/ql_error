@@ -3,9 +3,6 @@
 
 class BHXH
 {
-    private $request;
-    private $dbsql;
-
     private $config;
     private $tokenFile;
     private $token = null;
@@ -21,10 +18,6 @@ class BHXH
     
     public function __construct(array $config = [])
     {
-        $this->request = new Request();
-        $this->dbsql = new db_mysql();
-        $this->dbsql->connect();
-
         // Đọc cấu hình từ file JSON
         $configFile = __DIR__ . '/bhyt_config.json';
 
@@ -479,6 +472,49 @@ class BHXH
         );
     }
 
+    public function traCuuThongTin($maThe, $hoTen, $ngaySinh)
+    {
+        $maThe = preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string) $maThe)));
+        $hoTen = trim((string) $hoTen);
+        $ngaySinh = trim((string) $ngaySinh);
+        $ngaySinhDigits = preg_replace('/\D/', '', $ngaySinh);
+        if (strlen($ngaySinhDigits) >= 8) {
+            // XML1 có thể dùng yyyyMMddHHmm hoặc yyyyMMddHHmmss, trong khi
+            // API tra cứu BHXH chỉ nhận phần ngày sinh yyyyMMdd.
+            $ngaySinh = substr($ngaySinhDigits, 0, 8);
+        }
+        if ($maThe === '' || $hoTen === '' || $ngaySinh === '') {
+            throw new InvalidArgumentException('Thiếu mã thẻ, họ tên hoặc ngày sinh.');
+        }
+
+        $postData = array(
+            'maThe' => $maThe,
+            'hoTen' => $hoTen,
+            'ngaySinh' => $ngaySinh,
+            'hoTenCb' => $this->config['hoTenCb'],
+            'cccdCb' => $this->config['cccdCb'],
+        );
+        $token = $this->ensureValidToken();
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $result = $this->callTraCuuApi($postData, $token);
+            if ($this->isAuthError($result)) {
+                if ($attempt === 1) throw new RuntimeException('Token BHXH bị từ chối sau khi làm mới.');
+                $token = $this->ensureValidToken(true, $token['access_token']);
+                continue;
+            }
+            if ($result['status'] !== 200) {
+                throw new RuntimeException('API tra cứu trả HTTP ' . $result['status']);
+            }
+            if ((string) ($result['data']['maKetQua'] ?? '') === '205' && strlen($ngaySinh) === 8) {
+                // Một số hồ sơ BHXH chỉ lưu năm sinh. Nếu ngày đầy đủ bị từ
+                // chối, thử lại bằng năm để vẫn đối chiếu được hành chính.
+                return $this->traCuuThongTin($maThe, $hoTen, substr($ngaySinh, 0, 4));
+            }
+            return $result['data'];
+        }
+        throw new RuntimeException('Không thể hoàn tất tra cứu BHYT.');
+    }
+
     // =========================
     // TRA CỨU THẺ BHYT
     // =========================
@@ -541,67 +577,11 @@ class BHXH
                 return;
             }
 
-            $postData = [
-                'maThe' => $maThe,
-                'hoTen' => $hoTen,
-                'ngaySinh' => $ngaySinh,
-                'hoTenCb' => $this->config['hoTenCb'],
-                'cccdCb' => $this->config['cccdCb'],
-            ];
-
             $this->writeLog('Bắt đầu tra cứu BHYT.');
-
-            // Lấy token đang hợp lệ.
-            $token = $this->ensureValidToken();
-
-            // Thử tối đa 2 lần:
-            // Lần đầu + 1 lần sau refresh.
-            for ($attempt = 0; $attempt < 2; $attempt++) {
-
-                $result = $this->callTraCuuApi(
-                    $postData,
-                    $token
-                );
-
-                if ($this->isAuthError($result)) {
-
-                    if ($attempt === 1) {
-                        throw new RuntimeException(
-                            'Token vẫn bị từ chối sau khi làm mới.'
-                        );
-                    }
-
-                    $this->writeLog(
-                        'Token bị từ chối. Thử refresh.',
-                        'WARN'
-                    );
-
-                    $token = $this->ensureValidToken(
-                        true,
-                        $token['access_token']
-                    );
-
-                    continue;
-                }
-
-                if ($result['status'] !== 200) {
-                    throw new RuntimeException(
-                        'API tra cứu trả HTTP ' .
-                        $result['status']
-                    );
-                }
-
-                $this->writeLog(
-                    'Tra cứu BHYT hoàn tất.'
-                );
-
-                $this->jsonResponse(
-                    $result['data'],
-                    200
-                );
-
-                return;
-            }
+            $result = $this->traCuuThongTin($maThe, $hoTen, $ngaySinh);
+            $this->writeLog('Tra cứu BHYT hoàn tất.');
+            $this->jsonResponse($result, 200);
+            return;
 
         } catch (Throwable $e) {
 

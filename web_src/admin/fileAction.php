@@ -9,6 +9,7 @@ require_once __DIR__ . '/../bean/XmlValidationRulePeer.php';
 require_once __DIR__ . '/../bean/ApiValidationConfigPeer.php';
 require_once __DIR__ . '/../common/ApiValidationService.php';
 require_once __DIR__ . '/../common/TableLookupService.php';
+require_once __DIR__ . '/../common/BhytLookupService.php';
 require_once __DIR__ . '/../common/XmlErrorArchiveOrganizer.php';
 require_once __DIR__ . '/../bean/HeThongPeer.php';
 
@@ -159,11 +160,13 @@ class fileAction
             $rulePeer = new XmlValidationRulePeer();
             $apiService = new ApiValidationService(new ApiValidationConfigPeer());
             $tableLookupService = new TableLookupService();
+            $bhytService = new BhytLookupService();
             $validation = XmlRulesValidator::validate(
                 $decodedContent,
                 $rulePeer->getRulesForValidation(),
                 $apiService,
-                $tableLookupService
+                $tableLookupService,
+                $bhytService
             );
             $this->filePeer->updateValidationResult($id, $validation);
             $newStatus = $this->validationHasErrors($validation) ? 'failed' : 'processed';
@@ -529,12 +532,14 @@ class fileAction
         $rulePeer = new XmlValidationRulePeer();
         $apiService = new ApiValidationService(new ApiValidationConfigPeer());
         $tableLookupService = new TableLookupService();
-        return function (array $decodedContent) use ($rulePeer, $apiService, $tableLookupService) {
+        $bhytService = new BhytLookupService();
+        return function (array $decodedContent) use ($rulePeer, $apiService, $tableLookupService, $bhytService) {
             return XmlRulesValidator::validate(
                 $decodedContent,
                 $rulePeer->getRulesForValidation(),
                 $apiService,
-                $tableLookupService
+                $tableLookupService,
+                $bhytService
             );
         };
     }

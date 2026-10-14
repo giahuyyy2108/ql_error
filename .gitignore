@@ -3,3 +3,7 @@
 /storage/xml/processed/
 /storage/xml/processing/
 /bhyt_token.json
+/web_src/common/bhyt_config.json
+/web_src/common/bhyt_token.json
+/web_src/common/bhyt_token.json.lock
+/web_src/common/bhxh_log.txt

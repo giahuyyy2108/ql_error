@@ -6,7 +6,7 @@ class XmlRulesValidator
         'MA_BENH_KT' => true
     );
 
-    public static function validate(array $decodedContent, array $rules, $apiService = null, $tableLookupService = null)
+    public static function validate(array $decodedContent, array $rules, $apiService = null, $tableLookupService = null, $bhytService = null)
     {
         $rulesByType = array();
         foreach ($rules as $rule) {
@@ -68,6 +68,17 @@ class XmlRulesValidator
 
                     if ($ruleType === 'CONDITIONAL_FIELD') {
                         $ruleErrors = self::validateConditionalField($rule, $matches, $fileContexts, $fileIndex);
+                        $errors = array_merge($errors, $ruleErrors);
+                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        continue;
+                    }
+
+                    if ($ruleType === 'BHYT_LOOKUP') {
+                        $ruleErrors = self::validateBhytLookup(
+                            $rule,
+                            $fieldIndex,
+                            $bhytService
+                        );
                         $errors = array_merge($errors, $ruleErrors);
                         self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
                         continue;
@@ -304,7 +315,7 @@ class XmlRulesValidator
                 if (!in_array($ruleType, array(
                     'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CROSS_FILE_REQUIRED_BY_KEY',
                     'CCCD_GENDER_CENTURY', 'API', 'SUBSTRING',
-                    'TABLE_EXISTS', 'VTYT_HAS_DVKT'
+                    'TABLE_EXISTS', 'VTYT_HAS_DVKT', 'BHYT_LOOKUP'
                 ), true)) {
                     continue;
                 }
@@ -312,6 +323,13 @@ class XmlRulesValidator
                 if ($ruleType === 'VTYT_HAS_DVKT') {
                     self::addRequiredField($required, $fileType, 'MA_DICH_VU');
                     self::addRequiredField($required, $fileType, 'MA_VAT_TU');
+                    continue;
+                }
+
+                if ($ruleType === 'BHYT_LOOKUP') {
+                    self::addRequiredField($required, $fileType, 'MA_THE_BHYT');
+                    self::addRequiredField($required, $fileType, 'HO_TEN');
+                    self::addRequiredField($required, $fileType, 'NGAY_SINH');
                     continue;
                 }
 
@@ -795,6 +813,139 @@ class XmlRulesValidator
             }
         }
         return $errors;
+    }
+
+    private static function validateBhytLookup(array $rule, array $fieldIndex, $bhytService)
+    {
+        $fieldNames = array('MA_THE_BHYT', 'HO_TEN', 'NGAY_SINH');
+        $input = array();
+        $paths = array();
+        foreach ($fieldNames as $fieldName) {
+            $match = !empty($fieldIndex[$fieldName][0]) ? $fieldIndex[$fieldName][0] : null;
+            $input[$fieldName] = $match && isset($match['value']) ? trim((string) $match['value']) : '';
+            $paths[$fieldName] = $match && isset($match['path']) ? $match['path'] : $fieldName;
+            if ($input[$fieldName] === '') {
+                return array(self::makeError(
+                    $rule,
+                    $paths[$fieldName],
+                    $input[$fieldName],
+                    'error',
+                    'Thiếu ' . $fieldName . ' để tra cứu thông tin hành chính BHYT.'
+                ));
+            }
+        }
+        if (!is_object($bhytService) || !method_exists($bhytService, 'traCuuThongTin')) {
+            return array(self::makeError(
+                $rule, $paths['MA_THE_BHYT'], $input['MA_THE_BHYT'], 'warning',
+                'Chưa cấu hình dịch vụ tra cứu thông tin hành chính BHYT.'
+            ));
+        }
+
+        try {
+            $response = $bhytService->traCuuThongTin(
+                $input['MA_THE_BHYT'],
+                $input['HO_TEN'],
+                $input['NGAY_SINH']
+            );
+        } catch (Throwable $exception) {
+            return array(self::makeError(
+                $rule, $paths['MA_THE_BHYT'], $input['MA_THE_BHYT'], 'warning',
+                'Không thể tra cứu thông tin hành chính BHYT: ' . $exception->getMessage()
+            ));
+        }
+        if (!is_array($response)) {
+            return array(self::makeError(
+                $rule, $paths['MA_THE_BHYT'], $input['MA_THE_BHYT'], 'warning',
+                'API BHXH trả dữ liệu không hợp lệ.'
+            ));
+        }
+
+        $resultCode = (string) self::bhytResponseValue($response, array('maKetQua'));
+        $hasAdministrativeData = self::bhytResponseValue($response, array('maThe', 'maTheMoi', 'MA_THE_BHYT')) !== null
+            && self::bhytResponseValue($response, array('hoTen', 'HO_TEN')) !== null
+            && self::bhytResponseValue($response, array('ngaySinh', 'NGAY_SINH')) !== null;
+        if ($resultCode !== '' && !in_array($resultCode, array('0', '000'), true) && !$hasAdministrativeData) {
+            $note = (string) self::bhytResponseValue($response, array('ghiChu', 'message'));
+            return array(self::makeError(
+                $rule, $paths['MA_THE_BHYT'], $input['MA_THE_BHYT'], 'error',
+                $note !== '' ? $note : $rule['error_message']
+            ));
+        }
+
+        $responseValues = array(
+            'MA_THE_BHYT' => self::bhytResponseValue($response, array('maThe', 'maTheMoi', 'MA_THE_BHYT')),
+            'HO_TEN' => self::bhytResponseValue($response, array('hoTen', 'HO_TEN')),
+            'NGAY_SINH' => self::bhytResponseValue($response, array('ngaySinh', 'NGAY_SINH'))
+        );
+        $errors = array();
+        foreach ($fieldNames as $fieldName) {
+            $actual = (string) $responseValues[$fieldName];
+            $matches = $fieldName === 'NGAY_SINH'
+                ? self::bhytDatesMatch($input[$fieldName], $actual)
+                : self::normalizeBhytText($input[$fieldName], $fieldName === 'MA_THE_BHYT')
+                    === self::normalizeBhytText($actual, $fieldName === 'MA_THE_BHYT');
+            if (!$matches || $actual === '') {
+                $fieldRule = $rule;
+                $fieldRule['field_name'] = $fieldName;
+                $fieldRule['display_name'] = $fieldName;
+                $errors[] = self::makeError(
+                    $fieldRule,
+                    $paths[$fieldName],
+                    $input[$fieldName],
+                    'error',
+                    $fieldName . ' không khớp BHXH (XML1: ' . $input[$fieldName]
+                        . '; BHXH: ' . ($actual === '' ? 'không có dữ liệu' : $actual) . ').'
+                );
+            }
+        }
+        return $errors;
+    }
+
+    private static function bhytResponseValue(array $data, array $keys)
+    {
+        foreach ($data as $key => $value) {
+            foreach ($keys as $target) {
+                if (strcasecmp((string) $key, (string) $target) === 0 && is_scalar($value)) return $value;
+            }
+        }
+        foreach ($data as $value) {
+            if (!is_array($value)) continue;
+            $found = self::bhytResponseValue($value, $keys);
+            if ($found !== null) return $found;
+        }
+        return null;
+    }
+
+    private static function normalizeBhytText($value, $cardNumber = false)
+    {
+        $value = trim(preg_replace('/\s+/u', ' ', (string) $value));
+        if ($cardNumber) $value = preg_replace('/[^A-Za-z0-9]/', '', $value);
+        return function_exists('mb_strtoupper') ? mb_strtoupper($value, 'UTF-8') : strtoupper($value);
+    }
+
+    private static function normalizeBhytDate($value)
+    {
+        $text = trim((string) $value);
+        if (preg_match('/^(\d{1,2})\D+(\d{1,2})\D+(\d{4})$/', $text, $parts)) {
+            return $parts[3] . str_pad($parts[2], 2, '0', STR_PAD_LEFT)
+                . str_pad($parts[1], 2, '0', STR_PAD_LEFT);
+        }
+        if (preg_match('/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/', $text, $parts)) {
+            return $parts[1] . str_pad($parts[2], 2, '0', STR_PAD_LEFT)
+                . str_pad($parts[3], 2, '0', STR_PAD_LEFT);
+        }
+        $digits = preg_replace('/\D/', '', $text);
+        if (strlen($digits) > 8) return substr($digits, 0, 8);
+        return $digits;
+    }
+
+    private static function bhytDatesMatch($xmlValue, $bhxhValue)
+    {
+        $xmlDate = self::normalizeBhytDate($xmlValue);
+        $bhxhDate = self::normalizeBhytDate($bhxhValue);
+        if (strlen($bhxhDate) === 4) return substr($xmlDate, 0, 4) === $bhxhDate;
+        if (strlen($xmlDate) === 4) return $xmlDate === substr($bhxhDate, 0, 4);
+        return $xmlDate === $bhxhDate;
     }
 
     private static function validateCrossFileRequiredByKey(

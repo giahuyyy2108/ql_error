@@ -16,8 +16,15 @@ class XmlErrorArchiveOrganizer
         $created = array();
         $canonicalSource = $sourcePath;
         foreach ($groups as $group) {
+            $ruleId = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) $group['rule_id']);
+            if ($ruleId === '' || $ruleId === '-') $ruleId = 'NA';
+            $groupHash = substr(sha1(
+                $group['rule_id'] . "\0" . $group['rule_type'] . "\0"
+                . $group['rule_value'] . "\0" . $group['error_name']
+            ), 0, 8);
             $prefix = 'PASS' . $group['count'] . '_'
                 . self::slug($group['file_type'], 'XML') . '_'
+                . 'R' . $ruleId . '_' . $groupHash . '_'
                 . self::slug($group['error_name'], 'LOI');
             $directory = $failedDirectory . DIRECTORY_SEPARATOR . $prefix;
             if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {

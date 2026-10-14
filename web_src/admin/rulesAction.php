@@ -188,7 +188,7 @@ class rulesAction
         if (in_array($rule['rule_type'], array(
             'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CROSS_FILE_REQUIRED_BY_KEY',
             'TABLE_EXISTS', 'API', 'SUBSTRING',
-            'CCCD_GENDER_CENTURY', 'FORMULA'
+            'CCCD_GENDER_CENTURY', 'FORMULA', 'BHYT_LOOKUP'
         ), true)) {
             $config = json_decode($rule['rule_value'], true);
             if (!is_array($config)) {
