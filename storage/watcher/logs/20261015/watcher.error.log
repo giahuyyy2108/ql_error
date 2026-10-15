@@ -9,3 +9,5 @@
 [2026-10-15 14:02:20] [ERROR] [WORKER:1] File lỗi 13096967_HT27903805200274079025_2610120732_2610120822_520_590.xml: Không thể đọc file XML. (thời gian 0.004s)
 [2026-10-15 14:04:48] [ERROR] [WORKER:1] Không thể lưu file lỗi 16157764_DN479790806928679025_2610121336_2610121339_2265_2380.xml: Không thể chuyển file sang C:\xampp\htdocs\ql_error\storage\xml\failed\20261015.
 [2026-10-15 14:04:48] [ERROR] [WORKER:1] File lỗi 16157764_DN479790806928679025_2610121336_2610121339_2265_2380.xml: Không thể đọc file XML. (thời gian 0.002s)
+[2026-10-15 14:07:34] [ERROR] [WORKER:1] Không thể lưu file lỗi 21203121_HT379029619981479025_2610120731_2610120732_187_222.xml: Không thể chuyển file sang C:\xampp\htdocs\ql_error\storage\xml\failed\20261015.
+[2026-10-15 14:07:34] [ERROR] [WORKER:1] File lỗi 21203121_HT379029619981479025_2610120731_2610120732_187_222.xml: Không thể đọc file XML. (thời gian 0.005s)
