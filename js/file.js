@@ -1026,6 +1026,33 @@
         window.setTimeout(function () { target.removeClass('is-target-line'); }, 2500);
     });
 
+    function localDateKey(date) {
+        function twoDigits(value) { return value < 10 ? '0' + value : String(value); }
+        return date.getFullYear() + '-' + twoDigits(date.getMonth() + 1) + '-' + twoDigits(date.getDate());
+    }
+
+    function updateFileStatistics(rows) {
+        var statistics = { total: 0, success: 0, failed: 0, processing: 0 };
+        var dateInput = $('#file-stat-date');
+        var selectedDate = dateInput.val();
+        if (!selectedDate) {
+            selectedDate = localDateKey(new Date());
+            dateInput.val(selectedDate);
+        }
+        $.each(rows || [], function (_, row) {
+            var modified = new Date(Number(row.timestamp) * 1000);
+            if (localDateKey(modified) !== selectedDate) return;
+            statistics.total++;
+            if (row.status === 'failed') statistics.failed++;
+            else if (row.status === 'processed') statistics.success++;
+            else statistics.processing++;
+        });
+        $('#file-stat-total').text(statistics.total);
+        $('#file-stat-success').text(statistics.success);
+        $('#file-stat-failed').text(statistics.failed);
+        $('#file-stat-processing').text(statistics.processing);
+    }
+
     var table = $('#datatable-file').DataTable({
         ajax: {
             url: baseUrl + 'file/getData/',
@@ -1103,6 +1130,7 @@
         ],
         drawCallback: function () {
             updateSelectionControls();
+            updateFileStatistics(this.api().rows().data().toArray());
         },
         language: {
             search: 'Tìm kiếm:',
@@ -1113,6 +1141,10 @@
             infoFiltered: '(lọc từ _MAX_ file)',
             paginate: { first: 'Đầu', last: 'Cuối', next: 'Sau', previous: 'Trước' }
         }
+    });
+
+    $('#file-stat-date').on('change', function () {
+        updateFileStatistics(table.rows().data().toArray());
     });
 
     function searchFiles() {

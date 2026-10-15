@@ -231,6 +231,14 @@ $archive = function ($source, $directory) use ($uniqueDestination) {
     return $destination;
 };
 
+$datedDirectory = function ($baseDirectory) {
+    $directory = rtrim($baseDirectory, '\\/') . DIRECTORY_SEPARATOR . date('Ymd');
+    if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+        throw new RuntimeException('Không thể tạo thư mục lưu theo ngày: ' . $directory);
+    }
+    return $directory;
+};
+
 $resetDatabase = function () use (&$importService, $buildImportService) {
     global $connect;
     if ($connect instanceof mysqli) {
@@ -252,11 +260,14 @@ $process = function ($path) use (
     $deletedDir,
     $uniqueDestination,
     $archive,
+    $datedDirectory,
     $log,
     $logValidationErrors,
     $resetDatabase
 ) {
-    $processedPath = $uniqueDestination($processedDir, basename($path));
+    $datedProcessedDir = $datedDirectory($processedDir);
+    $datedFailedDir = $datedDirectory($failedDir);
+    $processedPath = $uniqueDestination($datedProcessedDir, basename($path));
     $normalizedRoot = str_replace('\\', '/', rtrim($projectRoot, '\\/')) . '/';
     $normalizedProcessedPath = str_replace('\\', '/', $processedPath);
     $storedPath = strpos($normalizedProcessedPath, $normalizedRoot) === 0
@@ -266,7 +277,7 @@ $process = function ($path) use (
         $result = $importService->importPath($path, $storedPath);
     } catch (Throwable $exception) {
         try {
-            $failedPath = $archive($path, $failedDir);
+            $failedPath = $archive($path, $datedFailedDir);
             file_put_contents($failedPath . '.error.txt', $exception->getMessage() . PHP_EOL, LOCK_EX);
         } catch (Throwable $archiveException) {
             $log('Không thể lưu file lỗi ' . basename($path) . ': ' . $archiveException->getMessage(), 'ERROR');
@@ -285,7 +296,7 @@ $process = function ($path) use (
         $validationFailed = $isImport
             && isset($result['processing_status']) && $result['processing_status'] === 'failed';
         $finalPath = $validationFailed
-            ? $uniqueDestination($failedDir, basename($path))
+            ? $uniqueDestination($datedFailedDir, basename($path))
             : $processedPath;
         if (!rename($path, $finalPath)) {
             throw new RuntimeException('Không thể chuyển file sang thư mục kết quả.');
@@ -334,7 +345,7 @@ $process = function ($path) use (
             );
             $organizedPaths = XmlErrorArchiveOrganizer::organize(
                 $finalPath,
-                $failedDir,
+                $datedFailedDir,
                 $result['validation'],
                 true,
                 $result['name']
@@ -349,7 +360,7 @@ $process = function ($path) use (
             $logValidationErrors($result['name'], $result['validation']);
             return;
         }
-        $staleErrorPath = $failedDir . DIRECTORY_SEPARATOR . $result['name'] . '.error.txt';
+        $staleErrorPath = $datedFailedDir . DIRECTORY_SEPARATOR . $result['name'] . '.error.txt';
         if (is_file($staleErrorPath)) {
             unlink($staleErrorPath);
         }
@@ -373,6 +384,7 @@ $revalidatePending = function () use (
     $processedDir,
     $failedDir,
     $uniqueDestination,
+    $datedDirectory,
     $log,
     $logValidationErrors,
     $resetDatabase
@@ -415,7 +427,7 @@ $revalidatePending = function () use (
                     ? (int) $validationItem['error_count'] : 0;
             }
             $newStatus = $errorCount > 0 ? 'failed' : 'processed';
-            $targetDirectory = $newStatus === 'failed' ? $failedDir : $processedDir;
+            $targetDirectory = $datedDirectory($newStatus === 'failed' ? $failedDir : $processedDir);
             $finalPath = $source;
             if (strcasecmp(dirname($source), $targetDirectory) !== 0) {
                 $finalPath = $uniqueDestination($targetDirectory, basename($source));
@@ -437,7 +449,7 @@ $revalidatePending = function () use (
                 );
                 $organizedPaths = XmlErrorArchiveOrganizer::organize(
                     $finalPath,
-                    $failedDir,
+                    $targetDirectory,
                     $validation,
                     true,
                     $file['ten']

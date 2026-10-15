@@ -26,6 +26,31 @@
         <div class="clearfix"></div>
     </div>
     <div class="x_content">
+        <section class="file-statistics-section" aria-label="Thống kê hồ sơ XML theo ngày">
+            <div class="file-statistics-header">
+                <h3>Thống kê theo ngày</h3>
+                <label for="file-stat-date" class="sr-only">Chọn ngày thống kê</label>
+                <input type="date" id="file-stat-date" class="form-control">
+            </div>
+            <div class="file-statistics">
+                <div class="file-stat-card file-stat-total">
+                    <i class="fa fa-files-o" aria-hidden="true"></i>
+                    <div><strong id="file-stat-total">0</strong><span>Tổng hồ sơ</span></div>
+                </div>
+                <div class="file-stat-card file-stat-success">
+                    <i class="fa fa-check-circle" aria-hidden="true"></i>
+                    <div><strong id="file-stat-success">0</strong><span>Thành công</span></div>
+                </div>
+                <div class="file-stat-card file-stat-failed">
+                    <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
+                    <div><strong id="file-stat-failed">0</strong><span>Có lỗi</span></div>
+                </div>
+                <div class="file-stat-card file-stat-processing">
+                    <i class="fa fa-refresh" aria-hidden="true"></i>
+                    <div><strong id="file-stat-processing">0</strong><span>Đang xử lý</span></div>
+                </div>
+            </div>
+        </section>
         <div class="row file-search-row">
             <div class="col-md-8 col-sm-9 col-xs-12">
                 <div class="input-group">

@@ -342,7 +342,8 @@ class fileAction
 
         $projectRoot = dirname(__DIR__, 2);
         $targetDirectory = $projectRoot . DIRECTORY_SEPARATOR . 'storage'
-            . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . $newStatus;
+            . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . $newStatus
+            . DIRECTORY_SEPARATOR . date('Ymd');
         $currentDirectory = realpath(dirname($storedPath));
         $resolvedTarget = realpath($targetDirectory);
         $newPath = $file['file_path'];
@@ -368,7 +369,7 @@ class fileAction
             $absoluteFinalPath = $this->resolveStoredFilePath($newPath);
             $organized = XmlErrorArchiveOrganizer::organize(
                 $absoluteFinalPath,
-                dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . 'failed',
+                dirname($absoluteFinalPath),
                 $validation,
                 true,
                 $file['ten']
@@ -463,7 +464,7 @@ class fileAction
     {
         $projectRoot = dirname(__DIR__, 2);
         $directory = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
-            . 'xml' . DIRECTORY_SEPARATOR . $bucket;
+            . 'xml' . DIRECTORY_SEPARATOR . $bucket . DIRECTORY_SEPARATOR . date('Ymd');
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
             throw new RuntimeException('Không thể tạo thư mục lưu file XML.');
         }
@@ -537,7 +538,7 @@ class fileAction
     {
         $projectRoot = dirname(__DIR__, 2);
         $directory = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
-            . 'xml' . DIRECTORY_SEPARATOR . $status;
+            . 'xml' . DIRECTORY_SEPARATOR . $status . DIRECTORY_SEPARATOR . date('Ymd');
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
             throw new RuntimeException('Không thể tạo thư mục trạng thái file XML.');
         }

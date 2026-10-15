@@ -26,7 +26,8 @@ class XmlErrorArchiveOrganizer
                 . self::slug($group['file_type'], 'XML') . '_'
                 . 'R' . $ruleId . '_' . $groupHash . '_'
                 . self::slug($group['error_name'], 'LOI');
-            $directory = $failedDirectory . DIRECTORY_SEPARATOR . $prefix;
+            $directory = $failedDirectory . DIRECTORY_SEPARATOR
+                . self::slug($group['error_name'], 'LOI');
             if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
                 throw new RuntimeException('Không thể tạo thư mục lỗi: ' . $directory);
             }
@@ -123,7 +124,7 @@ class XmlErrorArchiveOrganizer
         if (!is_dir($failedDirectory)) return;
         $suffix = '_' . $originalName;
         foreach (new DirectoryIterator($failedDirectory) as $directory) {
-            if (!$directory->isDir() || $directory->isDot() || strpos($directory->getFilename(), 'PASS') !== 0) continue;
+            if (!$directory->isDir() || $directory->isDot()) continue;
             foreach (new DirectoryIterator($directory->getPathname()) as $file) {
                 if (!$file->isFile()) continue;
                 if (strcasecmp($file->getPathname(), $sourcePath) === 0) continue;

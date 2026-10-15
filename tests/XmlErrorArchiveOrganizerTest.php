@@ -35,6 +35,10 @@ try {
         if (!is_file($path) || !is_file($path . '.error.txt')) {
             throw new RuntimeException('Thiếu file XML hoặc báo cáo lỗi được phân loại.');
         }
+        if (strpos(basename($path), 'PASS1_XML1_R') !== 0
+            || strpos(basename(dirname($path)), 'PASS') === 0) {
+            throw new RuntimeException('Tên thư mục phải là tên lỗi, tiền tố PASS chỉ nằm ở tên file.');
+        }
     }
     echo "XmlErrorArchiveOrganizerTest: OK\n";
 } finally {
