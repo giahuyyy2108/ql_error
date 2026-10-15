@@ -101,10 +101,6 @@
     function appendValidNotes(container, validFields) {
         validFields.forEach(function (item) {
             var validValue = item.value;
-            var copyValue = validValue;
-            if (copyValue === null || copyValue === undefined) copyValue = '';
-            else if (typeof copyValue === 'object') copyValue = JSON.stringify(copyValue);
-            else copyValue = String(copyValue);
             if (validValue === null || validValue === undefined || String(validValue) === '') {
                 validValue = '(trống)';
             } else if (typeof validValue === 'object') {
@@ -115,9 +111,7 @@
                 .appendTo(container);
             $('<span>').text(item.display_name + ': ' + (item.message || 'Hợp lệ')
                 + ' (' + item.rule_type + ') | Giá trị hợp lệ: ').appendTo(validBox);
-            $('<span role="button" tabindex="0" title="Bấm để sao chép giá trị hợp lệ">')
-                .addClass('copy-valid-value copy-value-trigger')
-                .attr('data-copy-value', copyValue)
+            $('<span>')
                 .text(validValue)
                 .appendTo(validBox);
         });
@@ -167,22 +161,7 @@
         $('<span>').addClass('json-key' + keyStateClass).text(key + ': ').appendTo(row);
         var valueClass = value === null ? 'json-null' : (typeof value === 'number' ? 'json-number' : 'json-string');
         var displayValue = value === null ? 'null' : String(value);
-        if (fieldErrors.length || fieldValids.length) {
-            var validationItem = fieldErrors.length ? fieldErrors[0] : fieldValids[0];
-            var fieldCopyValue = validationItem.value;
-            if (fieldCopyValue === null || fieldCopyValue === undefined) fieldCopyValue = '';
-            else if (typeof fieldCopyValue === 'object') fieldCopyValue = JSON.stringify(fieldCopyValue);
-            else fieldCopyValue = String(fieldCopyValue);
-            var isError = fieldErrors.length > 0;
-            $('<span role="button" tabindex="0">')
-                .attr('title', isError ? 'Bấm để sao chép giá trị lỗi' : 'Bấm để sao chép giá trị hợp lệ')
-                .addClass(valueClass + ' ' + (isError ? 'copy-error-value copy-error-trigger' : 'copy-valid-value copy-value-trigger'))
-                .attr('data-copy-value', fieldCopyValue)
-                .text(displayValue)
-                .appendTo(row);
-        } else {
-            $('<span>').addClass(valueClass).text(displayValue).appendTo(row);
-        }
+        $('<span>').addClass(valueClass).text(displayValue).appendTo(row);
         container.append(row);
         appendErrorNotes(container, fieldErrors);
         appendValidNotes(container, fieldValids);
@@ -340,6 +319,74 @@
             $('<small>').addClass('text-muted').text('Lệch = XML1 − (XML2 + XML3); chấp nhận sai số ±1 đồng.')
         );
     }
+
+    function initializeCostReconciliationDrag() {
+        var panel = document.querySelector('#modal-view-xml .cost-reconciliation-panel');
+        var container = document.querySelector('#modal-view-xml .modal-content');
+        if (!panel || !container) return;
+
+        if (panel.parentNode !== container) container.appendChild(panel);
+        if (panel.dataset.dragInitialized === '1') return;
+        panel.dataset.dragInitialized = '1';
+
+        var handle = panel.querySelector('h4');
+        var drag = null;
+        handle.addEventListener('pointerdown', function (event) {
+            if (event.button !== undefined && event.button !== 0) return;
+            var panelRect = panel.getBoundingClientRect();
+            var containerRect = container.getBoundingClientRect();
+            drag = {
+                pointerId: event.pointerId,
+                offsetX: event.clientX - panelRect.left,
+                offsetY: event.clientY - panelRect.top
+            };
+            panel.style.left = (panelRect.left - containerRect.left) + 'px';
+            panel.style.top = (panelRect.top - containerRect.top) + 'px';
+            panel.style.right = 'auto';
+            panel.classList.add('is-dragging');
+            handle.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        });
+        handle.addEventListener('pointermove', function (event) {
+            if (!drag || event.pointerId !== drag.pointerId) return;
+            var containerRect = container.getBoundingClientRect();
+            var maxLeft = Math.max(0, container.clientWidth - panel.offsetWidth);
+            var maxTop = Math.max(0, container.clientHeight - panel.offsetHeight);
+            var left = event.clientX - containerRect.left - drag.offsetX;
+            var top = event.clientY - containerRect.top - drag.offsetY;
+            panel.style.left = Math.max(0, Math.min(left, maxLeft)) + 'px';
+            panel.style.top = Math.max(0, Math.min(top, maxTop)) + 'px';
+        });
+        function stopDragging(event) {
+            if (!drag || event.pointerId !== drag.pointerId) return;
+            drag = null;
+            panel.classList.remove('is-dragging');
+        }
+        handle.addEventListener('pointerup', stopDragging);
+        handle.addEventListener('pointercancel', stopDragging);
+    }
+
+    function resetCostReconciliationPosition() {
+        initializeCostReconciliationDrag();
+        $('.cost-reconciliation-panel')
+            .hide()
+            .css({ left: 'auto', right: '18px', top: '58px', width: '560px', height: 'auto' });
+        $('#btn-toggle-cost-panel').removeClass('active');
+    }
+
+    $('#modal-view-xml').on('click', '.btn-close-cost-panel', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        $('.cost-reconciliation-panel').hide();
+        $('#btn-toggle-cost-panel').removeClass('active');
+    });
+
+    $('#btn-toggle-cost-panel').on('click', function () {
+        var panel = $('.cost-reconciliation-panel');
+        var willShow = !panel.is(':visible');
+        panel.toggle(willShow);
+        $(this).toggleClass('active', willShow);
+    });
 
     function excelColumnName(index) {
         var name = '';
@@ -1420,6 +1467,7 @@
         $('#decoded-table-view').text('Đang tải...');
         applyXmlViewMode();
         $('#cost-reconciliation-content').text('Đang tính...');
+        resetCostReconciliationPosition();
         $('#modal-view-xml').modal('show');
 
         $.ajax({
@@ -1527,12 +1575,12 @@
             navigator.clipboard.writeText(value).then(copied).catch(copyWithEvent);
         } else copyWithEvent();
     }
-    $('#modal-view-xml').on('click', '.copy-error-trigger, .copy-value-trigger', function (event) {
+    $('#modal-view-xml').on('click', '.copy-error-trigger', function (event) {
         event.preventDefault();
         event.stopPropagation();
         copyErrorValue(this);
     });
-    $('#modal-view-xml').on('keydown', '.copy-error-value, .copy-valid-value', function (event) {
+    $('#modal-view-xml').on('keydown', '.copy-error-value', function (event) {
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             copyErrorValue(this);
