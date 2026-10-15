@@ -2,6 +2,10 @@
 
 class TableLookupService
 {
+    const POSITIVE_CACHE_TTL = 300;
+    const NEGATIVE_CACHE_TTL = 60;
+    const MAX_CACHE_ENTRIES = 10000;
+
     private $connection;
     private $existsCache = array();
     private static $databaseSources = null;
@@ -263,13 +267,95 @@ class TableLookupService
         return $this->lookup($value, $config) !== false;
     }
 
+    public function preload(array $values, array $config)
+    {
+        $config = self::normalizeConfig($config);
+        if ($config['value_mappings'] || $config['fallback_columns']
+            || $config['table'] === 'nhom_BHYT') {
+            return;
+        }
+        foreach ($config['conditions'] as $conditionValue) {
+            if (is_array($conditionValue)) return;
+        }
+
+        $pending = array();
+        foreach ($values as $value) {
+            $normalizedValue = is_scalar($value) ? trim((string) $value) : '';
+            $cacheKey = json_encode(array($config, $normalizedValue));
+            $hit = false;
+            $this->cachedLookup($cacheKey, $hit);
+            if (!$hit) $pending[$normalizedValue] = $cacheKey;
+        }
+        if (!$pending) return;
+
+        foreach (array_chunk(array_keys($pending), 500) as $chunk) {
+            $selectedColumns = array($config['column']);
+            if ($config['return_column'] !== '') $selectedColumns[] = $config['return_column'];
+            $selectedColumns = array_values(array_unique($selectedColumns));
+            $selectSql = implode(', ', array_map(function ($column) use ($config) {
+                return '`' . $config['table'] . '`.`' . $column . '`';
+            }, $selectedColumns));
+            $parameters = array_values($chunk);
+            $sql = 'SELECT ' . $selectSql . ' FROM `' . $config['table'] . '` WHERE `'
+                . $config['table'] . '`.`' . $config['column'] . '` IN ('
+                . implode(',', array_fill(0, count($chunk), '?')) . ')';
+            foreach ($config['conditions'] as $column => $conditionValue) {
+                if ($conditionValue === null) {
+                    $sql .= ' AND `' . $config['table'] . '`.`' . $column . '` IS NULL';
+                } else {
+                    $sql .= ' AND `' . $config['table'] . '`.`' . $column . '` = ?';
+                    $parameters[] = (string) $conditionValue;
+                }
+            }
+
+            $statement = $this->connection->prepare($sql);
+            if (!$statement) throw new RuntimeException('Không thể chuẩn bị truy vấn TABLE_EXISTS theo lô.');
+            $types = str_repeat('s', count($parameters));
+            $statement->bind_param($types, ...$parameters);
+            if (!$statement->execute()) {
+                $statement->close();
+                throw new RuntimeException('Không thể thực hiện truy vấn TABLE_EXISTS theo lô.');
+            }
+            $result = $statement->get_result();
+            $found = array();
+            while ($result && ($row = $result->fetch_assoc())) {
+                $matchedValue = (string) $row[$config['column']];
+                $found[$matchedValue] = true;
+                $lookupResult = array(
+                    'matched_column' => $config['column'],
+                    'return_column' => $config['return_column'],
+                    'return_value' => $config['return_column'] !== ''
+                        && array_key_exists($config['return_column'], $row)
+                            ? $row[$config['return_column']] : null
+                );
+                $this->rememberLookup(
+                    json_encode(array($config, $matchedValue)),
+                    $lookupResult,
+                    self::POSITIVE_CACHE_TTL
+                );
+            }
+            $statement->close();
+            foreach ($chunk as $missingValue) {
+                if (!isset($found[$missingValue])) {
+                    $this->rememberLookup(
+                        $pending[$missingValue],
+                        false,
+                        self::NEGATIVE_CACHE_TTL
+                    );
+                }
+            }
+        }
+    }
+
     public function lookup($value, array $config)
     {
         $config = self::normalizeConfig($config);
         $normalizedValue = is_scalar($value) ? trim((string) $value) : '';
         $cacheKey = json_encode(array($config, $normalizedValue));
-        if ($cacheKey !== false && array_key_exists($cacheKey, $this->existsCache)) {
-            return $this->existsCache[$cacheKey];
+        $cacheHit = false;
+        $cachedValue = $this->cachedLookup($cacheKey, $cacheHit);
+        if ($cacheHit) {
+            return $cachedValue;
         }
 
         $bhytDien = $config['table'] === 'nhom_BHYT' && array_key_exists('dien', $config['conditions']);
@@ -351,7 +437,10 @@ class TableLookupService
         // Positive lookups are stable enough to cache during a worker run.
         // Do not cache misses because reference tables can be updated while
         // the long-running XML watcher is still active.
-        if ($row === null) return false;
+        if ($row === null) {
+            $this->rememberLookup($cacheKey, false, self::NEGATIVE_CACHE_TTL);
+            return false;
+        }
         $matchedColumn = $config['column'];
         foreach ($lookupColumns as $lookupColumn) {
             if (isset($row[$lookupColumn]) && (string) $row[$lookupColumn] === $normalizedValue) {
@@ -365,9 +454,7 @@ class TableLookupService
             'return_value' => $config['return_column'] !== '' && array_key_exists($config['return_column'], $row)
                 ? $row[$config['return_column']] : null
         );
-        if ($cacheKey !== false) {
-            $this->existsCache[$cacheKey] = $lookupResult;
-        }
+        $this->rememberLookup($cacheKey, $lookupResult, self::POSITIVE_CACHE_TTL);
         return $lookupResult;
     }
 
@@ -378,7 +465,10 @@ class TableLookupService
         $comparisons = array();
         $parameters = array();
         foreach ($config['value_mappings'] as $mapping) {
-            if (!array_key_exists($mapping['index'], $parts)) return false;
+            if (!array_key_exists($mapping['index'], $parts)) {
+                $this->rememberLookup($cacheKey, false, self::NEGATIVE_CACHE_TTL);
+                return false;
+            }
             $mappedValue = $parts[$mapping['index']];
             if ($mapping['transform'] === 'digits_only') {
                 $mappedValue = preg_replace('/\D+/', '', $mappedValue);
@@ -419,14 +509,48 @@ class TableLookupService
         $result = $statement->get_result();
         $row = $result ? $result->fetch_assoc() : null;
         $statement->close();
-        if ($row === null) return false;
+        if ($row === null) {
+            $this->rememberLookup($cacheKey, false, self::NEGATIVE_CACHE_TTL);
+            return false;
+        }
         $lookupResult = array(
             'matched_column' => implode(',', array_column($config['value_mappings'], 'column')),
             'return_column' => $config['return_column'],
             'return_value' => $config['return_column'] !== '' && array_key_exists($config['return_column'], $row)
                 ? $row[$config['return_column']] : null
         );
-        if ($cacheKey !== false) $this->existsCache[$cacheKey] = $lookupResult;
+        $this->rememberLookup($cacheKey, $lookupResult, self::POSITIVE_CACHE_TTL);
         return $lookupResult;
+    }
+
+    private function cachedLookup($cacheKey, &$hit)
+    {
+        $hit = false;
+        if ($cacheKey === false || !isset($this->existsCache[$cacheKey])) return null;
+        $entry = $this->existsCache[$cacheKey];
+        if (!is_array($entry) || !array_key_exists('expires_at', $entry)
+            || $entry['expires_at'] < time()) {
+            unset($this->existsCache[$cacheKey]);
+            return null;
+        }
+        $hit = true;
+        return $entry['value'];
+    }
+
+    private function rememberLookup($cacheKey, $value, $ttl)
+    {
+        if ($cacheKey === false) return;
+        if (count($this->existsCache) >= self::MAX_CACHE_ENTRIES) {
+            // Arrays retain insertion order; evict the oldest 10% in one pass.
+            $removeCount = max(1, (int) floor(self::MAX_CACHE_ENTRIES / 10));
+            foreach (array_keys($this->existsCache) as $existingKey) {
+                unset($this->existsCache[$existingKey]);
+                if (--$removeCount <= 0) break;
+            }
+        }
+        $this->existsCache[$cacheKey] = array(
+            'value' => $value,
+            'expires_at' => time() + max(1, (int) $ttl)
+        );
     }
 }

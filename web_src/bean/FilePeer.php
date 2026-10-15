@@ -18,7 +18,7 @@ class FilePeer
     public function getList()
     {
         $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, kichthuoc, processing_status,
-                       validation_result, update_at, create_at
+                       update_at, create_at
                 FROM `file` ORDER BY update_at DESC, id DESC';
         $result = $this->connection->query($sql);
         if (!$result) {
@@ -28,15 +28,12 @@ class FilePeer
         $files = array();
         while ($row = $result->fetch_assoc()) {
             $timestamp = strtotime($row['update_at']);
-            $patientInfo = $this->patientInfoFromValidation($row['validation_result']);
             $files[] = array(
                 'id' => (int) $row['id'],
                 'name' => $row['ten'],
                 'ma_lk' => $row['ma_lk'],
-                'ma_bn' => $row['ma_bn'] !== null && $row['ma_bn'] !== ''
-                    ? $row['ma_bn'] : $patientInfo['ma_bn'],
-                'ho_ten' => $row['ho_ten'] !== null && $row['ho_ten'] !== ''
-                    ? $row['ho_ten'] : $patientInfo['ho_ten'],
+                'ma_bn' => $row['ma_bn'] !== null ? $row['ma_bn'] : '',
+                'ho_ten' => $row['ho_ten'] !== null ? $row['ho_ten'] : '',
                 'size' => (int) $row['kichthuoc'],
                 'status' => $row['processing_status'],
                 'modified' => $timestamp ? date('d/m/Y H:i:s', $timestamp) : '',
@@ -46,26 +43,6 @@ class FilePeer
         $result->free();
 
         return $files;
-    }
-
-    private function patientInfoFromValidation($validationJson)
-    {
-        $info = array('ma_bn' => '', 'ho_ten' => '');
-        $validation = json_decode((string) $validationJson, true);
-        if (!is_array($validation)) return $info;
-
-        foreach ($validation as $item) {
-            foreach (array('valid_fields', 'errors') as $group) {
-                if (empty($item[$group]) || !is_array($item[$group])) continue;
-                foreach ($item[$group] as $field) {
-                    $name = isset($field['field_name']) ? strtoupper((string) $field['field_name']) : '';
-                    $value = isset($field['value']) ? trim((string) $field['value']) : '';
-                    if ($name === 'MA_BN' && $info['ma_bn'] === '') $info['ma_bn'] = $value;
-                    if ($name === 'HO_TEN' && $info['ho_ten'] === '') $info['ho_ten'] = $value;
-                }
-            }
-        }
-        return $info;
     }
 
     public function getErrorReportRows()
@@ -370,6 +347,28 @@ class FilePeer
         $row = $result->fetch_assoc();
         $result->free();
         return (int) $row['total'];
+    }
+
+    public function getRevalidationProgress()
+    {
+        $result = $this->connection->query(
+            "SELECT
+                SUM(processing_status = 'pending_revalidation') AS pending,
+                SUM(processing_status = 'revalidating') AS revalidating
+             FROM `file`"
+        );
+        if (!$result) {
+            throw new RuntimeException('Không thể đọc tiến độ quét lại.');
+        }
+        $row = $result->fetch_assoc();
+        $result->free();
+        $pending = isset($row['pending']) ? (int) $row['pending'] : 0;
+        $revalidating = isset($row['revalidating']) ? (int) $row['revalidating'] : 0;
+        return array(
+            'pending' => $pending,
+            'revalidating' => $revalidating,
+            'remaining' => $pending + $revalidating
+        );
     }
 
     public function getPendingRevalidation($limit = 2)

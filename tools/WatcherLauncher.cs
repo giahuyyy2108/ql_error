@@ -12,7 +12,8 @@ internal static class WatcherLauncher
         string projectRoot = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
         string phpPath = Path.Combine(Path.GetPathRoot(projectRoot), "xampp", "php", "php.exe");
         string watcherPath = Path.Combine(projectRoot, "scripts", "watch_xml.php");
-        string logPath = Path.Combine(projectRoot, "storage", "xml", "watcher.launcher.log");
+        string logPath = Path.Combine(projectRoot, "storage", "watcher", "logs",
+            DateTime.Now.ToString("yyyyMMdd"), "watcher.launcher.log");
 
         if (!File.Exists(phpPath))
             return Fail(logPath, "Không tìm thấy PHP: " + phpPath);
@@ -41,27 +42,33 @@ internal static class WatcherLauncher
             Console.WriteLine("Đóng cửa sổ này để dừng watcher.");
             Console.WriteLine();
 
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = phpPath,
-                Arguments = "\"" + watcherPath + "\"",
-                WorkingDirectory = projectRoot,
-                UseShellExecute = false,
-                CreateNoWindow = false
-            };
-
             try
             {
-                using (var watcher = Process.Start(startInfo))
+                var watchers = new Process[2];
+                for (int index = 0; index < watchers.Length; index++)
                 {
-                    if (watcher == null)
-                        return Fail(logPath, "Không thể khởi động tiến trình watcher.");
-                    watcher.WaitForExit();
+                    var startInfo = new ProcessStartInfo
+                    {
+                        FileName = phpPath,
+                        Arguments = "\"" + watcherPath + "\" --worker-id=" + (index + 1),
+                        WorkingDirectory = projectRoot,
+                        UseShellExecute = false,
+                        CreateNoWindow = false
+                    };
+                    watchers[index] = Process.Start(startInfo);
+                    if (watchers[index] == null)
+                        return Fail(logPath, "Không thể khởi động worker " + (index + 1) + ".");
+                }
+                for (int index = 0; index < watchers.Length; index++)
+                {
+                    watchers[index].WaitForExit();
                     File.AppendAllText(logPath,
                         DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-                        + " Watcher đã dừng, exit code " + watcher.ExitCode + Environment.NewLine);
-                    return watcher.ExitCode;
+                        + " Worker " + (index + 1) + " đã dừng, exit code "
+                        + watchers[index].ExitCode + Environment.NewLine);
+                    watchers[index].Dispose();
                 }
+                return 0;
             }
             catch (Exception exception)
             {

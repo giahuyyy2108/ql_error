@@ -40,8 +40,8 @@ class XmlErrorArchiveOrganizer
                 $canonicalSource = $destination;
                 $oldReport = $sourcePath . '.error.txt';
                 if (is_file($oldReport)) @rename($oldReport, $destination . '.error.txt');
-            } elseif (!copy($canonicalSource, $destination)) {
-                throw new RuntimeException('Không thể sao chép file vào thư mục lỗi: ' . $directory);
+            } elseif (!self::linkOrCopy($canonicalSource, $destination)) {
+                throw new RuntimeException('Không thể tạo bản phân loại file trong thư mục lỗi: ' . $directory);
             }
             $details = array(
                 'Số lỗi: ' . $group['count'],
@@ -58,6 +58,16 @@ class XmlErrorArchiveOrganizer
             $created[] = $destination;
         }
         return $created;
+    }
+
+    private static function linkOrCopy($source, $destination)
+    {
+        // Error groups reference identical XML content. A hard link avoids
+        // repeatedly reading, writing and storing the same large XML file.
+        if (function_exists('link') && @link($source, $destination)) {
+            return true;
+        }
+        return copy($source, $destination);
     }
 
     private static function groupErrors(array $validation)

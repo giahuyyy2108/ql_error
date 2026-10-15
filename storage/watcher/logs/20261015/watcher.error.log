@@ -1,0 +1,11 @@
+[2026-10-15 13:41:08] [ERROR] [WORKER:1] Quét lại thất bại 19035265_HT279669732828779025_2610120943_2610120946_1194_1297.xml: Không tìm thấy file XML để quét lại.
+[2026-10-15 13:41:10] [ERROR] [WORKER:2] Quét lại thất bại 19048517_DN479793125050479025_2610121332_2610121337_2251_140.xml: Không tìm thấy file XML để quét lại.
+[2026-10-15 13:47:11] [ERROR] [WORKER:2] Quét lại thất bại 19035265_HT279669732828779025_2610120943_2610120946_1194_1297.xml: Không tìm thấy file XML để quét lại.
+[2026-10-15 13:47:16] [ERROR] [WORKER:1] Quét lại thất bại 19048517_DN479793125050479025_2610121332_2610121337_2251_140.xml: Không tìm thấy file XML để quét lại.
+[2026-10-15 14:00:14] [ERROR] [WORKER:1] Không thể đọc hàng đợi quét lại: Deadlock found when trying to get lock; try restarting transaction
+[2026-10-15 14:02:01] [ERROR] [WORKER:1] Không thể lưu file lỗi 13047986_HT379929900353879025_2610010929_2610121500_465909_2921.xml: Không thể chuyển file sang C:\xampp\htdocs\ql_error\storage\xml\failed\20261015.
+[2026-10-15 14:02:01] [ERROR] [WORKER:1] File lỗi 13047986_HT379929900353879025_2610010929_2610121500_465909_2921.xml: Không thể đọc file XML. (thời gian 0.005s)
+[2026-10-15 14:02:20] [ERROR] [WORKER:1] Không thể lưu file lỗi 13096967_HT27903805200274079025_2610120732_2610120822_520_590.xml: Không thể chuyển file sang C:\xampp\htdocs\ql_error\storage\xml\failed\20261015.
+[2026-10-15 14:02:20] [ERROR] [WORKER:1] File lỗi 13096967_HT27903805200274079025_2610120732_2610120822_520_590.xml: Không thể đọc file XML. (thời gian 0.004s)
+[2026-10-15 14:04:48] [ERROR] [WORKER:1] Không thể lưu file lỗi 16157764_DN479790806928679025_2610121336_2610121339_2265_2380.xml: Không thể chuyển file sang C:\xampp\htdocs\ql_error\storage\xml\failed\20261015.
+[2026-10-15 14:04:48] [ERROR] [WORKER:1] File lỗi 16157764_DN479790806928679025_2610121336_2610121339_2265_2380.xml: Không thể đọc file XML. (thời gian 0.002s)

@@ -11,6 +11,7 @@ $options = array(
     'once' => false,
     'interval' => 1,
     'settle' => 2,
+    'worker_id' => 1,
     'retention_days' => 30,
     'dir' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml'
 );
@@ -21,10 +22,11 @@ foreach (array_slice($argv, 1) as $argument) {
     } elseif ($argument === '--help' || $argument === '-h') {
         echo "Theo dõi thư mục và tự động nhập file XML.\n\n";
         echo "Cách dùng:\n";
-        echo "  php scripts/watch_xml.php [--once] [--interval=2] [--settle=3] [--retention-days=30] [--dir=PATH]\n\n";
+        echo "  php scripts/watch_xml.php [--once] [--worker-id=1] [--interval=2] [--settle=3] [--retention-days=30] [--dir=PATH]\n\n";
         echo "  --once       Quét một lần rồi thoát.\n";
         echo "  --interval   Số giây nghỉ giữa hai lần quét.\n";
         echo "  --settle     File phải ổn định bao nhiêu giây trước khi xử lý.\n";
+        echo "  --worker-id  Mã worker dương; mỗi worker dùng thư mục claim và file lock riêng.\n";
         echo "  --retention-days  Số ngày giữ file trong deleted.\n";
         echo "  --dir        Thư mục nhận file; mặc định là storage/xml.\n";
         exit(0);
@@ -32,6 +34,8 @@ foreach (array_slice($argv, 1) as $argument) {
         $options['interval'] = max(1, (int) substr($argument, 11));
     } elseif (strpos($argument, '--settle=') === 0) {
         $options['settle'] = max(1, (int) substr($argument, 9));
+    } elseif (strpos($argument, '--worker-id=') === 0) {
+        $options['worker_id'] = max(1, (int) substr($argument, 12));
     } elseif (strpos($argument, '--retention-days=') === 0) {
         $options['retention_days'] = max(1, (int) substr($argument, 17));
     } elseif (strpos($argument, '--dir=') === 0) {
@@ -49,18 +53,25 @@ if ($inboxDir === '') {
     exit(1);
 }
 
-$processingDir = $inboxDir . DIRECTORY_SEPARATOR . 'processing';
+$processingRootDir = $inboxDir . DIRECTORY_SEPARATOR . 'processing';
+$processingDir = $processingRootDir . DIRECTORY_SEPARATOR . 'worker-' . $options['worker_id'];
 $processedDir = $inboxDir . DIRECTORY_SEPARATOR . 'processed';
 $failedDir = $inboxDir . DIRECTORY_SEPARATOR . 'failed';
 $deletedDir = $inboxDir . DIRECTORY_SEPARATOR . 'deleted';
-foreach (array($inboxDir, $processingDir, $processedDir, $failedDir, $deletedDir) as $directory) {
+$runtimeDir = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'watcher';
+$runtimeLogsRoot = $runtimeDir . DIRECTORY_SEPARATOR . 'logs';
+$runtimeLogDir = $runtimeLogsRoot . DIRECTORY_SEPARATOR . date('Ymd');
+foreach (array($inboxDir, $processingRootDir, $processingDir, $processedDir, $failedDir, $deletedDir, $runtimeDir, $runtimeLogsRoot, $runtimeLogDir) as $directory) {
     if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
         fwrite(STDERR, "Không thể tạo thư mục: " . $directory . "\n");
         exit(1);
     }
 }
 
-$lockHandle = fopen($inboxDir . DIRECTORY_SEPARATOR . '.watch_xml.lock', 'c');
+$lockHandle = fopen(
+    $runtimeDir . DIRECTORY_SEPARATOR . '.watch_xml_' . $options['worker_id'] . '.lock',
+    'c'
+);
 if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
     fwrite(STDERR, "Đã có một XML watcher khác đang chạy cho thư mục này.\n");
     exit(1);
@@ -91,10 +102,22 @@ $buildImportService = function () use (&$filePeer, &$validationCallback) {
     $apiService = new ApiValidationService(new ApiValidationConfigPeer());
     $tableLookupService = new TableLookupService();
     $bhytService = new BhytLookupService();
-    $validationCallback = function (array $decodedContent) use ($rulePeer, $apiService, $tableLookupService) {
+    $rulesCache = null;
+    $rulesLoadedAt = 0;
+    $validationCallback = function (array $decodedContent) use (
+        $rulePeer,
+        $apiService,
+        $tableLookupService,
+        &$rulesCache,
+        &$rulesLoadedAt
+    ) {
+        if ($rulesCache === null || (time() - $rulesLoadedAt) >= 30) {
+            $rulesCache = $rulePeer->getRulesForValidation();
+            $rulesLoadedAt = time();
+        }
         return XmlRulesValidator::validate(
             $decodedContent,
-            $rulePeer->getRulesForValidation(),
+            $rulesCache,
             $apiService,
             $tableLookupService
         );
@@ -111,11 +134,12 @@ $buildImportService = function () use (&$filePeer, &$validationCallback) {
 $importService = $buildImportService();
 $observed = array();
 
-$workerLogPath = $inboxDir . DIRECTORY_SEPARATOR . 'watcher.log';
-$workerErrorLogPath = $inboxDir . DIRECTORY_SEPARATOR . 'watcher.error.log';
-$log = function ($message, $level = 'INFO') use ($workerLogPath, $workerErrorLogPath) {
+$workerLogPath = $runtimeLogDir . DIRECTORY_SEPARATOR . 'watcher.log';
+$workerErrorLogPath = $runtimeLogDir . DIRECTORY_SEPARATOR . 'watcher.error.log';
+$log = function ($message, $level = 'INFO') use ($workerLogPath, $workerErrorLogPath, $options) {
     $level = strtoupper((string) $level);
-    $line = '[' . date('Y-m-d H:i:s') . '] [' . $level . '] ' . $message . PHP_EOL;
+    $line = '[' . date('Y-m-d H:i:s') . '] [' . $level . '] [WORKER:'
+        . $options['worker_id'] . '] ' . $message . PHP_EOL;
     echo $line;
     file_put_contents($workerLogPath, $line, FILE_APPEND | LOCK_EX);
     if ($level === 'ERROR') {
@@ -177,7 +201,7 @@ $logValidationErrors = function ($fileName, array $validation) use ($log) {
 };
 
 $lastCleanup = 0;
-$cleanupDeleted = function () use ($deletedDir, $options, $log, &$lastCleanup) {
+$cleanupDeleted = function () use ($deletedDir, $runtimeLogsRoot, $options, $log, &$lastCleanup) {
     $now = time();
     if ($lastCleanup > 0 && ($now - $lastCleanup) < 3600) {
         return;
@@ -196,6 +220,17 @@ $cleanupDeleted = function () use ($deletedDir, $options, $log, &$lastCleanup) {
     }
     if ($deleted > 0) {
         $log('Đã xóa vĩnh viễn ' . $deleted . ' file lưu quá ' . $options['retention_days'] . ' ngày.');
+    }
+    foreach (new DirectoryIterator($runtimeLogsRoot) as $logDirectory) {
+        if (!$logDirectory->isDir() || $logDirectory->isDot()
+            || !preg_match('/^\d{8}$/', $logDirectory->getFilename())) continue;
+        $date = DateTime::createFromFormat('!Ymd', $logDirectory->getFilename());
+        if ($date === false || $date->getTimestamp() > $cutoff) continue;
+        foreach (new DirectoryIterator($logDirectory->getPathname()) as $logFile) {
+            if ($logFile->isFile()) @unlink($logFile->getPathname());
+        }
+        $remaining = array_diff(scandir($logDirectory->getPathname()), array('.', '..'));
+        if (empty($remaining)) @rmdir($logDirectory->getPathname());
     }
 };
 
@@ -265,6 +300,7 @@ $process = function ($path) use (
     $logValidationErrors,
     $resetDatabase
 ) {
+    $processStartedAt = microtime(true);
     $datedProcessedDir = $datedDirectory($processedDir);
     $datedFailedDir = $datedDirectory($failedDir);
     $processedPath = $uniqueDestination($datedProcessedDir, basename($path));
@@ -282,7 +318,8 @@ $process = function ($path) use (
         } catch (Throwable $archiveException) {
             $log('Không thể lưu file lỗi ' . basename($path) . ': ' . $archiveException->getMessage(), 'ERROR');
         }
-        $log('File lỗi ' . basename($path) . ': ' . $exception->getMessage(), 'ERROR');
+        $log('File lỗi ' . basename($path) . ': ' . $exception->getMessage()
+            . ' (thời gian ' . number_format(microtime(true) - $processStartedAt, 3) . 's)', 'ERROR');
         try {
             $resetDatabase();
         } catch (Throwable $resetException) {
@@ -356,7 +393,8 @@ $process = function ($path) use (
                     ? substr($normalizedOrganizedPath, strlen($normalizedRoot)) : $normalizedOrganizedPath;
                 $filePeer->updateStorageLocation($result['id'], $organizedStoredPath, 'failed');
             }
-            $log('File không đạt validation (' . $errorCount . ' lỗi): ' . $result['name'], 'WARNING');
+            $log('File không đạt validation (' . $errorCount . ' lỗi): ' . $result['name']
+                . ' (thời gian ' . number_format(microtime(true) - $processStartedAt, 3) . 's)', 'WARNING');
             $logValidationErrors($result['name'], $result['validation']);
             return;
         }
@@ -365,9 +403,11 @@ $process = function ($path) use (
             unlink($staleErrorPath);
         }
         if ($result['status'] === 'reimported') {
-            $log('Đã import và quét lại MA_LK ' . $result['ma_lk'] . ': ' . $result['name']);
+            $log('Đã import và quét lại MA_LK ' . $result['ma_lk'] . ': ' . $result['name']
+                . ' (thời gian ' . number_format(microtime(true) - $processStartedAt, 3) . 's)');
         } else {
-            $log('Đã nhập ' . $result['name'] . ' (MA_LK ' . $result['ma_lk'] . ').');
+            $log('Đã nhập ' . $result['name'] . ' (MA_LK ' . $result['ma_lk'] . ')'
+                . ' trong ' . number_format(microtime(true) - $processStartedAt, 3) . 's.');
         }
     } catch (Throwable $exception) {
         // Keep the imported file in processing. On restart it is detected as a
@@ -381,6 +421,7 @@ $revalidatePending = function () use (
     &$validationCallback,
     $projectRoot,
     $inboxDir,
+    $processingDir,
     $processedDir,
     $failedDir,
     $uniqueDestination,
@@ -401,6 +442,7 @@ $revalidatePending = function () use (
     }
     foreach ($pendingFiles as $file) {
         $currentStoredPath = $file['file_path'];
+        $workingPath = null;
         try {
             $candidate = preg_match('/^[A-Za-z]:[\\\\\/]/', $currentStoredPath) === 1
                 ? $currentStoredPath
@@ -413,6 +455,11 @@ $revalidatePending = function () use (
                 || strncasecmp($source, $storagePrefix, strlen($storagePrefix)) !== 0
                 || !is_file($source)) {
                 throw new RuntimeException('Không tìm thấy file XML để quét lại.');
+            }
+
+            $workingPath = $uniqueDestination($processingDir, basename($source));
+            if (!function_exists('link') || !@link($source, $workingPath)) {
+                $workingPath = null;
             }
 
             $content = file_get_contents($source);
@@ -478,11 +525,15 @@ $revalidatePending = function () use (
                 $resetDatabase();
             } catch (Throwable $ignored) {
             }
+        } finally {
+            if ($workingPath !== null && is_file($workingPath)) {
+                @unlink($workingPath);
+            }
         }
     }
 };
 
-$log('Bắt đầu theo dõi ' . $inboxDir . '.');
+$log('Worker ' . $options['worker_id'] . ' bắt đầu theo dõi ' . $inboxDir . '.');
 
 do {
     $cleanupDeleted();

@@ -78,69 +78,18 @@ class fileAction
             return $this->json(array('success' => false, 'message' => 'Tên file không hợp lệ hoặc file không có đuôi .xml.'));
         }
 
-        $content = file_get_contents($upload['tmp_name']);
-        // The decoder validates the envelope and every decoded XML document.
-        // Do not parse the same envelope with DOMDocument first.
-        $xmlError = $content === false ? 'Không thể đọc nội dung file XML.' : '';
-        if ($xmlError !== '') {
-            return $this->json(array('success' => false, 'message' => 'Nội dung XML không hợp lệ: ' . $xmlError));
-        }
-
-        $storedFile = null;
         try {
-            $storedFile = $this->storeXmlContent($fileName, $content, 'processed');
-            $bhytLookupService = new BhytLookupService();
-            $importService = new XmlFileImportService(
-                $this->filePeer,
-                $this->maxFileSize,
-                $this->createValidationCallback(),
-                function ($maThe, $hoTen, $ngaySinh) use ($bhytLookupService) {
-                    return $bhytLookupService->traCuuThongTin($maThe, $hoTen, $ngaySinh);
-                }
-            );
-            $result = $importService->importContent(
-                $fileName,
-                $content,
-                $upload['size'],
-                $storedFile['relative_path']
-            );
-            if ($result['status'] === 'duplicate') {
-                return $this->json(array(
-                    'success' => false,
-                    'message' => 'Hồ sơ có MA_LK ' . $result['ma_lk'] . ' đã tồn tại.'
-                ));
-            }
-            if (isset($result['processing_status']) && $result['processing_status'] === 'failed') {
-                $failedFile = $this->moveStoredFileToFailed(
-                    $storedFile['absolute_path'],
-                    'File không đạt validation.'
-                );
-                $organized = XmlErrorArchiveOrganizer::organize(
-                    $failedFile['absolute_path'],
-                    dirname($failedFile['absolute_path']),
-                    $result['validation'],
-                    true,
-                    $result['name']
-                );
-                $canonicalPath = !empty($organized) ? $organized[0] : $failedFile['absolute_path'];
-                $canonicalRelative = str_replace('\\', '/', substr($canonicalPath, strlen(dirname(__DIR__, 2)) + 1));
-                $this->filePeer->updateStorageLocation($result['id'], $canonicalRelative, 'failed');
-                $this->archiveReplacedFile($result, $canonicalPath);
-                return $this->json(array(
-                    'success' => true,
-                    'validation_failed' => true,
-                    'message' => 'Đã lưu file XML.'
-                ));
-            }
-            $this->archiveReplacedFile($result, $storedFile['absolute_path']);
-        } catch (RuntimeException $exception) {
-            if ($storedFile !== null && is_file($storedFile['absolute_path'])) {
-                $this->moveStoredFileToFailed($storedFile['absolute_path'], $exception->getMessage());
-            }
+            $queuedName = $this->queueUploadedXml($upload['tmp_name'], $fileName);
+        } catch (Throwable $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
 
-        return $this->json(array('success' => true, 'message' => 'Đã lưu file XML vào cơ sở dữ liệu.'));
+        return $this->json(array(
+            'success' => true,
+            'queued' => true,
+            'name' => $queuedName,
+            'message' => 'Đã đưa file XML vào hàng đợi xử lý.'
+        ));
     }
 
     public function getContent()
@@ -152,7 +101,7 @@ class fileAction
 
         try {
             $file = $this->filePeer->getById($id);
-        } catch (RuntimeException $exception) {
+        } catch (Throwable $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
         if ($file === false) {
@@ -269,7 +218,7 @@ class fileAction
 
         try {
             $deleted = $this->deleteFiles($ids);
-        } catch (RuntimeException $exception) {
+        } catch (Throwable $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
         return $this->json(array(
@@ -286,12 +235,15 @@ class fileAction
         }
         try {
             $queued = $this->filePeer->markAllForRevalidation();
+            $progress = $this->filePeer->getRevalidationProgress();
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
         return $this->json(array(
             'success' => true,
             'queued' => max(0, $queued),
+            'total' => $queued >= 0 ? (int) $queued : $progress['remaining'],
+            'progress' => $progress,
             'message' => $queued === -1
                 ? 'Hàng đợi quét lại đang được xử lý.'
                 : ($queued > 0
@@ -317,10 +269,12 @@ class fileAction
                     $errors[] = $file['ten'] . ': ' . $exception->getMessage();
                 }
             }
+            $progress = $this->filePeer->getRevalidationProgress();
             return $this->json(array(
                 'success' => true,
                 'processed' => count($files),
-                'remaining' => $this->filePeer->countPendingRevalidation(),
+                'remaining' => $progress['remaining'],
+                'progress' => $progress,
                 'errors' => $errors
             ));
         } catch (Throwable $exception) {
@@ -460,53 +414,26 @@ class fileAction
         return $fileName;
     }
 
-    private function storeXmlContent($fileName, $content, $bucket)
+    private function queueUploadedXml($temporaryUploadPath, $fileName)
     {
-        $projectRoot = dirname(__DIR__, 2);
-        $directory = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
-            . 'xml' . DIRECTORY_SEPARATOR . $bucket . DIRECTORY_SEPARATOR . date('Ymd');
-        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
-            throw new RuntimeException('Không thể tạo thư mục lưu file XML.');
+        $directory = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml';
+        if (!is_dir($directory) || !is_writable($directory)) {
+            throw new RuntimeException('Thư mục hàng đợi XML không thể ghi dữ liệu.');
         }
-
         $destination = $directory . DIRECTORY_SEPARATOR . $fileName;
         if (file_exists($destination)) {
-            $base = pathinfo($fileName, PATHINFO_FILENAME);
-            $extension = pathinfo($fileName, PATHINFO_EXTENSION);
-            $destination = $directory . DIRECTORY_SEPARATOR . $base . '_' . date('Ymd_His')
-                . '_' . substr(uniqid('', true), -6) . '.' . $extension;
+            $destination = $directory . DIRECTORY_SEPARATOR . pathinfo($fileName, PATHINFO_FILENAME)
+                . '_' . date('Ymd_His') . '_' . substr(uniqid('', true), -6) . '.xml';
         }
-        if (file_put_contents($destination, $content, LOCK_EX) === false) {
-            throw new RuntimeException('Không thể lưu file XML vào ổ đĩa.');
+        $stagingPath = $destination . '.uploading.' . substr(uniqid('', true), -8);
+        if (!move_uploaded_file($temporaryUploadPath, $stagingPath)) {
+            throw new RuntimeException('Không thể ghi file tải lên vào hàng đợi.');
         }
-
-        return array(
-            'absolute_path' => $destination,
-            'relative_path' => str_replace('\\', '/', substr($destination, strlen($projectRoot) + 1))
-        );
-    }
-
-    private function moveStoredFileToFailed($path, $message)
-    {
-        $failed = $this->storeXmlContent(basename($path), file_get_contents($path), 'failed');
-        unlink($path);
-        file_put_contents($failed['absolute_path'] . '.error.txt', $message . PHP_EOL, LOCK_EX);
-        return $failed;
-    }
-
-    private function archiveReplacedFile(array $result, $newPath)
-    {
-        if ($result['status'] !== 'reimported' || empty($result['old_file_path'])) {
-            return;
+        if (!rename($stagingPath, $destination)) {
+            @unlink($stagingPath);
+            throw new RuntimeException('Không thể hoàn tất việc đưa file vào hàng đợi.');
         }
-        try {
-            $oldPath = $this->resolveStoredFilePath($result['old_file_path']);
-            if (strcasecmp($oldPath, $newPath) !== 0) {
-                $this->moveFileToDeleted($oldPath);
-            }
-        } catch (RuntimeException $ignored) {
-            // The DB already points to the new file; a missing old file is harmless.
-        }
+        return basename($destination);
     }
 
     private function createValidationCallback()

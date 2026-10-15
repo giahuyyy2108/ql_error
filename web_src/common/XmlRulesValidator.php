@@ -1012,6 +1012,55 @@ class XmlRulesValidator
             ));
         }
 
+        if (method_exists($tableLookupService, 'preload')
+            && empty($config['conditions_from_substring'])
+            && empty($config['conditions_from_field'])) {
+            $preloadValues = array();
+            foreach ($matches as $preloadMatch) {
+                if (!empty($config['allow_empty']) && self::isNullValue($preloadMatch['value'])) continue;
+                $preloadValue = $preloadMatch['value'];
+                if (isset($config['remove_suffix'])) {
+                    $suffixes = is_array($config['remove_suffix'])
+                        ? array_values($config['remove_suffix']) : array($config['remove_suffix']);
+                    usort($suffixes, function ($left, $right) {
+                        return strlen((string) $right) - strlen((string) $left);
+                    });
+                    $text = is_scalar($preloadValue) ? (string) $preloadValue : '';
+                    foreach ($suffixes as $suffix) {
+                        $suffix = (string) $suffix;
+                        if ($suffix !== '' && strlen($text) >= strlen($suffix)
+                            && substr($text, -strlen($suffix)) === $suffix) {
+                            $preloadValue = substr($text, 0, -strlen($suffix));
+                            break;
+                        }
+                    }
+                }
+                if (isset($config['value_substring']) && is_array($config['value_substring'])
+                    && array_key_exists('start', $config['value_substring'])) {
+                    $preloadValue = self::substringValue(
+                        $preloadMatch['value'],
+                        (int) $config['value_substring']['start'],
+                        array_key_exists('length', $config['value_substring'])
+                            ? (int) $config['value_substring']['length'] : null
+                    );
+                }
+                $preloadValue = self::transformTableLookupValue(
+                    $preloadValue,
+                    isset($config['value_transform']) ? $config['value_transform'] : ''
+                );
+                if (isset($config['value_separator']) && is_string($config['value_separator'])
+                    && $config['value_separator'] !== '') {
+                    foreach (explode($config['value_separator'], (string) $preloadValue) as $part) {
+                        $part = trim($part);
+                        if ($part !== '') $preloadValues[] = $part;
+                    }
+                } else {
+                    $preloadValues[] = $preloadValue;
+                }
+            }
+            $tableLookupService->preload($preloadValues, $config);
+        }
+
         $errors = array();
         foreach ($matches as $match) {
             if (!empty($config['allow_empty']) && self::isNullValue($match['value'])) {
@@ -1044,6 +1093,10 @@ class XmlRulesValidator
                         ? (int) $config['value_substring']['length'] : null
                 );
             }
+            $lookupValue = self::transformTableLookupValue(
+                $lookupValue,
+                isset($config['value_transform']) ? $config['value_transform'] : ''
+            );
             if (isset($config['conditions_from_substring'])
                 && is_array($config['conditions_from_substring'])) {
                 if (!isset($lookupConfig['conditions']) || !is_array($lookupConfig['conditions'])) {
@@ -1119,6 +1172,21 @@ class XmlRulesValidator
             }
         }
         return $errors;
+    }
+
+    private static function transformTableLookupValue($value, $transform)
+    {
+        $value = is_scalar($value) ? trim((string) $value) : '';
+        $transform = strtolower(trim((string) $transform));
+        if ($transform === 'integer' && preg_match('/^\d+$/', $value)) {
+            $value = ltrim($value, '0');
+            return $value === '' ? '0' : $value;
+        }
+        if ($transform === 'uppercase') {
+            return function_exists('mb_strtoupper')
+                ? mb_strtoupper($value, 'UTF-8') : strtoupper($value);
+        }
+        return $value;
     }
 
     private static function validateSubstring(

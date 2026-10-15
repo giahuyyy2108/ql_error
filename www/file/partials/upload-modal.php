@@ -18,7 +18,7 @@
                             <input type="file" id="xmlFile" name="xmlFile"
                                    accept=".xml,text/xml,application/xml" multiple required>
                         </div>
-                        <small class="form-text text-muted">Các file sẽ tự động tải lần lượt. Dung lượng tối đa mỗi file là 5 MB.</small>
+                        <small class="form-text text-muted">Các file được tải lần lượt và đưa vào worker xử lý nền. Dung lượng tối đa mỗi file là 5 MB.</small>
                     </div>
                     <div id="upload-message" class="alert"></div>
                 </div>

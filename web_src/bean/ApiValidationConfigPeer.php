@@ -2,7 +2,10 @@
 
 class ApiValidationConfigPeer
 {
+    const CACHE_TTL = 30;
+
     private $connection;
+    private $activeConfigCache = array();
 
     public function __construct()
     {
@@ -15,6 +18,12 @@ class ApiValidationConfigPeer
 
     public function getActiveById($id)
     {
+        $id = (int) $id;
+        if (isset($this->activeConfigCache[$id])) {
+            $cached = $this->activeConfigCache[$id];
+            if ($cached['expires_at'] >= time()) return $cached['value'];
+            unset($this->activeConfigCache[$id]);
+        }
         $statement = $this->connection->prepare(
             'SELECT id, name, endpoint, method, headers, timeout_seconds, response_field
              FROM api_validation_configs WHERE id = ? AND is_active = 1 LIMIT 1'
@@ -27,7 +36,12 @@ class ApiValidationConfigPeer
         $result = $statement->get_result();
         $row = $result ? $result->fetch_assoc() : null;
         $statement->close();
-        return $row ?: false;
+        $value = $row ?: false;
+        $this->activeConfigCache[$id] = array(
+            'value' => $value,
+            'expires_at' => time() + self::CACHE_TTL
+        );
+        return $value;
     }
 
     public function getList()
@@ -69,6 +83,7 @@ class ApiValidationConfigPeer
         }
         $id = $statement->insert_id;
         $statement->close();
+        unset($this->activeConfigCache[(int) $id]);
         return $id;
     }
 
@@ -90,6 +105,7 @@ class ApiValidationConfigPeer
             throw new RuntimeException('Không thể cập nhật cấu hình API.');
         }
         $statement->close();
+        unset($this->activeConfigCache[(int) $id]);
         return true;
     }
 
@@ -104,6 +120,7 @@ class ApiValidationConfigPeer
         $statement->execute();
         $deleted = $statement->affected_rows > 0;
         $statement->close();
+        unset($this->activeConfigCache[(int) $id]);
         return $deleted;
     }
 

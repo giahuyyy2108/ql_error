@@ -1053,6 +1053,16 @@
         $('#file-stat-processing').text(statistics.processing);
     }
 
+    $('#file-stat-date').val(localDateKey(new Date()));
+    $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
+        if (!settings.nTable || settings.nTable.id !== 'datatable-file') return true;
+        var selectedDate = $('#file-stat-date').val();
+        if (!selectedDate) return true;
+        var row = settings.aoData[dataIndex] ? settings.aoData[dataIndex]._aData : null;
+        if (!row || !row.timestamp) return false;
+        return localDateKey(new Date(Number(row.timestamp) * 1000)) === selectedDate;
+    });
+
     var table = $('#datatable-file').DataTable({
         ajax: {
             url: baseUrl + 'file/getData/',
@@ -1145,6 +1155,7 @@
 
     $('#file-stat-date').on('change', function () {
         updateFileStatistics(table.rows().data().toArray());
+        table.draw();
     });
 
     function searchFiles() {
@@ -1259,8 +1270,9 @@
             alert(message);
         }
 
-        function processNextBatch(processed, errorCount) {
-            button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét... (' + processed + ')');
+        function processNextBatch(total, completed, errorCount) {
+            button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét... ('
+                + completed + '/' + total + ')');
             $.ajax({
                 url: baseUrl + 'file/processRevalidationBatch/',
                 type: 'POST',
@@ -1271,13 +1283,16 @@
                     finish(response.message || 'Không thể quét lại file.');
                     return;
                 }
-                processed += Number(response.processed) || 0;
                 errorCount += response.errors && response.errors.length ? response.errors.length : 0;
-                if (Number(response.remaining) > 0) {
-                    window.setTimeout(function () { processNextBatch(processed, errorCount); }, 100);
+                var remaining = Number(response.remaining) || 0;
+                completed = Math.max(0, total - remaining);
+                if (remaining > 0) {
+                    window.setTimeout(function () {
+                        processNextBatch(total, completed, errorCount);
+                    }, 250);
                     return;
                 }
-                var message = 'Đã quét lại ' + processed + ' file.';
+                var message = 'Đã quét lại ' + total + ' file.';
                 if (errorCount) {
                     message += '\nCó ' + errorCount + ' file không thể xử lý.';
                 }
@@ -1299,7 +1314,8 @@
                 finish(response.message || 'Không thể tạo hàng đợi quét lại.');
                 return;
             }
-            processNextBatch(0, 0);
+            var total = Number(response.total) || Number(response.queued) || 0;
+            processNextBatch(total, 0, 0);
         }).fail(function (xhr) {
             var message = xhr.responseJSON && xhr.responseJSON.message
                 ? xhr.responseJSON.message : 'Không thể tạo hàng đợi quét lại.';
@@ -1357,10 +1373,9 @@
             $('#xml-drop-zone').removeClass('is-uploading');
             $('#btn-upload-xml').prop('disabled', false);
             $('#form-upload-xml')[0].reset();
-            $('#xml-drop-file-name').text('Đã xử lý ' + files.length + ' file').show();
-            if (succeeded) table.ajax.reload(null, false);
+            $('#xml-drop-file-name').text('Đã tải ' + files.length + ' file').show();
 
-            var summary = 'Hoàn tất: ' + succeeded + ' thành công, ' + failed + ' thất bại.';
+            var summary = 'Đã đưa ' + succeeded + ' file vào hàng đợi, ' + failed + ' file tải thất bại.';
             if (details.length) summary += '\n' + details.join('\n');
             showUploadMessage(summary, failed === 0);
         }
@@ -1629,26 +1644,49 @@
     $('#btn-confirm-delete').on('click', function () {
         if (!fileIdsToDelete.length) return;
         var button = $(this).prop('disabled', true);
+        var originalHtml = button.html();
+        var ids = fileIdsToDelete.slice();
+        var total = ids.length;
+        var deletedIds = [];
 
-        $.ajax({
-            url: baseUrl + 'file/deleteMany/',
-            type: 'POST',
-            dataType: 'json',
-            data: { ids: fileIdsToDelete, csrf_token: csrfToken }
-        }).done(function (response) {
-            if (response.success) {
-                $('#modal-delete-xml').modal('hide');
-                fileIdsToDelete.forEach(function (id) { delete selectedFileIds[String(id)]; });
-                fileIdsToDelete = [];
-                table.ajax.reload(null, false);
-                updateSelectionControls();
-            } else {
-                alert(response.message);
+        function finishDelete(errorMessage) {
+            deletedIds.forEach(function (id) { delete selectedFileIds[String(id)]; });
+            button.prop('disabled', false).html(originalHtml);
+            fileIdsToDelete = [];
+            $('#modal-delete-xml').modal('hide');
+            table.ajax.reload(null, false);
+            updateSelectionControls();
+            if (errorMessage) alert(errorMessage);
+        }
+
+        function deleteNextBatch(offset) {
+            if (offset >= total) {
+                finishDelete('Đã xóa ' + deletedIds.length + ' file.');
+                return;
             }
-        }).fail(function () {
-            alert('Có lỗi xảy ra khi xóa file.');
-        }).always(function () {
-            button.prop('disabled', false);
-        });
+            var batch = ids.slice(offset, offset + 500);
+            button.html('<i class="fa fa-trash"></i> Đang xóa... ('
+                + Math.min(offset + batch.length, total) + '/' + total + ')');
+            $.ajax({
+                url: baseUrl + 'file/deleteMany/',
+                type: 'POST',
+                dataType: 'json',
+                // Send one POST variable to avoid PHP max_input_vars truncation.
+                data: { ids: batch.join(','), csrf_token: csrfToken }
+            }).done(function (response) {
+                if (!response.success) {
+                    finishDelete(response.message || 'Không thể xóa các file đã chọn.');
+                    return;
+                }
+                deletedIds = deletedIds.concat(batch);
+                deleteNextBatch(offset + batch.length);
+            }).fail(function (xhr) {
+                var message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message : 'Có lỗi xảy ra khi xóa file.';
+                finishDelete(message);
+            });
+        }
+
+        deleteNextBatch(0);
     });
 })(jQuery);
