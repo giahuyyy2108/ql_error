@@ -84,10 +84,14 @@ class fileAction
         $storedFile = null;
         try {
             $storedFile = $this->storeXmlContent($fileName, $content, 'processed');
+            $bhytLookupService = new BhytLookupService();
             $importService = new XmlFileImportService(
                 $this->filePeer,
                 $this->maxFileSize,
-                $this->createValidationCallback()
+                $this->createValidationCallback(),
+                function ($maThe, $hoTen, $ngaySinh) use ($bhytLookupService) {
+                    return $bhytLookupService->traCuuThongTin($maThe, $hoTen, $ngaySinh);
+                }
             );
             $result = $importService->importContent(
                 $fileName,
@@ -157,36 +161,8 @@ class fileAction
                 throw new RuntimeException('Không thể đọc file XML trên ổ đĩa.');
             }
             $decodedContent = XmlFileDecoder::decodeDanhSachHoSo($content);
-            $rulePeer = new XmlValidationRulePeer();
-            $apiService = new ApiValidationService(new ApiValidationConfigPeer());
-            $tableLookupService = new TableLookupService();
-            $bhytService = new BhytLookupService();
-            $validation = XmlRulesValidator::validate(
-                $decodedContent,
-                $rulePeer->getRulesForValidation(),
-                $apiService,
-                $tableLookupService,
-                $bhytService
-            );
-            $this->filePeer->updateValidationResult($id, $validation);
-            $newStatus = $this->validationHasErrors($validation) ? 'failed' : 'processed';
-            if ($newStatus !== $file['processing_status']) {
-                $newPath = $this->moveValidatedFile($storedPath, $newStatus, $validation);
-                if ($newStatus === 'failed') {
-                    $absoluteNewPath = $this->resolveStoredFilePath($newPath);
-                    $organized = XmlErrorArchiveOrganizer::organize(
-                        $absoluteNewPath,
-                        dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . 'failed',
-                        $validation,
-                        true,
-                        $file['ten']
-                    );
-                    if (!empty($organized)) {
-                        $newPath = str_replace('\\', '/', substr($organized[0], strlen(dirname(__DIR__, 2)) + 1));
-                    }
-                }
-                $this->filePeer->updateStorageLocation($id, $newPath, $newStatus);
-            }
+            $validation = json_decode((string) $file['validation_result'], true);
+            if (!is_array($validation)) $validation = array();
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
@@ -532,14 +508,12 @@ class fileAction
         $rulePeer = new XmlValidationRulePeer();
         $apiService = new ApiValidationService(new ApiValidationConfigPeer());
         $tableLookupService = new TableLookupService();
-        $bhytService = new BhytLookupService();
-        return function (array $decodedContent) use ($rulePeer, $apiService, $tableLookupService, $bhytService) {
+        return function (array $decodedContent) use ($rulePeer, $apiService, $tableLookupService) {
             return XmlRulesValidator::validate(
                 $decodedContent,
                 $rulePeer->getRulesForValidation(),
                 $apiService,
-                $tableLookupService,
-                $bhytService
+                $tableLookupService
             );
         };
     }

@@ -149,3 +149,6 @@
 [2026-10-09 10:50:53] [ERROR] Quét lại thất bại 26206909_GD479793143968779054_2610020848_2610021407_2434_762.xml: Không tìm thấy file XML để quét lại.
 [2026-10-09 10:59:33] [ERROR] Đã nhập dữ liệu nhưng chưa thể lưu trữ file 26206909_GD479793143968779054_2610020848_2610021407_2434_762.xml: Không thể sao chép file vào thư mục lỗi: C:\xampp\htdocs\ql_error\storage\xml\failed\PASS1_XML1_Doi_tuong_KCB_1_3_co_giay_chuyen
 [2026-10-12 07:01:24] [ERROR] Đã nhập dữ liệu nhưng chưa thể lưu trữ file 26206909_GD479793143968779054_2610020848_2610021407_2434_762.xml: Không thể sao chép file vào thư mục lỗi: C:\xampp\htdocs\ql_error\storage\xml\failed\PASS1_XML1_Doi_tuong_KCB_1_3_co_giay_chuyen
+[2026-10-15 07:53:42] [ERROR] File lỗi 16136393_HT252379600137052185_2610020802_2610020809_421_53.xml: Column 'thongtin_bn' cannot be null
+[2026-10-15 07:57:55] [ERROR] File lỗi 19005847_HT379029707662679025_2609281235_2610020803_447920_26.xml: Column 'thongtin_bn' cannot be null
+[2026-10-15 07:58:37] [ERROR] File lỗi 19091782_GD479793142741379025_2609280900_2610021600_449785_225.xml: Column 'thongtin_bn' cannot be null

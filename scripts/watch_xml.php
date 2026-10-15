@@ -80,6 +80,7 @@ require $projectRoot . '/web_src/bean/XmlValidationRulePeer.php';
 require $projectRoot . '/web_src/bean/ApiValidationConfigPeer.php';
 require $projectRoot . '/web_src/common/ApiValidationService.php';
 require $projectRoot . '/web_src/common/TableLookupService.php';
+require $projectRoot . '/web_src/common/BhytLookupService.php';
 require $projectRoot . '/web_src/common/XmlErrorArchiveOrganizer.php';
 
 $filePeer = null;
@@ -89,6 +90,7 @@ $buildImportService = function () use (&$filePeer, &$validationCallback) {
     $rulePeer = new XmlValidationRulePeer();
     $apiService = new ApiValidationService(new ApiValidationConfigPeer());
     $tableLookupService = new TableLookupService();
+    $bhytService = new BhytLookupService();
     $validationCallback = function (array $decodedContent) use ($rulePeer, $apiService, $tableLookupService) {
         return XmlRulesValidator::validate(
             $decodedContent,
@@ -97,7 +99,14 @@ $buildImportService = function () use (&$filePeer, &$validationCallback) {
             $tableLookupService
         );
     };
-    return new XmlFileImportService($filePeer, 5242880, $validationCallback);
+    return new XmlFileImportService(
+        $filePeer,
+        5242880,
+        $validationCallback,
+        function ($maThe, $hoTen, $ngaySinh) use ($bhytService) {
+            return $bhytService->traCuuThongTin($maThe, $hoTen, $ngaySinh);
+        }
+    );
 };
 $importService = $buildImportService();
 $observed = array();

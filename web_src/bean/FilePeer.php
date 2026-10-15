@@ -324,7 +324,7 @@ class FilePeer
         $this->connection->begin_transaction();
         try {
             $result = $this->connection->query(
-                "SELECT id, ten, ma_lk, file_path, processing_status
+                "SELECT id, ten, ma_lk, file_path, processing_status, validation_result
                  FROM `file`
                  WHERE processing_status = 'pending_revalidation'
                  ORDER BY update_at ASC, id ASC

@@ -7,12 +7,14 @@ class XmlFileImportService
     private $filePeer;
     private $maxFileSize;
     private $validationCallback;
+    private $bhytLookupCallback;
 
-    public function __construct($filePeer, $maxFileSize = 5242880, $validationCallback = null)
+    public function __construct($filePeer, $maxFileSize = 5242880, $validationCallback = null, $bhytLookupCallback = null)
     {
         $this->filePeer = $filePeer;
         $this->maxFileSize = (int) $maxFileSize;
         $this->validationCallback = $validationCallback;
+        $this->bhytLookupCallback = $bhytLookupCallback;
     }
 
     public function importPath($path, $storedPath = null)
@@ -62,15 +64,24 @@ class XmlFileImportService
         );
         $maBn = $xml1Patient['MA_BN'];
         $hoTen = $xml1Patient['HO_TEN'];
-        $thongTinBn = array(
-            'MA_THE_BHYT' => $xml1Patient['MA_THE_BHYT'],
-            'HO_TEN' => $xml1Patient['HO_TEN'],
-            'NGAY_SINH' => $xml1Patient['NGAY_SINH']
-        );
         $ngayLap = XmlFileDecoder::extractNgayLap($content);
         $validationResult = $this->validationCallback === null
             ? null
             : call_user_func($this->validationCallback, $decodedContent);
+        $thongTinBn = null;
+        if (is_callable($this->bhytLookupCallback)) {
+            try {
+                $response = call_user_func(
+                    $this->bhytLookupCallback,
+                    $xml1Patient['MA_THE_BHYT'],
+                    $xml1Patient['HO_TEN'],
+                    $xml1Patient['NGAY_SINH']
+                );
+                $thongTinBn = is_array($response) ? $this->filterBhytResponse($response) : null;
+            } catch (Throwable $ignored) {
+                $thongTinBn = null;
+            }
+        }
         $status = $this->hasValidationErrors($validationResult) ? 'failed' : 'processed';
         $existing = method_exists($this->filePeer, 'getByMaLk')
             ? $this->filePeer->getByMaLk($maLk) : false;
@@ -130,6 +141,31 @@ class XmlFileImportService
             }
         }
         return false;
+    }
+
+    private function filterBhytResponse(array $response)
+    {
+        $fields = array('maThe', 'ngaySinh', 'gioiTinh', 'diaChi', 'maDKBD', 'gtTheTu', 'gtTheDen', 'maSoBHXH');
+        $filtered = array();
+        foreach ($fields as $field) {
+            $filtered[$field] = $this->bhytResponseValue($response, $field);
+        }
+        return $filtered;
+    }
+
+    private function bhytResponseValue(array $data, $target)
+    {
+        foreach ($data as $key => $value) {
+            if (strcasecmp((string) $key, $target) === 0 && is_scalar($value)) {
+                return $value;
+            }
+        }
+        foreach ($data as $value) {
+            if (!is_array($value)) continue;
+            $found = $this->bhytResponseValue($value, $target);
+            if ($found !== null) return $found;
+        }
+        return null;
     }
 
     private function normalizeFileName($fileName)

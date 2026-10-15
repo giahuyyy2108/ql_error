@@ -19,7 +19,9 @@ $decoded = array(
                     'NOIDUNGFILE' => array('TONG_HOP' => array(
                         'MA_THE_BHYT' => 'DN4010123456789',
                         'HO_TEN' => 'Nguyễn Văn A',
-                        'NGAY_SINH' => '19850520'
+                        'NGAY_SINH' => '19850520',
+                        'GT_THE_TU' => '20260101',
+                        'GT_THE_DEN' => '20261231'
                     ))
                 )
             )
@@ -30,12 +32,14 @@ $decoded = array(
 $actual = XmlFileDecoder::extractValuesFromFileType(
     $decoded,
     'XML1',
-    array('MA_THE_BHYT', 'HO_TEN', 'NGAY_SINH')
+    array('MA_THE_BHYT', 'HO_TEN', 'NGAY_SINH', 'GT_THE_TU', 'GT_THE_DEN')
 );
 $expected = array(
     'MA_THE_BHYT' => 'DN4010123456789',
     'HO_TEN' => 'Nguyễn Văn A',
-    'NGAY_SINH' => '19850520'
+    'NGAY_SINH' => '19850520',
+    'GT_THE_TU' => '20260101',
+    'GT_THE_DEN' => '20261231'
 );
 if ($actual !== $expected) {
     throw new RuntimeException('Lấy thông tin bệnh nhân XML1 không đúng: ' . json_encode($actual));
