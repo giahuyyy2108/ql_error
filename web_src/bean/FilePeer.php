@@ -45,13 +45,20 @@ class FilePeer
         return $files;
     }
 
-    public function getErrorReportRows()
+    public function getErrorReportRows($date)
     {
         $sql = 'SELECT ma_lk, ngay_lap, processing_status, validation_result
                 FROM `file`
-                WHERE validation_result IS NOT NULL AND validation_result <> \'\'
+                WHERE DATE(update_at) = ?
+                  AND validation_result IS NOT NULL AND validation_result <> \'\'
                 ORDER BY update_at DESC, id DESC';
-        $result = $this->connection->query($sql);
+        $statement = $this->connection->prepare($sql);
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị dữ liệu báo cáo lỗi.');
+        }
+        $statement->bind_param('s', $date);
+        $statement->execute();
+        $result = $statement->get_result();
         if (!$result) {
             throw new RuntimeException('Không thể tải dữ liệu báo cáo lỗi.');
         }
@@ -82,6 +89,7 @@ class FilePeer
             }
         }
         $result->free();
+        $statement->close();
         return $reportRows;
     }
 
@@ -274,41 +282,61 @@ class FilePeer
         return true;
     }
 
-    public function markAllForRevalidation()
+    public function markAllForRevalidation($date)
     {
-        $pendingResult = $this->connection->query(
+        $pendingStatement = $this->connection->prepare(
             "SELECT COUNT(*) AS total FROM `file`
-             WHERE processing_status IN ('pending_revalidation', 'revalidating')"
+             WHERE DATE(update_at) = ?
+               AND processing_status IN ('pending_revalidation', 'revalidating')"
         );
+        if (!$pendingStatement) {
+            throw new RuntimeException('Không thể chuẩn bị kiểm tra hàng đợi quét lại.');
+        }
+        $pendingStatement->bind_param('s', $date);
+        $pendingStatement->execute();
+        $pendingResult = $pendingStatement->get_result();
         if (!$pendingResult) {
             throw new RuntimeException('Không thể kiểm tra hàng đợi quét lại.');
         }
         $pendingRow = $pendingResult->fetch_assoc();
         $pendingResult->free();
+        $pendingStatement->close();
         if ((int) $pendingRow['total'] > 0) {
             return -1;
         }
-        if (!$this->connection->query(
-            "UPDATE `file` SET processing_status = 'pending_revalidation'
-             WHERE processing_status <> 'pending_revalidation'"
-        )) {
+        $statement = $this->connection->prepare(
+            "UPDATE `file`
+             SET processing_status = 'pending_revalidation', update_at = update_at
+             WHERE DATE(update_at) = ?
+               AND processing_status NOT IN ('pending_revalidation', 'revalidating')"
+        );
+        if (!$statement) {
             throw new RuntimeException('Không thể tạo hàng đợi quét lại.');
         }
-        return $this->connection->affected_rows;
+        $statement->bind_param('s', $date);
+        $statement->execute();
+        $affectedRows = $statement->affected_rows;
+        $statement->close();
+        return $affectedRows;
     }
 
-    public function claimPendingRevalidation($limit = 2)
+    public function claimPendingRevalidation($limit = 2, $date = null)
     {
         $limit = max(1, min(20, (int) $limit));
         $this->connection->begin_transaction();
         try {
-            $result = $this->connection->query(
-                "SELECT id, ten, ma_lk, file_path, processing_status, validation_result
-                 FROM `file`
-                 WHERE processing_status = 'pending_revalidation'
-                 ORDER BY update_at ASC, id ASC
-                 LIMIT " . $limit . " FOR UPDATE"
-            );
+            $sql = "SELECT id, ten, ma_lk, file_path, processing_status, validation_result
+                    FROM `file`
+                    WHERE processing_status = 'pending_revalidation'";
+            if ($date !== null) $sql .= " AND DATE(update_at) = ?";
+            $sql .= " ORDER BY update_at ASC, id ASC LIMIT " . $limit . " FOR UPDATE";
+            $statement = $this->connection->prepare($sql);
+            if (!$statement) {
+                throw new RuntimeException('Không thể chuẩn bị nhận hàng đợi quét lại.');
+            }
+            if ($date !== null) $statement->bind_param('s', $date);
+            $statement->execute();
+            $result = $statement->get_result();
             if (!$result) {
                 throw new RuntimeException('Không thể nhận hàng đợi quét lại.');
             }
@@ -321,11 +349,12 @@ class FilePeer
                 $ids[] = (int) $row['id'];
             }
             $result->free();
+            $statement->close();
 
             if (!empty($ids)) {
                 $idList = implode(',', $ids);
                 if (!$this->connection->query(
-                    "UPDATE `file` SET processing_status = 'revalidating' WHERE id IN (" . $idList . ")"
+                    "UPDATE `file` SET processing_status = 'revalidating', update_at = update_at WHERE id IN (" . $idList . ")"
                 )) {
                     throw new RuntimeException('Không thể cập nhật hàng đợi quét lại.');
                 }
@@ -351,19 +380,26 @@ class FilePeer
         return (int) $row['total'];
     }
 
-    public function getRevalidationProgress()
+    public function getRevalidationProgress($date = null)
     {
-        $result = $this->connection->query(
-            "SELECT
-                SUM(processing_status = 'pending_revalidation') AS pending,
-                SUM(processing_status = 'revalidating') AS revalidating
-             FROM `file`"
-        );
+        $sql = "SELECT
+                    SUM(processing_status = 'pending_revalidation') AS pending,
+                    SUM(processing_status = 'revalidating') AS revalidating
+                FROM `file`";
+        if ($date !== null) $sql .= " WHERE DATE(update_at) = ?";
+        $statement = $this->connection->prepare($sql);
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị đọc tiến độ quét lại.');
+        }
+        if ($date !== null) $statement->bind_param('s', $date);
+        $statement->execute();
+        $result = $statement->get_result();
         if (!$result) {
             throw new RuntimeException('Không thể đọc tiến độ quét lại.');
         }
         $row = $result->fetch_assoc();
         $result->free();
+        $statement->close();
         $pending = isset($row['pending']) ? (int) $row['pending'] : 0;
         $revalidating = isset($row['revalidating']) ? (int) $row['revalidating'] : 0;
         return array(

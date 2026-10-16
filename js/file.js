@@ -1156,6 +1156,10 @@
     });
 
     $('#file-stat-date').on('change', function () {
+        selectedFileIds = {};
+        fileIdsToDelete = [];
+        $('#select-all-files').prop('checked', false).prop('indeterminate', false);
+        updateSelectionControls();
         updateFileStatistics(table.rows().data().toArray());
         table.draw();
     });
@@ -1171,7 +1175,8 @@
         $.ajax({
             url: baseUrl + 'file/getErrorReport/',
             type: 'GET',
-            dataType: 'json'
+            dataType: 'json',
+            data: { date: $('#file-stat-date').val() }
         }).done(function (response) {
             if (!response.success) {
                 alert(response.message || 'Không thể tải dữ liệu báo cáo lỗi.');
@@ -1202,7 +1207,7 @@
                 buttons: [{
                     extend: 'excelHtml5',
                     title: null,
-                    filename: 'danh-sach-loi',
+                    filename: 'danh-sach-loi-' + ($('#file-stat-date').val() || 'khong-ro-ngay'),
                     sheetName: 'Danh sách lỗi',
                     customizeData: function (data) {
                         data.body.forEach(function (row) {
@@ -1266,11 +1271,19 @@
     $('#btn-revalidate-all').on('click', function () {
         if (revalidationInProgress) return;
         revalidationInProgress = true;
+        var selectedDate = $('#file-stat-date').val();
+        if (!selectedDate) {
+            revalidationInProgress = false;
+            alert('Vui lòng chọn ngày cần quét lại.');
+            return;
+        }
+        $('#file-stat-date').prop('disabled', true);
         var button = $(this).prop('disabled', true);
         var originalHtml = button.html();
 
         function finish(message) {
             revalidationInProgress = false;
+            $('#file-stat-date').prop('disabled', false);
             button.prop('disabled', false).html(originalHtml);
             table.ajax.reload(null, false);
             alert(message);
@@ -1283,7 +1296,7 @@
                 url: baseUrl + 'file/processRevalidationBatch/',
                 type: 'POST',
                 dataType: 'json',
-                data: { csrf_token: csrfToken }
+                data: { csrf_token: csrfToken, date: selectedDate }
             }).done(function (response) {
                 if (!response.success) {
                     finish(response.message || 'Không thể quét lại file.');
@@ -1314,7 +1327,7 @@
             url: baseUrl + 'file/revalidateAll/',
             type: 'POST',
             dataType: 'json',
-            data: { csrf_token: csrfToken }
+            data: { csrf_token: csrfToken, date: selectedDate }
         }).done(function (response) {
             if (!response.success) {
                 finish(response.message || 'Không thể tạo hàng đợi quét lại.');

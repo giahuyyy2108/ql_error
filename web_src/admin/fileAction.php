@@ -169,8 +169,12 @@ class fileAction
 
     public function getErrorReport()
     {
+        $date = $this->selectedDate();
+        if ($date === null) {
+            return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
+        }
         try {
-            $rows = $this->filePeer->getErrorReportRows();
+            $rows = $this->filePeer->getErrorReportRows($date);
             return $this->json(array('success' => true, 'data' => $rows));
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
@@ -233,9 +237,13 @@ class fileAction
         if (!$this->validCsrf()) {
             return $this->json(array('success' => false, 'message' => 'Phiên làm việc không hợp lệ. Vui lòng tải lại trang.'));
         }
+        $date = $this->selectedDate();
+        if ($date === null) {
+            return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
+        }
         try {
-            $queued = $this->filePeer->markAllForRevalidation();
-            $progress = $this->filePeer->getRevalidationProgress();
+            $queued = $this->filePeer->markAllForRevalidation($date);
+            $progress = $this->filePeer->getRevalidationProgress($date);
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
@@ -258,8 +266,12 @@ class fileAction
             return $this->json(array('success' => false, 'message' => 'Phiên làm việc không hợp lệ. Vui lòng tải lại trang.'));
         }
 
+        $date = $this->selectedDate();
+        if ($date === null) {
+            return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
+        }
         try {
-            $files = $this->filePeer->claimPendingRevalidation(2);
+            $files = $this->filePeer->claimPendingRevalidation(2, $date);
             $errors = array();
             foreach ($files as $file) {
                 try {
@@ -269,7 +281,7 @@ class fileAction
                     $errors[] = $file['ten'] . ': ' . $exception->getMessage();
                 }
             }
-            $progress = $this->filePeer->getRevalidationProgress();
+            $progress = $this->filePeer->getRevalidationProgress($date);
             return $this->json(array(
                 'success' => true,
                 'processed' => count($files),
@@ -527,6 +539,13 @@ class fileAction
         $token = $this->request->getParameter('csrf_token', false);
         return !empty($_SESSION['xml_file_csrf']) && is_string($token)
             && hash_equals($_SESSION['xml_file_csrf'], $token);
+    }
+
+    private function selectedDate()
+    {
+        $value = trim((string) $this->request->getParameter('date', false));
+        $date = DateTime::createFromFormat('!Y-m-d', $value);
+        return $date && $date->format('Y-m-d') === $value ? $value : null;
     }
 
     private function uploadErrorMessage($code)

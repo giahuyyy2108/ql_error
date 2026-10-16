@@ -9,7 +9,7 @@
             </li>
             <li>
                 <button type="button" id="btn-revalidate-all" class="btn btn-warning">
-                    <i class="fa fa-refresh"></i> Quét lại tất cả
+                    <i class="fa fa-refresh"></i> Quét lại ngày đã chọn
                 </button>
             </li>
             <li>
