@@ -69,22 +69,7 @@ function init_DataTables() {
 			}
 		},
 		initComplete: function(){
-			$("div.dt-toolbar").html('<button type="button" class="btn btn-info add-new"><i class="fa fa-plus"></i> Thêm mới</button>' +
-			 '<button type="button" class="btn btn-info save"><i class="fa fa-floppy-o"></i> Cập nhật</button>');   
 			hiddenButton();
-			// Append table with add row form on add new button click
-			$(".add-new").click(function(){					
-				addRowInput($('#datatable-nhomquyen'),1);				
-			});
-			
-			// save new row
-			$(".save").click(function(){	
-				if(confirm("Bạn có chắc muốn cập nhật dữ liệu không !")) {							
-					if(saveData($('#datatable-nhomquyen'),$("#ULocal").val()+'nhomquyen/save/',"'Nhóm quyền đã được cập nhật thành công.'")){
-						$('#datatable-nhomquyen').DataTable().ajax.reload(hiddenButton);
-					}							
-				}				
-			});
 		}	
 	});	
 };
@@ -315,4 +300,4 @@ function hiddenButton(){
 	if($("#role-nhomquyen-phanquyen").val() == "false"){
 		$(".polici").hide();
 	}		
-}	
+}

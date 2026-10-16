@@ -40,6 +40,12 @@ class nhomquyenAction
 	{
 		$nqId = ($this->request->getParameter("id") != "") ? $this->request->getParameter("id") : 0;
 		$data = $this->request->getParameter("data", true);
+		if ((int) $nqId <= 0) {
+			$message = new Message();
+			$message->set("flag", false);
+			$message->set("errorMessage", "Chỉ được chọn và cập nhật role hiện có.");
+			return $this->request->json_response(json_encode(array("message" => $message)));
+		}
 
 		$arrayData = json_decode($data, true);
 		if (empty($arrayData)) {
