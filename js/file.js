@@ -1180,7 +1180,7 @@
 
             var exportTable = $('<table>').css('display', 'none').appendTo(document.body);
             var exportData = (response.data || []).map(function (row, index) {
-                return [index + 1, row.ma_lk, row.xml, row.field, row.error, row.notes, row.date, row.status];
+                return [index + 1, row.ma_lk, row.xml, row.field, row.value, row.error, row.notes, row.date, row.status];
             });
             var exportDataTable = exportTable.DataTable({
                 data: exportData,
@@ -1193,6 +1193,7 @@
                     { title: 'MÃ LIÊN KẾT' },
                     { title: 'XML' },
                     { title: 'CHỖ LỖI' },
+                    { title: 'GIÁ TRỊ LỖI' },
                     { title: 'LỖI' },
                     { title: 'GHI CHÚ' },
                     { title: 'NGÀY' },
@@ -1207,6 +1208,9 @@
                         data.body.forEach(function (row) {
                             // Force long MA_LK values to text so Excel keeps every digit.
                             row[1] = '\u200B' + row[1];
+                            // Preserve the exact invalid value, including leading zeroes
+                            // and identifiers longer than Excel's numeric precision.
+                            row[4] = '\u200B' + (row[4] == null ? '' : row[4]);
                         });
                     }
                 }]

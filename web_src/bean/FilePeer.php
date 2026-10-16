@@ -71,6 +71,8 @@ class FilePeer
                         'xml' => isset($validationItem['file_type']) ? (string) $validationItem['file_type'] : '',
                         'field' => isset($error['field_name']) ? (string) $error['field_name']
                             : (isset($error['display_name']) ? (string) $error['display_name'] : ''),
+                        'value' => isset($error['value']) && is_scalar($error['value'])
+                            ? (string) $error['value'] : '',
                         'error' => isset($error['message']) ? (string) $error['message'] : 'Lỗi validation',
                         'notes' => '',
                         'date' => $documentDate,

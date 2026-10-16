@@ -9,7 +9,6 @@ class BHXH
     private $expireTime = 0;
 
     const TOKEN_RENEWAL_BUFFER = 60;
-    const TOKEN_LOCK_TIMEOUT = 10;
     const CONNECT_TIMEOUT = 5;
     const REQUEST_TIMEOUT = 30;
 
@@ -276,6 +275,15 @@ class BHXH
             json_last_error() !== JSON_ERROR_NONE ||
             !is_array($decoded)
         ) {
+            // An expired BHXH session may redirect to a non-JSON login page.
+            // Preserve the status so the caller can refresh the token once.
+            if (in_array($status, [301, 302, 307, 308, 401, 403], true)) {
+                return [
+                    'status' => $status,
+                    'data' => [],
+                ];
+            }
+
             $this->writeLog(
                 "API trả JSON không hợp lệ. HTTP {$status}",
                 'ERROR'
@@ -371,24 +379,9 @@ class BHXH
         $locked = false;
 
         try {
-            $start = microtime(true);
-
-            do {
-                $locked = flock(
-                    $fh,
-                    LOCK_EX | LOCK_NB
-                );
-
-                if ($locked) {
-                    break;
-                }
-
-                usleep(100000);
-
-            } while (
-                microtime(true) - $start <
-                self::TOKEN_LOCK_TIMEOUT
-            );
+            // Only one worker refreshes an expired token. Other workers wait
+            // here, then reload and reuse the newly saved token.
+            $locked = flock($fh, LOCK_EX);
 
             if (!$locked) {
                 throw new RuntimeException(
@@ -465,7 +458,7 @@ class BHXH
         return (
             in_array(
                 $result['status'],
-                [401, 403],
+                [301, 302, 307, 308, 401, 403],
                 true
             ) ||
             (string)($data['maKetQua'] ?? '') === '401'
