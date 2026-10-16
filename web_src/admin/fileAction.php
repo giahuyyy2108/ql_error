@@ -48,8 +48,12 @@ class fileAction
 
     public function getData()
     {
+        $date = $this->selectedDate();
+        if ($date === null) {
+            return $this->json(array('data' => array(), 'error' => 'Ngày được chọn không hợp lệ.'));
+        }
         try {
-            return $this->json(array('data' => $this->filePeer->getList()));
+            return $this->json(array('data' => $this->filePeer->getList($date)));
         } catch (RuntimeException $exception) {
             return $this->json(array('data' => array(), 'error' => $exception->getMessage()));
         }

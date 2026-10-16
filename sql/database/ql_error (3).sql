@@ -21335,7 +21335,8 @@ ALTER TABLE `doituong_kcb_backup_3276`
 --
 ALTER TABLE `file`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uq_file_ma_lk` (`MA_LK`);
+  ADD UNIQUE KEY `uq_file_ma_lk` (`MA_LK`),
+  ADD KEY `idx_file_update_id` (`update_at`, `id`);
 
 --
 -- Chỉ mục cho bảng `hethong`

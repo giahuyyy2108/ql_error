@@ -14,6 +14,10 @@
     var xmlDisplaySettings = { show_errors: true, show_valid: true };
     var revalidationInProgress = false;
     var uploadInProgress = false;
+    var getDataInProgress = false;
+    var pendingDataReload = false;
+    var fileSearchTerm = '';
+    var fileSearchTimer = null;
 
     function escapeHtml(value) {
         return $('<div>').text(value == null ? '' : value).html();
@@ -1033,6 +1037,14 @@
         return date.getFullYear() + '-' + twoDigits(date.getMonth() + 1) + '-' + twoDigits(date.getDate());
     }
 
+    function normalizeFileSearchText(value) {
+        var text = String(value == null ? '' : value).toLowerCase();
+        if (typeof text.normalize === 'function') {
+            text = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        }
+        return text.replace(/đ/g, 'd');
+    }
+
     function updateFileStatistics(rows) {
         var statistics = { total: 0, success: 0, failed: 0, processing: 0 };
         var dateInput = $('#file-stat-date');
@@ -1058,29 +1070,54 @@
     $('#file-stat-date').val(localDateKey(new Date()));
     $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
         if (!settings.nTable || settings.nTable.id !== 'datatable-file') return true;
-        var selectedDate = $('#file-stat-date').val();
-        if (!selectedDate) return true;
+        if (!fileSearchTerm) return true;
+
         var row = settings.aoData[dataIndex] ? settings.aoData[dataIndex]._aData : null;
-        if (!row || !row.timestamp) return false;
-        return localDateKey(new Date(Number(row.timestamp) * 1000)) === selectedDate;
+        var status = row ? row.status : '';
+        var statusText = status === 'failed' ? 'có lỗi chưa fix failed'
+            : (status === 'processed' ? 'thành công đã fix processed'
+                : 'đang xử lý processing pending revalidation revalidating');
+        var searchableText = (data || []).join(' ');
+        if (row) {
+            searchableText += ' ' + [
+                row.name,
+                row.ma_lk,
+                row.ma_bn,
+                row.ho_ten,
+                row.modified,
+                statusText
+            ].join(' ');
+        }
+        return normalizeFileSearchText(searchableText).indexOf(fileSearchTerm) !== -1;
     });
 
     var table = $('#datatable-file').DataTable({
         ajax: {
             url: baseUrl + 'file/getData/',
             type: 'POST',
+            data: function (request) {
+                request.date = $('#file-stat-date').val();
+            },
+            beforeSend: function () {
+                getDataInProgress = true;
+            },
+            complete: function () {
+                getDataInProgress = false;
+            },
             error: function (xhr, textStatus) {
                 if (textStatus === 'abort' || revalidationInProgress) return;
                 alert('Không thể tải danh sách file.');
             }
         },
-        paging: false,
+        paging: true,
+        pageLength: 100,
+        lengthMenu: [[50, 100, 250, 500], [50, 100, 250, 500]],
         scrollX: false,
         deferRender: true,
         order: [],
         responsive: false,
         autoWidth: false,
-        "lengthChange": false,
+        "lengthChange": true,
         columns: [
             {
                 data: 'id',
@@ -1160,15 +1197,49 @@
         fileIdsToDelete = [];
         $('#select-all-files').prop('checked', false).prop('indeterminate', false);
         updateSelectionControls();
-        updateFileStatistics(table.rows().data().toArray());
-        table.draw();
+        requestFileData();
+    });
+
+    function dataReloadIsBlocked() {
+        return getDataInProgress
+            || uploadInProgress
+            || revalidationInProgress
+            || document.hidden
+            || $('.modal.in:visible').length > 0
+            || $.active > 0;
+    }
+
+    function requestFileData(rememberIfBlocked) {
+        if (dataReloadIsBlocked()) {
+            if (rememberIfBlocked !== false) pendingDataReload = true;
+            return false;
+        }
+        pendingDataReload = false;
+        table.ajax.reload(null, false);
+        return true;
+    }
+
+    $(document).ajaxStop(function () {
+        if (pendingDataReload) requestFileData();
+    });
+    $(document).on('hidden.bs.modal', '.modal', function () {
+        if (pendingDataReload) requestFileData();
+    });
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden && pendingDataReload) requestFileData();
     });
 
     function searchFiles() {
-        table.search($.trim($('#file-search').val())).draw();
+        fileSearchTerm = normalizeFileSearchText($.trim($('#file-search').val()));
+        table.search('').draw();
     }
 
     $('#btn-search-file').on('click', searchFiles);
+
+    $('#file-search').on('input', function () {
+        window.clearTimeout(fileSearchTimer);
+        fileSearchTimer = window.setTimeout(searchFiles, 200);
+    });
 
     $('#btn-export-file-excel').on('click', function () {
         var button = $(this).prop('disabled', true);
@@ -1234,6 +1305,7 @@
 
     $('#btn-reset-file-search').on('click', function () {
         $('#file-search').val('').focus();
+        fileSearchTerm = '';
         table.search('').draw();
     });
 
@@ -1285,7 +1357,7 @@
             revalidationInProgress = false;
             $('#file-stat-date').prop('disabled', false);
             button.prop('disabled', false).html(originalHtml);
-            table.ajax.reload(null, false);
+            requestFileData();
             alert(message);
         }
 
@@ -1345,10 +1417,8 @@
     // Files imported by the background watcher do not pass through this page,
     // so periodically refresh the table while the tab is visible.
     setInterval(function () {
-        if (!document.hidden && !revalidationInProgress) {
-            table.ajax.reload(null, false);
-        }
-    }, 5000);
+        requestFileData(false);
+    }, 30000);
 
     $('#btn-open-upload').on('click', function () {
         $('#form-upload-xml')[0].reset();
@@ -1397,6 +1467,7 @@
             var summary = 'Đã đưa ' + succeeded + ' file vào hàng đợi, ' + failed + ' file tải thất bại.';
             if (details.length) summary += '\n' + details.join('\n');
             showUploadMessage(summary, failed === 0);
+            requestFileData();
         }
 
         function processFile(index) {
@@ -1673,7 +1744,7 @@
             button.prop('disabled', false).html(originalHtml);
             fileIdsToDelete = [];
             $('#modal-delete-xml').modal('hide');
-            table.ajax.reload(null, false);
+            requestFileData();
             updateSelectionControls();
             if (errorMessage) alert(errorMessage);
         }

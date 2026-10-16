@@ -15,13 +15,24 @@ class FilePeer
         $this->connection = $connect;
     }
 
-    public function getList()
+    public function getList($date)
     {
         $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, kichthuoc, processing_status,
                        update_at, create_at
-                FROM `file` ORDER BY update_at DESC, id DESC';
-        $result = $this->connection->query($sql);
+                FROM `file`
+                WHERE update_at >= ? AND update_at < ?
+                ORDER BY update_at DESC, id DESC';
+        $statement = $this->connection->prepare($sql);
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị danh sách file.');
+        }
+        $dateFrom = $date . ' 00:00:00';
+        $dateTo = date('Y-m-d 00:00:00', strtotime($date . ' +1 day'));
+        $statement->bind_param('ss', $dateFrom, $dateTo);
+        $statement->execute();
+        $result = $statement->get_result();
         if (!$result) {
+            $statement->close();
             throw new RuntimeException('Không thể tải danh sách file.');
         }
 
@@ -41,6 +52,7 @@ class FilePeer
             );
         }
         $result->free();
+        $statement->close();
 
         return $files;
     }
