@@ -22,6 +22,12 @@ define('_ITEMS_PER_PAGE_ADMIN_', 50);
 // File backup toi da 25MB
 define('_BACKUP_SIZE_', '26214400');
 
+// XML watcher paths. Relative paths are resolved from the project root.
+define('_XML_WATCHER_PHP_PATH_', 'C:/xampp/php/php.exe');
+define('_XML_WATCHER_SCRIPT_PATH_', 'scripts/watch_xml.php');
+define('_XML_WATCHER_STORAGE_PATH_', 'storage/xml');
+define('_XML_WATCHER_RUNTIME_PATH_', 'storage/watcher');
+
 define('_FILE_HANDLE_', './web_src/admin/');
 define('_FILE_UPLOAD_', './hsct_upload/');
 define('_FILE_IMPORT_', './import_upload/');

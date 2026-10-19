@@ -73,6 +73,22 @@ class XmlRulesValidator
                         continue;
                     }
 
+                    if ($ruleType === 'CROSS_FILE_ANY_MATCH') {
+                        $applicable = false;
+                        $ruleErrors = self::validateCrossFileAnyMatch(
+                            $rule,
+                            $matches,
+                            $fileContexts,
+                            $fileIndex,
+                            $applicable
+                        );
+                        $errors = array_merge($errors, $ruleErrors);
+                        if ($applicable) {
+                            self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        }
+                        continue;
+                    }
+
                     if ($ruleType === 'CROSS_FILE_REQUIRED_BY_KEY') {
                         $ruleErrors = self::validateCrossFileRequiredByKey(
                             $rule,
@@ -305,7 +321,7 @@ class XmlRulesValidator
                 if (!in_array($ruleType, array(
                     'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CROSS_FILE_REQUIRED_BY_KEY',
                     'CCCD_GENDER_CENTURY', 'API', 'SUBSTRING',
-                    'TABLE_EXISTS', 'VTYT_HAS_DVKT'
+                    'TABLE_EXISTS', 'VTYT_HAS_DVKT', 'CROSS_FILE_ANY_MATCH'
                 ), true)) {
                     continue;
                 }
@@ -329,6 +345,14 @@ class XmlRulesValidator
                     $targetType = !empty($config['other_file_type'])
                         ? strtoupper($config['other_file_type']) : $fileType;
                     self::addRequiredField($required, $targetType, $config['other_field']);
+                } elseif ($ruleType === 'CROSS_FILE_ANY_MATCH') {
+                    $targetType = !empty($config['target_file_type'])
+                        ? strtoupper($config['target_file_type']) : $fileType;
+                    $targetFields = isset($config['target_fields']) && is_array($config['target_fields'])
+                        ? $config['target_fields'] : array();
+                    foreach ($targetFields as $targetField) {
+                        self::addRequiredField($required, $targetType, $targetField);
+                    }
                 } elseif ($ruleType === 'CROSS_FILE_REQUIRED_BY_KEY') {
                     if (!empty($config['source_key'])) {
                         self::addRequiredField($required, $fileType, $config['source_key']);
@@ -796,6 +820,98 @@ class XmlRulesValidator
             }
         }
         return $errors;
+    }
+
+    private static function validateCrossFileAnyMatch(
+        array $rule,
+        array $matches,
+        array $fileContexts,
+        $currentFileIndex,
+        &$applicable
+    ) {
+        $applicable = false;
+        $config = json_decode($rule['rule_value'], true);
+        $targetFields = is_array($config) && isset($config['target_fields'])
+            && is_array($config['target_fields']) ? $config['target_fields'] : array();
+        $whenValues = is_array($config) && isset($config['when_values']) && is_array($config['when_values'])
+            ? $config['when_values'] : array();
+        $expectedValues = is_array($config) && isset($config['expected_values'])
+            && is_array($config['expected_values']) ? $config['expected_values'] : array();
+        if (!is_array($config) || empty($config['target_file_type']) || empty($targetFields)
+            || empty($whenValues) || empty($expectedValues)) {
+            return array(self::makeError(
+                $rule,
+                $rule['field_name'],
+                null,
+                'error',
+                'Cáº¥u hÃ¬nh CROSS_FILE_ANY_MATCH khÃ´ng há»£p lá»‡.'
+            ));
+        }
+
+        $normalise = function ($value) {
+            $text = is_scalar($value) ? trim((string) $value) : '';
+            return function_exists('mb_strtoupper') ? mb_strtoupper($text, 'UTF-8') : strtoupper($text);
+        };
+        $whenValues = array_map($normalise, $whenValues);
+        $targetValues = array();
+        foreach ($targetFields as $targetField) {
+            foreach (self::indexedMatches($fileContexts, $currentFileIndex, $config['target_file_type'], $targetField) as $targetMatch) {
+                $value = $normalise($targetMatch['value']);
+                if ($value !== '') $targetValues[] = $value;
+            }
+        }
+
+        $errors = array();
+        foreach ($matches as $match) {
+            $sourceValue = $normalise($match['value']);
+            if (!in_array($sourceValue, $whenValues, true)) {
+                continue;
+            }
+            $applicable = true;
+            $allowedValues = $expectedValues;
+            foreach (isset($config['overrides']) && is_array($config['overrides']) ? $config['overrides'] : array() as $override) {
+                if (!is_array($override) || !isset($override['when_values'])
+                    || !is_array($override['when_values']) || !isset($override['expected_values'])
+                    || !is_array($override['expected_values'])) {
+                    continue;
+                }
+                if (in_array($sourceValue, array_map($normalise, $override['when_values']), true)) {
+                    $allowedValues = $override['expected_values'];
+                    break;
+                }
+            }
+            if (!self::hasConfiguredMatch(
+                $targetValues,
+                $allowedValues,
+                isset($config['match_type']) ? $config['match_type'] : 'EXACT'
+            )) {
+                $errors[] = self::makeError($rule, $match['path'], $match['value']);
+            }
+        }
+        return $errors;
+    }
+
+    private static function hasConfiguredMatch(array $targetValues, array $expectedValues, $matchType)
+    {
+        $matchType = strtoupper(trim((string) $matchType));
+        foreach ($expectedValues as $expectedValue) {
+            $expectedValue = is_scalar($expectedValue) ? trim((string) $expectedValue) : '';
+            if ($expectedValue === '') continue;
+            $expectedValue = function_exists('mb_strtoupper')
+                ? mb_strtoupper($expectedValue, 'UTF-8') : strtoupper($expectedValue);
+            foreach ($targetValues as $targetValue) {
+                if ($matchType === 'PREFIX' && strpos($targetValue, $expectedValue) === 0) {
+                    return true;
+                }
+                if ($matchType === 'REGEX' && @preg_match($expectedValue, $targetValue) === 1) {
+                    return true;
+                }
+                if ($matchType !== 'PREFIX' && $matchType !== 'REGEX' && $targetValue === $expectedValue) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static function validateCrossFileRequiredByKey(

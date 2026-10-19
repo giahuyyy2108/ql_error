@@ -7,13 +7,36 @@ if (PHP_SAPI !== 'cli') {
 
 date_default_timezone_set('Asia/Saigon');
 
+$projectRoot = dirname(__DIR__);
+$_SERVER['HTTPS'] = 'off';
+$_SERVER['SERVER_PORT'] = 80;
+$_SERVER['HTTP_HOST'] = 'localhost';
+require $projectRoot . '/conf/config.php';
+
+$resolveProjectPath = function ($configuredPath, $fallbackPath) use ($projectRoot) {
+    $configuredPath = trim((string) $configuredPath);
+    if ($configuredPath === '') $configuredPath = $fallbackPath;
+    if (preg_match('/^[A-Za-z]:[\\\\\/]/', $configuredPath) === 1 || substr($configuredPath, 0, 1) === '/') {
+        return rtrim($configuredPath, "\\/");
+    }
+    return $projectRoot . DIRECTORY_SEPARATOR . trim(str_replace('/', DIRECTORY_SEPARATOR, $configuredPath), "\\/");
+};
+$defaultInboxDir = $resolveProjectPath(
+    defined('_XML_WATCHER_STORAGE_PATH_') ? _XML_WATCHER_STORAGE_PATH_ : '',
+    'storage/xml'
+);
+$defaultRuntimeDir = $resolveProjectPath(
+    defined('_XML_WATCHER_RUNTIME_PATH_') ? _XML_WATCHER_RUNTIME_PATH_ : '',
+    'storage/watcher'
+);
+
 $options = array(
     'once' => false,
     'interval' => 1,
     'settle' => 2,
     'worker_id' => 1,
     'retention_days' => 30,
-    'dir' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml'
+    'dir' => $defaultInboxDir
 );
 
 foreach (array_slice($argv, 1) as $argument) {
@@ -46,7 +69,6 @@ foreach (array_slice($argv, 1) as $argument) {
     }
 }
 
-$projectRoot = dirname(__DIR__);
 $inboxDir = rtrim($options['dir'], "\\/");
 if ($inboxDir === '') {
     fwrite(STDERR, "Thư mục theo dõi không hợp lệ.\n");
@@ -58,7 +80,7 @@ $processingDir = $processingRootDir . DIRECTORY_SEPARATOR . 'worker-' . $options
 $processedDir = $inboxDir . DIRECTORY_SEPARATOR . 'processed';
 $failedDir = $inboxDir . DIRECTORY_SEPARATOR . 'failed';
 $deletedDir = $inboxDir . DIRECTORY_SEPARATOR . 'deleted';
-$runtimeDir = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'watcher';
+$runtimeDir = $defaultRuntimeDir;
 $runtimeLogsRoot = $runtimeDir . DIRECTORY_SEPARATOR . 'logs';
 $runtimeLogDir = $runtimeLogsRoot . DIRECTORY_SEPARATOR . date('Ymd');
 foreach (array($inboxDir, $processingRootDir, $processingDir, $processedDir, $failedDir, $deletedDir, $runtimeDir, $runtimeLogsRoot, $runtimeLogDir) as $directory) {
@@ -77,12 +99,7 @@ if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
     exit(1);
 }
 
-// config.php expects these web server values even when loaded by a CLI worker.
-$_SERVER['HTTPS'] = 'off';
-$_SERVER['SERVER_PORT'] = 80;
-$_SERVER['HTTP_HOST'] = 'localhost';
 $connect = '';
-require $projectRoot . '/conf/config.php';
 require $projectRoot . '/web_src/common/mysql.php';
 require $projectRoot . '/web_src/bean/FilePeer.php';
 require $projectRoot . '/web_src/common/XmlFileImportService.php';
@@ -145,6 +162,124 @@ $log = function ($message, $level = 'INFO') use ($workerLogPath, $workerErrorLog
     if ($level === 'ERROR') {
         file_put_contents($workerErrorLogPath, $line, FILE_APPEND | LOCK_EX);
     }
+};
+
+// Keep one progress state for all workers. The state is locked while it is
+// updated so the percentage represents the whole XML queue, not one worker.
+$progressPath = $runtimeDir . DIRECTORY_SEPARATOR . '.xml_import_progress.json';
+$updateProgress = function ($queuedPaths, $completedPaths, $currentPath = null) use ($progressPath, $options) {
+    $handle = @fopen($progressPath, 'c+');
+    if ($handle === false || !flock($handle, LOCK_EX)) {
+        if ($handle !== false) fclose($handle);
+        return array('total' => 0, 'completed' => 0);
+    }
+
+    rewind($handle);
+    $contents = stream_get_contents($handle);
+    $state = json_decode($contents, true);
+    if (!is_array($state) || !isset($state['items']) || !is_array($state['items'])) {
+        $state = array('items' => array());
+    }
+    if (!isset($state['workers']) || !is_array($state['workers'])) {
+        $state['workers'] = array();
+    }
+
+    $isComplete = !empty($state['items']);
+    foreach ($state['items'] as $status) {
+        if ($status !== 'completed') {
+            $isComplete = false;
+            break;
+        }
+    }
+    // A new file after a completed queue starts a fresh progress batch.
+    if ($isComplete && !empty($queuedPaths)) {
+        $state['items'] = array();
+    }
+
+    foreach ($queuedPaths as $path) {
+        if (!isset($state['items'][$path])) {
+            $state['items'][$path] = 'pending';
+        }
+    }
+    foreach ($completedPaths as $path) {
+        if (isset($state['items'][$path])) {
+            $state['items'][$path] = 'completed';
+        }
+    }
+    if ($currentPath !== null) {
+        $state['workers'][(string) $options['worker_id']] = basename($currentPath);
+    }
+
+    $total = count($state['items']);
+    $completed = 0;
+    foreach ($state['items'] as $status) {
+        if ($status === 'completed') $completed++;
+    }
+    $state['updated_at'] = time();
+    rewind($handle);
+    ftruncate($handle, 0);
+    fwrite($handle, json_encode($state));
+    fflush($handle);
+    flock($handle, LOCK_UN);
+    fclose($handle);
+
+    return array('total' => $total, 'completed' => $completed, 'workers' => $state['workers']);
+};
+
+// Progress is deliberately written only to the console. Keeping it out of the
+// worker log avoids producing a log entry for every XML in a large batch.
+$showProgress = function (array $progress, $path) use ($options) {
+    if ($progress['total'] < 1) {
+        return;
+    }
+    $percent = (int) floor(($progress['completed'] * 100) / $progress['total']);
+    $barWidth = 30;
+    $filled = (int) floor(($percent * $barWidth) / 100);
+    $bar = str_repeat("\xE2\x94\x81", $filled) . str_repeat("\xE2\x94\x80", $barWidth - $filled);
+    $line = function ($workerId) use ($progress, $bar, $percent) {
+        $fileName = isset($progress['workers'][(string) $workerId])
+            ? $progress['workers'][(string) $workerId] : 'Waiting for file...';
+        $text = '[WORKER:' . $workerId . '] [' . $bar . '] ' . $percent . '% ('
+            . $progress['completed'] . '/' . $progress['total'] . ') ' . $fileName;
+        if (function_exists('mb_strimwidth')) {
+            return mb_strimwidth($text, 0, 78, '', 'UTF-8');
+        }
+        return substr($text, 0, 78);
+    };
+
+    if (getenv('XML_WATCHER_ANSI') === '1') {
+        $panelTop = (int) getenv('XML_WATCHER_PROGRESS_TOP');
+        $panelLeft = 1;
+        $layoutPath = getenv('XML_WATCHER_PROGRESS_LAYOUT_PATH');
+        if ($layoutPath !== false && is_file($layoutPath)) {
+            $configuredTop = @file_get_contents($layoutPath);
+            $layout = explode(',', trim((string) $configuredTop));
+            if (isset($layout[0]) && is_numeric($layout[0])) $panelTop = (int) $layout[0];
+            if (isset($layout[1]) && is_numeric($layout[1])) $panelLeft = (int) $layout[1];
+        }
+        $panelTop = max(1, $panelTop);
+        $panelLeft = max(1, $panelLeft);
+        $clearPanel = '';
+        for ($row = $panelTop; $row < ($panelTop + 4); $row++) {
+            $clearPanel .= "\x1B[" . $row . ";1H\x1B[2K";
+        }
+        $panel = "\x1B[s" . $clearPanel
+            . "\x1B[" . $panelTop . ";" . $panelLeft . "H" . '+' . str_repeat('-', 78) . '+'
+            . "\x1B[" . ($panelTop + 1) . ";" . $panelLeft . "H" . '|' . str_pad($line(1), 78) . '|'
+            . "\x1B[" . ($panelTop + 2) . ";" . $panelLeft . "H" . '|' . str_pad($line(2), 78) . '|'
+            . "\x1B[" . ($panelTop + 3) . ";" . $panelLeft . "H" . '+' . str_repeat('-', 78) . '+'
+            . "\x1B[u";
+        fwrite(STDOUT, $panel);
+        fflush(STDOUT);
+        return;
+    }
+    fwrite(
+        STDOUT,
+        '[' . date('Y-m-d H:i:s') . '] [WORKER:' . $options['worker_id'] . '] '
+        . basename($path) . '  ' . $bar . '  ' . $percent . '% '
+        . $progress['completed'] . '/' . $progress['total'] . ' files' . PHP_EOL
+    );
+    fflush(STDOUT);
 };
 
 $logValidationErrors = function ($fileName, array $validation) use ($log) {
@@ -538,19 +673,30 @@ $log('Worker ' . $options['worker_id'] . ' bắt đầu theo dõi ' . $inboxDir 
 do {
     $cleanupDeleted();
     // Recover files claimed before an earlier worker was interrupted.
-    foreach ($xmlFiles($processingDir) as $processingPath) {
+    $recoveryPaths = $xmlFiles($processingDir);
+    if (!empty($recoveryPaths)) {
+        $updateProgress($recoveryPaths, array());
+    }
+    foreach ($recoveryPaths as $processingPath) {
+        $showProgress($updateProgress(array(), array(), $processingPath), $processingPath);
         $process($processingPath);
+        $completedPaths = is_file($processingPath) ? array() : array($processingPath);
+        $showProgress($updateProgress(array(), $completedPaths, $processingPath), $processingPath);
     }
 
     $now = time();
     $currentPaths = array();
+    $readyPaths = array();
     foreach ($xmlFiles($inboxDir) as $path) {
         $currentPaths[$path] = true;
-        $size = filesize($path);
-        $modified = filemtime($path);
-        if ($size === false || $modified === false) {
+        // Another worker (or an external process) may move the file after the
+        // directory snapshot was built. Treat that as a normal claim race.
+        $stat = @stat($path);
+        if ($stat === false) {
             continue;
         }
+        $size = $stat['size'];
+        $modified = $stat['mtime'];
 
         if (!isset($observed[$path]) || $observed[$path]['size'] !== $size
             || $observed[$path]['modified'] !== $modified) {
@@ -564,12 +710,24 @@ do {
             continue;
         }
 
+        $readyPaths[] = $path;
+    }
+
+    if (!empty($readyPaths)) {
+        $updateProgress($readyPaths, array());
+    }
+    foreach ($readyPaths as $path) {
+
         $claimedPath = $processingDir . DIRECTORY_SEPARATOR . basename($path);
-        if (file_exists($claimedPath) || !rename($path, $claimedPath)) {
+        if (file_exists($claimedPath) || !@rename($path, $claimedPath)) {
+            $showProgress($updateProgress(array(), array(), $path), $path);
             continue;
         }
         unset($observed[$path]);
+        $showProgress($updateProgress(array(), array(), $path), $path);
         $process($claimedPath);
+        $completedPaths = is_file($claimedPath) ? array() : array($path);
+        $showProgress($updateProgress(array(), $completedPaths, $path), $path);
     }
 
     foreach (array_keys($observed) as $path) {
