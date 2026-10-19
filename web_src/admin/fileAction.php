@@ -179,7 +179,8 @@ class fileAction
         }
         try {
             $rows = $this->filePeer->getErrorReportRows($date);
-            return $this->json(array('success' => true, 'data' => $rows));
+            $files = $this->filePeer->getAllFileReportRows($date);
+            return $this->json(array('success' => true, 'data' => $rows, 'files' => $files));
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }

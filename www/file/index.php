@@ -55,7 +55,7 @@
             <div class="col-md-8 col-sm-9 col-xs-12">
                 <div class="input-group">
                     <input type="search" id="file-search" class="form-control"
-                           placeholder="Nhập tên file, MA_LK, trạng thái hoặc thời gian cập nhật..."
+                           placeholder="Nhập mã BN, mã thẻ BHYT, thời gian điều trị hoặc số tiền..."
                            autocomplete="off" aria-label="Tìm kiếm file XML">
                     <span class="input-group-btn">
                         <button type="button" id="btn-search-file" class="btn btn-primary">
@@ -74,16 +74,19 @@
                     <tr>
                         <th class="text-center"><input type="checkbox" id="select-all-files" title="Chọn tất cả file"></th>
                         <th>STT</th>
-                        <th>Mã LK</th>
-                        <th>Mã bệnh nhân</th>
-                        <th>Tên bệnh nhân</th>
-                        <th>Trạng thái</th>
+                        <th>Mã BN</th>
+                        <th>Mã thẻ BHYT</th>
+                        <th>Điều trị từ</th>
+                        <th>Đến</th>
+                        <th>Số lượng lỗi</th>
+                        <th>Số tiền</th>
                         <th>Thao tác</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
             </table>
         </div>
+        <div id="file-table-controls" class="file-table-controls"></div>
     </div>
 </div>
 

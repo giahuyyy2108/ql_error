@@ -18,7 +18,7 @@ class FilePeer
     public function getList($date)
     {
         $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, kichthuoc, processing_status,
-                       update_at, create_at
+                       validation_result, update_at, create_at
                 FROM `file`
                 WHERE update_at >= ? AND update_at < ?
                 ORDER BY update_at DESC, id DESC';
@@ -39,12 +39,18 @@ class FilePeer
         $files = array();
         while ($row = $result->fetch_assoc()) {
             $timestamp = strtotime($row['update_at']);
+            $summary = $this->fileSummaryFromValidation($row['validation_result']);
             $files[] = array(
                 'id' => (int) $row['id'],
                 'name' => $row['ten'],
                 'ma_lk' => $row['ma_lk'],
                 'ma_bn' => $row['ma_bn'] !== null ? $row['ma_bn'] : '',
                 'ho_ten' => $row['ho_ten'] !== null ? $row['ho_ten'] : '',
+                'ma_the_bhyt' => $summary['ma_the_bhyt'],
+                'ngay_vao' => $summary['ngay_vao'],
+                'ngay_ra' => $summary['ngay_ra'],
+                'error_count' => $summary['error_count'],
+                'total_amount' => $summary['total_amount'],
                 'size' => (int) $row['kichthuoc'],
                 'status' => $row['processing_status'],
                 'modified' => $timestamp ? date('d/m/Y H:i:s', $timestamp) : '',
@@ -57,9 +63,49 @@ class FilePeer
         return $files;
     }
 
+    private function fileSummaryFromValidation($json)
+    {
+        $summary = array(
+            'ma_the_bhyt' => '',
+            'ngay_vao' => '',
+            'ngay_ra' => '',
+            'error_count' => 0,
+            'total_amount' => 0
+        );
+        $validation = json_decode((string) $json, true);
+        if (!is_array($validation)) return $summary;
+
+        $fieldMap = array(
+            'MA_THE_BHYT' => 'ma_the_bhyt',
+            'NGAY_VAO' => 'ngay_vao',
+            'NGAY_RA' => 'ngay_ra',
+            'T_TONGCHI_BV' => 'total_amount'
+        );
+        foreach ($validation as $item) {
+            if (!is_array($item)) continue;
+            $summary['error_count'] += isset($item['error_count'])
+                ? (int) $item['error_count']
+                : (isset($item['errors']) && is_array($item['errors']) ? count($item['errors']) : 0);
+            foreach (array('valid_fields', 'errors') as $collectionName) {
+                $fields = isset($item[$collectionName]) && is_array($item[$collectionName])
+                    ? $item[$collectionName] : array();
+                foreach ($fields as $field) {
+                    $fieldName = isset($field['field_name']) ? $field['field_name'] : '';
+                    if (!isset($fieldMap[$fieldName])) continue;
+                    $key = $fieldMap[$fieldName];
+                    if ($summary[$key] === '' || $summary[$key] === 0) {
+                        $summary[$key] = isset($field['value']) && is_scalar($field['value'])
+                            ? (string) $field['value'] : '';
+                    }
+                }
+            }
+        }
+        return $summary;
+    }
+
     public function getErrorReportRows($date)
     {
-        $sql = 'SELECT ma_lk, ngay_lap, processing_status, validation_result
+        $sql = 'SELECT ma_lk, ma_bn, ngay_lap, processing_status, validation_result
                 FROM `file`
                 WHERE DATE(update_at) = ?
                   AND validation_result IS NOT NULL AND validation_result <> \'\'
@@ -80,6 +126,7 @@ class FilePeer
             $validation = json_decode($file['validation_result'], true);
             if (!is_array($validation)) continue;
             $documentDate = $this->formatDocumentDate($file['ngay_lap']);
+            $summary = $this->fileSummaryFromValidation($file['validation_result']);
 
             foreach ($validation as $validationItem) {
                 $errors = isset($validationItem['errors']) && is_array($validationItem['errors'])
@@ -87,6 +134,11 @@ class FilePeer
                 foreach ($errors as $error) {
                     $reportRows[] = array(
                         'ma_lk' => (string) $file['ma_lk'],
+                        'ma_bn' => (string) ($file['ma_bn'] ?: ''),
+                        'ma_the_bhyt' => $summary['ma_the_bhyt'],
+                        'ngay_vao' => $summary['ngay_vao'],
+                        'ngay_ra' => $summary['ngay_ra'],
+                        'total_amount' => $summary['total_amount'],
                         'xml' => isset($validationItem['file_type']) ? (string) $validationItem['file_type'] : '',
                         'field' => isset($error['field_name']) ? (string) $error['field_name']
                             : (isset($error['display_name']) ? (string) $error['display_name'] : ''),
@@ -103,6 +155,30 @@ class FilePeer
         $result->free();
         $statement->close();
         return $reportRows;
+    }
+
+    public function getAllFileReportRows($date)
+    {
+        $sql = 'SELECT ma_lk, ma_bn, ngay_lap, validation_result
+                FROM `file` WHERE DATE(update_at) = ? ORDER BY update_at DESC, id DESC';
+        $statement = $this->connection->prepare($sql);
+        if (!$statement) throw new RuntimeException('Không thể chuẩn bị dữ liệu tổng hợp file.');
+        $statement->bind_param('s', $date);
+        $statement->execute();
+        $result = $statement->get_result();
+        if (!$result) throw new RuntimeException('Không thể tải dữ liệu tổng hợp file.');
+        $rows = array();
+        while ($file = $result->fetch_assoc()) {
+            $summary = $this->fileSummaryFromValidation($file['validation_result']);
+            $rows[] = array(
+                'ma_lk' => (string) $file['ma_lk'], 'ma_bn' => (string) ($file['ma_bn'] ?: ''),
+                'ma_the_bhyt' => $summary['ma_the_bhyt'], 'ngay_vao' => $summary['ngay_vao'],
+                'ngay_ra' => $summary['ngay_ra'], 'error_count' => $summary['error_count'],
+                'total_amount' => $summary['total_amount'], 'date' => $this->formatDocumentDate($file['ngay_lap'])
+            );
+        }
+        $result->free(); $statement->close();
+        return $rows;
     }
 
     private function formatDocumentDate($value)

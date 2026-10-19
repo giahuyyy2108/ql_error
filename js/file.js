@@ -504,7 +504,8 @@
             // Giữ màu nền của ô validation; các ô bình thường dùng
             // Number Format thật thay vì General.
             if (currentStyle) return currentStyle;
-            if (/^(?:STT|PHAM_VI)$/i.test(header)) return 5; // #,##0
+            if (/^(?:STT|PHAM_VI|SỐ LƯỢNG LỖI|SO LUONG LOI)$/i.test(header)) return 5; // #,##0
+            if (/^(?:SỐ TIỀN|SO TIEN)$/i.test(header)) return 5; // #,##0
             if (/^DON_GIA_/i.test(header)) return 7; // #,##0.000
             if (/^(?:TYLE_|MUC_HUONG$)/i.test(header)) return 8; // 0.##
             if (/^(?:SO_LUONG$|THANH_TIEN_|T_)/i.test(header)) return 6; // #,##0.00
@@ -513,8 +514,23 @@
 
         function cellXml(columnIndex, rowIndex, value, style, header, forceText) {
             var reference = excelColumnName(columnIndex) + rowIndex;
-            var textOnly = !forceText && /^GIA_TRI_LOI$/i.test(header);
-            if (!forceText && !textOnly && shouldExportAsNumber(header, value)) {
+            var textOnly = !forceText && /^(?:GIA_TRI_LOI|ĐIỀU TRỊ TỪ|ĐIỀU TRỊ ĐẾN)$/i.test(header);
+            if (!forceText && /^(?:ĐIỀU TRỊ TỪ|ĐIỀU TRỊ ĐẾN)$/i.test(header)) {
+                var treatmentDigits = String(value == null ? '' : value).replace(/\D/g, '');
+                if (treatmentDigits.length >= 12) {
+                    value = treatmentDigits.substr(6, 2) + '/' + treatmentDigits.substr(4, 2) + '/'
+                        + treatmentDigits.substr(0, 4) + ' ' + treatmentDigits.substr(8, 2) + ':'
+                        + treatmentDigits.substr(10, 2);
+                }
+            }
+            if (!forceText && /^(?:SỐ TIỀN|SO TIEN)$/i.test(header) && typeof value === 'string') {
+                // Chuẩn hóa tiền dạng 1.994.712 hoặc 1.994.712,50 thành số Excel.
+                var moneyValue = value.trim().replace(/[\s\u00a0]/g, '').replace(/\./g, '').replace(',', '.');
+                if (/^-?(?:\d+|\d*\.\d+)$/.test(moneyValue)) value = moneyValue;
+            }
+            var isMoneyNumber = /^(?:SỐ TIỀN|SO TIEN)$/i.test(header)
+                && /^-?(?:\d+|\d*\.\d+)$/.test(String(value == null ? '' : value).trim());
+            if (!forceText && !textOnly && (isMoneyNumber || shouldExportAsNumber(header, value))) {
                 return '<c r="' + reference + '" s="' + excelNumberStyle(header, style) + '"><v>'
                     + String(value).trim() + '</v></c>';
             }
@@ -630,6 +646,94 @@
             deferred.resolve();
         } catch (error) {
             deferred.reject(error);
+        }
+        return deferred.promise();
+    }
+
+    // Xuất báo cáo tổng hợp: mỗi loại lỗi được đặt trên một sheet riêng.
+    function exportErrorReportSheets(rows, fileSummaries, filename) {
+        var grouped = {}, order = [];
+        (rows || []).forEach(function (row, index) {
+            var errorName = String(row.error || 'Lỗi validation').trim() || 'Lỗi validation';
+            if (!grouped[errorName]) { grouped[errorName] = []; order.push(errorName); }
+            grouped[errorName].push({ data: {
+                STT: grouped[errorName].length + 1,
+                'MÃ LIÊN KẾT': row.ma_lk || '', XML: row.xml || '', 'CHỈ LỖI': row.field || '',
+                'GIÁ TRỊ LỖI': row.value || '', LỖI: row.error || '', 'GHI CHÚ': row.notes || '',
+                NGÀY: row.date || ''
+            }, styles: { 'GIÁ TRỊ LỖI': 2, LỖI: 2 } });
+        });
+        var allRows = [];
+        (rows || []).forEach(function (row, index) {
+            allRows.push({ data: {
+                STT: index + 1, 'MÃ LIÊN KẾT': row.ma_lk || '', XML: row.xml || '', 'CHỈ LỖI': row.field || '',
+                'GIÁ TRỊ LỖI': row.value || '', LỖI: row.error || '', 'GHI CHÚ': row.notes || '',
+                NGÀY: row.date || ''
+            }, styles: { 'GIÁ TRỊ LỖI': 2, LỖI: 2 } });
+        });
+        var files = {}, fileOrder = [];
+        (fileSummaries && fileSummaries.length ? fileSummaries : rows || []).forEach(function (row) {
+            var fileKey = String(row.ma_lk || '(Không có mã liên kết)');
+            if (!files[fileKey]) {
+                files[fileKey] = { ma_lk: fileKey, ma_bn: row.ma_bn || '', ma_the_bhyt: row.ma_the_bhyt || '',
+                    ngay_vao: row.ngay_vao || '', ngay_ra: row.ngay_ra || '', total_amount: row.total_amount || '',
+                    count: 0, errors: {}, date: row.date || '', status: row.status || '' };
+                fileOrder.push(fileKey);
+            }
+            files[fileKey].count = row.error_count != null ? Number(row.error_count) : files[fileKey].count + (row.error ? 1 : 0);
+            if (row.error) files[fileKey].errors[String(row.error)] = true;
+            if (row.date) files[fileKey].date = row.date;
+            if (row.status) files[fileKey].status = row.status;
+        });
+        var fileRows = fileOrder.map(function (fileKey, index) {
+            var file = files[fileKey];
+            return { data: {
+                STT: index + 1, 'MÃ BN': file.ma_bn, 'MÃ THẺ BHYT': file.ma_the_bhyt,
+                'ĐIỀU TRỊ TỪ': file.ngay_vao, 'ĐIỀU TRỊ ĐẾN': file.ngay_ra,
+                'SỐ LƯỢNG LỖI': file.count, 'SỐ TIỀN': file.total_amount,
+                'MÃ LIÊN KẾT': file.ma_lk
+            }, styles: file.count > 0 ? { 'SỐ LƯỢNG LỖI': 2 } : {} };
+        });
+        var sheets = [
+            { name: 'TỔNG HỢP FILE', rows: fileRows },
+            { name: 'TỔNG HỢP LỖI', rows: allRows }
+        ];
+        order.forEach(function (name) { sheets.push({ name: name, rows: grouped[name] }); });
+        if ((!rows || !rows.length) && (!fileSummaries || !fileSummaries.length)) {
+            return $.Deferred().reject('Không có dữ liệu để xuất.').promise();
+        }
+
+        var zip = new JSZip(), contentTypes = [], workbookSheets = [], relationships = [], usedSheetNames = {};
+        sheets.forEach(function (sheet, index) {
+            var number = index + 1;
+            var safeName = String(sheet.name || 'Sheet').replace(/[\\\/\?\*\[\]\:]/g, ' ').trim().substring(0, 31) || 'Sheet';
+            var baseName = safeName, suffix = 2;
+            while (usedSheetNames[safeName.toLowerCase()]) {
+                var suffixText = ' (' + suffix++ + ')';
+                safeName = baseName.substring(0, 31 - suffixText.length) + suffixText;
+            }
+            usedSheetNames[safeName.toLowerCase()] = true;
+            contentTypes.push('<Override PartName="/xl/worksheets/sheet' + number + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>');
+            workbookSheets.push('<sheet name="' + excelXmlText(safeName) + '" sheetId="' + number + '" r:id="rId' + number + '"/>');
+            relationships.push('<Relationship Id="rId' + number + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + number + '.xml"/>');
+            zip.file('xl/worksheets/sheet' + number + '.xml', buildWorksheetXml(sheet.rows));
+        });
+        relationships.push('<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>');
+        zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' + contentTypes.join('') + '</Types>');
+        zip.file('_rels/.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+        zip.file('xl/workbook.xml', '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + workbookSheets.join('') + '</sheets></workbook>');
+        zip.file('xl/_rels/workbook.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + relationships.join('') + '</Relationships>');
+        zip.file('xl/styles.xml', '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="0.##"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts><fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF337AB7"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4CCCC"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF2CC"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9EAD3"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" applyAlignment="1"><alignment horizontal="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0"/><xf numFmtId="0" fontId="2" fillId="4" borderId="0"/><xf numFmtId="0" fontId="2" fillId="5" borderId="0"/><xf numFmtId="3" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/></cellXfs></styleSheet>');
+        var deferred = $.Deferred();
+        if (typeof zip.generateAsync === 'function') {
+            zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }).then(function (blob) {
+                $.fn.dataTable.fileSave(blob, filename); deferred.resolve();
+            }, function (error) { deferred.reject(error); });
+        } else {
+            try {
+                $.fn.dataTable.fileSave(zip.generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename);
+                deferred.resolve();
+            } catch (error) { deferred.reject(error); }
         }
         return deferred.promise();
     }
@@ -1037,6 +1141,14 @@
         return date.getFullYear() + '-' + twoDigits(date.getMonth() + 1) + '-' + twoDigits(date.getDate());
     }
 
+    function formatTreatmentDate(value) {
+        var digits = String(value == null ? '' : value).replace(/\D/g, '');
+        if (digits.length < 8) return value || '';
+        var result = digits.substr(6, 2) + '/' + digits.substr(4, 2) + '/' + digits.substr(0, 4);
+        if (digits.length >= 12) result += ' ' + digits.substr(8, 2) + ':' + digits.substr(10, 2);
+        return result;
+    }
+
     function normalizeFileSearchText(value) {
         var text = String(value == null ? '' : value).toLowerCase();
         if (typeof text.normalize === 'function') {
@@ -1083,7 +1195,11 @@
                 row.name,
                 row.ma_lk,
                 row.ma_bn,
-                row.ho_ten,
+                row.ma_the_bhyt,
+                row.ngay_vao,
+                row.ngay_ra,
+                row.error_count,
+                row.total_amount,
                 row.modified,
                 statusText
             ].join(' ');
@@ -1140,26 +1256,40 @@
                     return meta.row + meta.settings._iDisplayStart + 1;
                 }
             },
-            { data: 'ma_lk' },
             { data: 'ma_bn', defaultContent: '' },
-            { data: 'ho_ten', defaultContent: '' },
             {
-                data: 'status',
-                className: 'text-center file-status-cell',
+                data: 'ma_the_bhyt',
+                defaultContent: ''
+            },
+            {
+                data: 'ngay_vao',
+                className: 'text-center',
                 render: function (data, type) {
-                    if (type !== 'display') return data;
-                    if (data === 'pending_revalidation' || data === 'revalidating') {
-                        return '<span class="file-status file-status-processing">' +
-                            '<i class="fa fa-refresh fa-spin" aria-hidden="true"></i>' +
-                            '<span>Đang xử lý</span></span>';
-                    }
-                    return data === 'failed'
-                        ? '<span class="file-status file-status-failed">' +
-                            '<i class="fa fa-exclamation-triangle" aria-hidden="true"></i>' +
-                            '<span>Có lỗi</span></span>'
-                        : '<span class="file-status file-status-success">' +
-                            '<i class="fa fa-check-circle" aria-hidden="true"></i>' +
-                            '<span>Thành công</span></span>';
+                    return type === 'display' ? formatTreatmentDate(data) : data;
+                }
+            },
+            {
+                data: 'ngay_ra',
+                className: 'text-center',
+                render: function (data, type) {
+                    return type === 'display' ? formatTreatmentDate(data) : data;
+                }
+            },
+            {
+                data: 'error_count',
+                className: 'text-center',
+                render: function (data, type) {
+                    var count = Number(data) || 0;
+                    if (type !== 'display') return count;
+                    return count ? '<span class="label label-danger">' + count + '</span>' : '0';
+                }
+            },
+            {
+                data: 'total_amount',
+                className: 'text-right',
+                render: function (data, type) {
+                    var amount = numericValue(data);
+                    return type === 'display' ? amount.toLocaleString('vi-VN') + ' đ' : amount;
                 }
             },
             {
@@ -1177,6 +1307,9 @@
                 }
             }
         ],
+        createdRow: function (row, data) {
+            $(row).toggleClass('file-row-has-error', Number(data.error_count) > 0);
+        },
         drawCallback: function () {
             updateSelectionControls();
             updateFileStatistics(this.api().rows().data().toArray());
@@ -1191,6 +1324,12 @@
             paginate: { first: 'Đầu', last: 'Cuối', next: 'Sau', previous: 'Trước' }
         }
     });
+    // Đưa bộ chọn số dòng và phân trang ra ngoài vùng cuộn của bảng.
+    $('#file-table-controls').append(
+        $('#datatable-file_wrapper .dataTables_length'),
+        $('#datatable-file_wrapper .dataTables_info'),
+        $('#datatable-file_wrapper .dataTables_paginate')
+    );
 
     $('#file-stat-date').on('change', function () {
         selectedFileIds = {};
@@ -1254,7 +1393,11 @@
                 return;
             }
 
-            var exportTable = $('<table>').css('display', 'none').appendTo(document.body);
+            exportErrorReportSheets(
+                response.data || [], response.files || [],
+                'danh-sach-loi-' + ($('#file-stat-date').val() || 'khong-ro-ngay') + '.xlsx'
+            ).fail(function (message) { alert(message || 'Không có dữ liệu để xuất.'); });
+            /*
             var exportData = (response.data || []).map(function (row, index) {
                 return [index + 1, row.ma_lk, row.xml, row.field, row.value, row.error, row.notes, row.date, row.status];
             });
@@ -1295,7 +1438,7 @@
             window.setTimeout(function () {
                 exportDataTable.destroy();
                 exportTable.remove();
-            }, 1500);
+            }, 1500); */
         }).fail(function () {
             alert('Không thể xuất báo cáo Excel.');
         }).always(function () {

@@ -36,6 +36,7 @@
 .file-stat-processing > .fa { color: #337ab7; }
 .file-search-row { margin-bottom: 14px; }
 @media (max-width: 767px) {
+    .file-table-controls { flex-wrap: wrap; }
     .file-statistics { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
     .file-statistics-header { align-items: stretch; flex-direction: column; }
     .file-statistics-header .form-control { width: 100%; }
@@ -97,6 +98,7 @@
     width: 100%;
     overflow-x: hidden;
     overflow-y: auto;
+    height: 65vh;
     max-height: 65vh;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -123,6 +125,16 @@
     transform: translate(-50%, -50%);
 }
 #datatable-file_wrapper { width:100%; }
+.file-table-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 42px;
+    padding: 4px 0;
+}
+.file-table-controls .dataTables_info { padding-top: 8px; }
+.file-table-controls .dataTables_paginate { margin: 0; }
 #datatable-file_wrapper .dataTables_info { padding-top:10px; }
 .file-table-scroll:focus { outline: 2px solid rgba(51, 122, 183, .25); }
 #datatable-file td.file-name-cell {
@@ -260,16 +272,60 @@
         letter-spacing: 0;
     }
 }
-/* Bảng file hiện có 7 cột, bao gồm mã và tên bệnh nhân. */
+/* Bảng file tóm tắt hồ sơ: co gọn để hiển thị đủ 9 cột. */
 .file-table-scroll { overflow-x: auto; }
-#datatable-file { min-width: 850px; }
-#datatable-file th:nth-child(1), #datatable-file td:nth-child(1) { width: 5% !important; }
-#datatable-file th:nth-child(2), #datatable-file td:nth-child(2) { width: 6% !important; }
-#datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 25% !important; }
-#datatable-file th:nth-child(4), #datatable-file td:nth-child(4) { width: 16% !important; }
-#datatable-file th:nth-child(5), #datatable-file td:nth-child(5) { width: 24% !important; }
-#datatable-file th:nth-child(6), #datatable-file td:nth-child(6) { width: 14% !important; }
-#datatable-file th:nth-child(7), #datatable-file td:nth-child(7) { width: 10% !important; }
+#datatable-file {
+    min-width: 900px;
+    font-size: 11.5px;
+}
+#datatable-file th,
+#datatable-file td {
+    padding: 5px 4px;
+    line-height: 1.25;
+}
+#datatable-file thead th {
+    font-size: 11px;
+    white-space: normal;
+}
+#datatable-file.dataTable thead th.sorting,
+#datatable-file.dataTable thead th.sorting_asc,
+#datatable-file.dataTable thead th.sorting_desc {
+    padding-right: 17px;
+}
+#datatable-file.dataTable thead th.sorting:after,
+#datatable-file.dataTable thead th.sorting_asc:after,
+#datatable-file.dataTable thead th.sorting_desc:after {
+    right: 2px;
+}
+#datatable-file th:nth-child(1), #datatable-file td:nth-child(1) { width: 3% !important; }
+#datatable-file th:nth-child(2), #datatable-file td:nth-child(2) { width: 4% !important; }
+#datatable-file th:nth-child(3), #datatable-file td:nth-child(3) { width: 12% !important; }
+#datatable-file th:nth-child(4), #datatable-file td:nth-child(4) { width: 18% !important; }
+#datatable-file th:nth-child(5), #datatable-file td:nth-child(5) { width: 13% !important; }
+#datatable-file th:nth-child(6), #datatable-file td:nth-child(6) { width: 13% !important; }
+#datatable-file th:nth-child(7), #datatable-file td:nth-child(7) { width: 9% !important; }
+#datatable-file th:nth-child(8), #datatable-file td:nth-child(8) { width: 17% !important; }
+#datatable-file th:nth-child(9), #datatable-file td:nth-child(9) { width: 11% !important; }
+#datatable-file td:nth-child(3),
+#datatable-file td:nth-child(4),
+#datatable-file td:nth-child(5),
+#datatable-file td:nth-child(6),
+#datatable-file td:nth-child(8) {
+    overflow-wrap: anywhere;
+}
+#datatable-file .btn-file-action {
+    width: 27px;
+    height: 25px;
+    padding: 3px 5px;
+}
+#datatable-file tbody tr.file-row-has-error > td {
+    color: #8a1f1b;
+    background-color: #fde8e7;
+    border-color: #efc2bf;
+}
+#datatable-file tbody tr.file-row-has-error:hover > td {
+    background-color: #f9d6d4;
+}
 @media (max-width: 1199px) {
     #datatable-file th, #datatable-file td { display: table-cell !important; }
 }
