@@ -192,6 +192,20 @@
 	<script src="<?=_DEFAULT_URL_?>scripts/jquery.dataTables.min.js"></script>	
 	
 	<script src="<?=_DEFAULT_URL_?>scripts/moment.min.js"></script>
+	<script>
+		// Ngôn ngữ mặc định cho lịch và datetimepicker trong khu vực quản trị.
+		if (window.moment) {
+			moment.locale('vi', {
+				months: 'Tháng 1_Tháng 2_Tháng 3_Tháng 4_Tháng 5_Tháng 6_Tháng 7_Tháng 8_Tháng 9_Tháng 10_Tháng 11_Tháng 12'.split('_'),
+				monthsShort: 'T1_T2_T3_T4_T5_T6_T7_T8_T9_T10_T11_T12'.split('_'),
+				weekdays: 'Chủ Nhật_Thứ Hai_Thứ Ba_Thứ Tư_Thứ Năm_Thứ Sáu_Thứ Bảy'.split('_'),
+				weekdaysShort: 'CN_T2_T3_T4_T5_T6_T7'.split('_'),
+				weekdaysMin: 'CN_T2_T3_T4_T5_T6_T7'.split('_'),
+				week: { dow: 1, doy: 4 }
+			});
+			moment.locale('vi');
+		}
+	</script>
 	
 	<script src="<?=_DEFAULT_URL_?>scripts/dataTables.bootstrap.min.js"></script>	
 	<script src="<?=_DEFAULT_URL_?>scripts/dataTables.buttons.min.js"></script>

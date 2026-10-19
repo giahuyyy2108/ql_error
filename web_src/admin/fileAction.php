@@ -299,6 +299,17 @@ class fileAction
         }
     }
 
+    public function revalidationProgress()
+    {
+        $date = $this->selectedDate();
+        if ($date === null) return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
+        try {
+            return $this->json(array('success' => true, 'progress' => $this->filePeer->getRevalidationProgress($date)));
+        } catch (RuntimeException $exception) {
+            return $this->json(array('success' => false, 'message' => $exception->getMessage()));
+        }
+    }
+
     private function revalidateQueuedFile(array $file)
     {
         $storedPath = $this->resolveStoredFilePath($file['file_path']);

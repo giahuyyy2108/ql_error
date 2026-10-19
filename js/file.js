@@ -1160,10 +1160,10 @@
     function updateFileStatistics(rows) {
         var statistics = { total: 0, success: 0, failed: 0, processing: 0 };
         var dateInput = $('#file-stat-date');
-        var selectedDate = dateInput.val();
+        var selectedDate = selectedFileDate();
         if (!selectedDate) {
             selectedDate = localDateKey(new Date());
-            dateInput.val(selectedDate);
+            dateInput.val(selectedDate.split('-').reverse().join('/'));
         }
         $.each(rows || [], function (_, row) {
             var modified = new Date(Number(row.timestamp) * 1000);
@@ -1179,7 +1179,26 @@
         $('#file-stat-processing').text(statistics.processing);
     }
 
-    $('#file-stat-date').val(localDateKey(new Date()));
+    if ($.fn.datepicker) {
+        $.fn.datepicker.dates.vi = {
+            days: ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'],
+            daysShort: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'],
+            daysMin: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'],
+            months: ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'],
+            monthsShort: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'],
+            today: 'Hôm nay', clear: 'Xóa', format: 'dd/mm/yyyy', titleFormat: 'MM yyyy', weekStart: 1
+        };
+        $('#file-stat-date').datepicker({ language: 'vi', autoclose: true, todayHighlight: true, format: 'dd/mm/yyyy' });
+    }
+    function selectedFileDate() {
+        var value = String($('#file-stat-date').val() || '');
+        var match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
+        return match ? match[3] + '-' + match[2] + '-' + match[1] : value;
+    }
+    $('#file-stat-date').val((function () {
+        var date = new Date();
+        return String(date.getDate()).padStart(2, '0') + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + date.getFullYear();
+    })());
     $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
         if (!settings.nTable || settings.nTable.id !== 'datatable-file') return true;
         if (!fileSearchTerm) return true;
@@ -1212,7 +1231,7 @@
             url: baseUrl + 'file/getData/',
             type: 'POST',
             data: function (request) {
-                request.date = $('#file-stat-date').val();
+                request.date = selectedFileDate();
             },
             beforeSend: function () {
                 getDataInProgress = true;
@@ -1342,7 +1361,6 @@
     function dataReloadIsBlocked() {
         return getDataInProgress
             || uploadInProgress
-            || revalidationInProgress
             || document.hidden
             || $('.modal.in:visible').length > 0
             || $.active > 0;
@@ -1386,7 +1404,7 @@
             url: baseUrl + 'file/getErrorReport/',
             type: 'GET',
             dataType: 'json',
-            data: { date: $('#file-stat-date').val() }
+            data: { date: selectedFileDate() }
         }).done(function (response) {
             if (!response.success) {
                 alert(response.message || 'Không thể tải dữ liệu báo cáo lỗi.');
@@ -1395,7 +1413,7 @@
 
             exportErrorReportSheets(
                 response.data || [], response.files || [],
-                'danh-sach-loi-' + ($('#file-stat-date').val() || 'khong-ro-ngay') + '.xlsx'
+                'danh-sach-loi-' + (selectedFileDate() || 'khong-ro-ngay') + '.xlsx'
             ).fail(function (message) { alert(message || 'Không có dữ liệu để xuất.'); });
             /*
             var exportData = (response.data || []).map(function (row, index) {
@@ -1421,7 +1439,7 @@
                 buttons: [{
                     extend: 'excelHtml5',
                     title: null,
-                    filename: 'danh-sach-loi-' + ($('#file-stat-date').val() || 'khong-ro-ngay'),
+                    filename: 'danh-sach-loi-' + (selectedFileDate() || 'khong-ro-ngay'),
                     sheetName: 'Danh sách lỗi',
                     customizeData: function (data) {
                         data.body.forEach(function (row) {
@@ -1486,7 +1504,7 @@
     $('#btn-revalidate-all').on('click', function () {
         if (revalidationInProgress) return;
         revalidationInProgress = true;
-        var selectedDate = $('#file-stat-date').val();
+        var selectedDate = selectedFileDate();
         if (!selectedDate) {
             revalidationInProgress = false;
             alert('Vui lòng chọn ngày cần quét lại.');
@@ -1504,6 +1522,25 @@
             alert(message);
         }
 
+        function watchProgress(total) {
+            button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét qua watcher...');
+            $.ajax({
+                url: baseUrl + 'file/revalidationProgress/', type: 'GET', dataType: 'json',
+                data: { date: selectedDate }
+            }).done(function (response) {
+                if (!response.success) { finish(response.message || 'Không thể đọc tiến độ quét lại.'); return; }
+                var progress = response.progress || {};
+                var remaining = Number(progress.remaining) || 0;
+                requestFileData(false);
+                if (remaining > 0) {
+                    button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét qua watcher... (' + (total - remaining) + '/' + total + ')');
+                    window.setTimeout(function () { watchProgress(total); }, 1000);
+                    return;
+                }
+                finish('Đã đưa ' + total + ' file vào watcher để quét lại.');
+            }).fail(function () { window.setTimeout(function () { watchProgress(total); }, 1500); });
+        }
+        /*
         function processNextBatch(total, completed, errorCount) {
             button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét... ('
                 + completed + '/' + total + ')');
@@ -1536,7 +1573,7 @@
                     ? xhr.responseJSON.message : 'Không thể xử lý hàng đợi quét lại.';
                 finish(message);
             });
-        }
+        } */
 
         $.ajax({
             url: baseUrl + 'file/revalidateAll/',
@@ -1549,7 +1586,7 @@
                 return;
             }
             var total = Number(response.total) || Number(response.queued) || 0;
-            processNextBatch(total, 0, 0);
+            watchProgress(total);
         }).fail(function (xhr) {
             var message = xhr.responseJSON && xhr.responseJSON.message
                 ? xhr.responseJSON.message : 'Không thể tạo hàng đợi quét lại.';

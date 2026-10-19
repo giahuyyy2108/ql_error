@@ -30,7 +30,7 @@
             <div class="file-statistics-header">
                 <h3>Thống kê theo ngày</h3>
                 <label for="file-stat-date" class="sr-only">Chọn ngày thống kê</label>
-                <input type="date" id="file-stat-date" class="form-control">
+                <input type="text" id="file-stat-date" class="form-control" autocomplete="off">
             </div>
             <div class="file-statistics">
                 <div class="file-stat-card file-stat-total">
