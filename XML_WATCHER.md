@@ -8,14 +8,14 @@ Chức năng tải file trên giao diện web cũng chỉ ghi nguyên tử file 
 - XML không hợp lệ, có lỗi validation hoặc xử lý thất bại: `storage/xml/failed/YYYYMMDD`
 - Chi tiết lỗi: file `.error.txt` nằm cạnh XML lỗi
 
-Các file được phân loại theo ngày xử lý. File lỗi tiếp tục được nhóm theo tên lỗi; tiền tố `PASS` chỉ nằm ở tên file. Nếu một hồ sơ có nhiều loại lỗi, các nhóm còn lại dùng hard link khi hệ thống hỗ trợ để không nhân đôi dữ liệu:
+Các file được phân loại theo ngày xử lý. File lỗi tiếp tục được nhóm theo tên lỗi và giữ nguyên tên file gốc. Nếu một hồ sơ có nhiều loại lỗi, các nhóm còn lại dùng hard link khi hệ thống hỗ trợ để không nhân đôi dữ liệu:
 
 ```text
 storage/xml/failed/YYYYMMDD/<tên lỗi>/
-└── PASS<số lỗi>_<tên file XML>_R<rule>_<hash>_<tên lỗi>_<tên file gốc>.xml
+└── <tên file XML gốc>.xml
 ```
 
-Ví dụ: `storage/xml/failed/20261015/Ma_bac_si_khong_ton_tai/PASS2_XML2_R55_41bd91fd_Ma_bac_si_khong_ton_tai_hoso.xml`.
+Ví dụ: `storage/xml/failed/20261015/Ma_bac_si_khong_ton_tai/hoso.xml`.
 
 Chạy worker liên tục trên Windows/XAMPP:
 

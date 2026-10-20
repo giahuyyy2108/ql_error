@@ -81,6 +81,7 @@ $processedDir = $inboxDir . DIRECTORY_SEPARATOR . 'processed';
 $failedDir = $inboxDir . DIRECTORY_SEPARATOR . 'failed';
 $deletedDir = $inboxDir . DIRECTORY_SEPARATOR . 'deleted';
 $runtimeDir = $defaultRuntimeDir;
+$turnPath = $runtimeDir . DIRECTORY_SEPARATOR . '.xml_worker_turn';
 $runtimeLogsRoot = $runtimeDir . DIRECTORY_SEPARATOR . 'logs';
 $runtimeLogDir = $runtimeLogsRoot . DIRECTORY_SEPARATOR . date('Ymd');
 foreach (array($inboxDir, $processingRootDir, $processingDir, $processedDir, $failedDir, $deletedDir, $runtimeDir, $runtimeLogsRoot, $runtimeLogDir) as $directory) {
@@ -280,6 +281,34 @@ $showProgress = function (array $progress, $path) use ($options) {
         . $progress['completed'] . '/' . $progress['total'] . ' files' . PHP_EOL
     );
     fflush(STDOUT);
+};
+
+$claimTurn = function ($path) use ($turnPath, $processingDir, $options) {
+    $handle = @fopen($turnPath, 'c+');
+    if ($handle === false || !flock($handle, LOCK_EX)) {
+        if ($handle !== false) fclose($handle);
+        return false;
+    }
+    rewind($handle);
+    $turn = trim(stream_get_contents($handle));
+    $turn = ($turn === '2') ? 2 : 1;
+    if ($turn !== (int) $options['worker_id']) {
+        flock($handle, LOCK_UN);
+        fclose($handle);
+        return false;
+    }
+    if (!@rename($path, $processingDir . DIRECTORY_SEPARATOR . basename($path))) {
+        flock($handle, LOCK_UN);
+        fclose($handle);
+        return false;
+    }
+    rewind($handle);
+    ftruncate($handle, 0);
+    fwrite($handle, $turn === 1 ? '2' : '1');
+    fflush($handle);
+    flock($handle, LOCK_UN);
+    fclose($handle);
+    return true;
 };
 
 $logValidationErrors = function ($fileName, array $validation) use ($log) {
@@ -719,7 +748,7 @@ do {
     foreach ($readyPaths as $path) {
 
         $claimedPath = $processingDir . DIRECTORY_SEPARATOR . basename($path);
-        if (file_exists($claimedPath) || !@rename($path, $claimedPath)) {
+        if (file_exists($claimedPath) || !$claimTurn($path)) {
             $showProgress($updateProgress(array(), array(), $path), $path);
             continue;
         }

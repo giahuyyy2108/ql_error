@@ -28,16 +28,16 @@ $validation = array(array(
 
 try {
     $created = XmlErrorArchiveOrganizer::organize($source, $failed, $validation, false, 'hoso.xml');
-    if (count($created) !== 2 || $created[0] === $created[1]) {
-        throw new RuntimeException('Hai rule phải tạo hai đường dẫn khác nhau.');
+    if (count($created) !== 1) {
+        throw new RuntimeException('File chỉ được lưu trong thư mục lỗi đầu tiên.');
     }
     foreach ($created as $path) {
         if (!is_file($path) || !is_file($path . '.error.txt')) {
             throw new RuntimeException('Thiếu file XML hoặc báo cáo lỗi được phân loại.');
         }
-        if (strpos(basename($path), 'PASS1_XML1_R') !== 0
+        if (basename($path) !== 'hoso.xml'
             || strpos(basename(dirname($path)), 'PASS') === 0) {
-            throw new RuntimeException('Tên thư mục phải là tên lỗi, tiền tố PASS chỉ nằm ở tên file.');
+            throw new RuntimeException('File phải giữ nguyên tên gốc và thư mục phải là tên lỗi.');
         }
     }
     echo "XmlErrorArchiveOrganizerTest: OK\n";

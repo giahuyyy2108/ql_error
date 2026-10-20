@@ -73,6 +73,12 @@ class XmlRulesValidator
                         continue;
                     }
 
+                    if ($ruleType === 'SEQUENTIAL_FORMULA') {
+                        $ruleErrors = self::validateSequentialFormula($rule, $fieldIndex);
+                        $errors = array_merge($errors, $ruleErrors);
+                        continue;
+                    }
+
                     if ($ruleType === 'CROSS_FILE_ANY_MATCH') {
                         $applicable = false;
                         $ruleErrors = self::validateCrossFileAnyMatch(
@@ -591,8 +597,40 @@ class XmlRulesValidator
     private static function validateFormula(array $rule, array $content)
     {
         $config = json_decode($rule['rule_value'], true);
-        if (!is_array($config) || empty($config['expression'])) {
+        if (!is_array($config)
+            || (empty($config['expression']) && empty($config['condition']))) {
             return array(self::makeError($rule, $rule['field_name'], null, 'error', 'Cấu hình FORMULA không hợp lệ.'));
+        }
+
+        // Conditional formulas such as A + B <= C do not have a result field.
+        if (!empty($config['condition']) && empty($config['expression'])) {
+            $condition = $config['condition'];
+            $values = isset($condition['values']) && is_array($condition['values'])
+                ? $condition['values'] : array();
+            $fields = array_values(array_unique(self::formulaFields($condition)));
+            if (count($values) !== 2 || !$fields
+                || strtoupper((string) ($condition['operation'] ?? '')) !== 'LTE') {
+                return array(self::makeError($rule, $rule['field_name'], null, 'error', 'Cấu hình FORMULA không hợp lệ.'));
+            }
+            $records = array();
+            self::findFormulaRecords($content, $fields[0], $fields, '', $records);
+            $errors = array();
+            $tolerance = isset($config['tolerance']) ? max(0, (float) $config['tolerance']) : 0.01;
+            foreach ($records as $item) {
+                $evaluationError = null;
+                $left = self::evaluateFormulaNode($values[0], $item['record'], $evaluationError);
+                $right = self::evaluateFormulaNode($values[1], $item['record'], $evaluationError);
+                if ($evaluationError !== null || $left > ($right + $tolerance)) {
+                    $errors[] = self::makeError(
+                        $rule,
+                        $item['path'] . '.' . $rule['field_name'],
+                        $left,
+                        'error',
+                        self::formulaErrorMessage($rule['error_message'], $item['record'])
+                    );
+                }
+            }
+            return $errors;
         }
         $resultField = !empty($config['result_field'])
             ? trim((string) $config['result_field']) : trim((string) $rule['field_name']);
@@ -817,6 +855,40 @@ class XmlRulesValidator
                     ? (string) $rowMatches[0]['value'] : null;
                 $error['expected'] = (string) $config['expected'];
                 $errors[] = $error;
+            }
+        }
+        return $errors;
+    }
+
+    private static function validateSequentialFormula(array $rule, array $fieldIndex)
+    {
+        $config = json_decode($rule['rule_value'], true);
+        if (!is_array($config) || empty($config['group_field']) || empty($config['order_field'])
+            || empty($config['amount_field']) || !isset($config['group_value'])
+            || !isset($config['first_value']) || !isset($config['next_percent'])) return array();
+        $groups = array();
+        $groupMatches = isset($fieldIndex[$config['group_field']]) ? $fieldIndex[$config['group_field']] : array();
+        $orderMatches = isset($fieldIndex[$config['order_field']]) ? $fieldIndex[$config['order_field']] : array();
+        $amountMatches = isset($fieldIndex[$config['amount_field']]) ? $fieldIndex[$config['amount_field']] : array();
+        foreach ($groupMatches as $group) {
+            if ((string) $group['value'] !== (string) $config['group_value']) continue;
+            $parent = preg_replace('/\.[^.]+$/', '', $group['path']);
+            $order = array_values(array_filter($orderMatches, function ($item) use ($parent) {
+                return preg_replace('/\.[^.]+$/', '', $item['path']) === $parent;
+            }));
+            $amount = array_values(array_filter($amountMatches, function ($item) use ($parent) {
+                return preg_replace('/\.[^.]+$/', '', $item['path']) === $parent;
+            }));
+            if (!$order || !$amount) continue;
+            $groups[] = array('order' => $order[0], 'amount' => $amount[0]);
+        }
+        usort($groups, function ($a, $b) { return strcmp((string) $a['order']['value'], (string) $b['order']['value']); });
+        $errors = array();
+        foreach ($groups as $index => $item) {
+            $expected = $index === 0 ? (float) $config['first_value']
+                : (float) $config['first_value'] * ((float) $config['next_percent'] / 100);
+            if (!is_numeric($item['amount']['value']) || abs((float) $item['amount']['value'] - $expected) > (float) ($config['tolerance'] ?? 0.01)) {
+                $errors[] = self::makeError($rule, $item['amount']['path'], $item['amount']['value']);
             }
         }
         return $errors;
@@ -1580,6 +1652,9 @@ class XmlRulesValidator
         }
 
         switch ($operator) {
+            case 'STARTS_WITH':
+            case 'PREFIX':
+                return strpos((string) $left, (string) $right) === 0;
             case '=':
             case '==': return $left == $right;
             case '!=':

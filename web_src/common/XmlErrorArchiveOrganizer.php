@@ -15,24 +15,33 @@ class XmlErrorArchiveOrganizer
 
         $created = array();
         $canonicalSource = $sourcePath;
+        $allDetails = array();
         foreach ($groups as $group) {
-            $ruleId = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) $group['rule_id']);
-            if ($ruleId === '' || $ruleId === '-') $ruleId = 'NA';
-            $groupHash = substr(sha1(
-                $group['rule_id'] . "\0" . $group['rule_type'] . "\0"
-                . $group['rule_value'] . "\0" . $group['error_name']
-            ), 0, 8);
-            $prefix = 'PASS' . $group['count'] . '_'
-                . self::slug($group['file_type'], 'XML') . '_'
-                . 'R' . $ruleId . '_' . $groupHash . '_'
-                . self::slug($group['error_name'], 'LOI');
+            $allDetails[] = 'Số lỗi: ' . $group['count'];
+            $allDetails[] = 'File XML: ' . $group['file_type'];
+            $allDetails[] = 'ID rule: ' . $group['rule_id'];
+            $allDetails[] = 'Loại rule: ' . $group['rule_type'];
+            $allDetails[] = 'Giá trị rule: ' . ($group['rule_value'] !== '' ? $group['rule_value'] : '(trống)');
+            $allDetails[] = 'Tên lỗi: ' . $group['error_name'];
+            $allDetails = array_merge($allDetails, $group['details']);
+            $allDetails[] = '';
+        }
+        foreach ($groups as $group) {
+            $archiveName = self::removeLegacyPrefix($originalName, $group['error_name']);
             $directory = $failedDirectory . DIRECTORY_SEPARATOR
                 . self::slug($group['error_name'], 'LOI');
             if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
                 throw new RuntimeException('Không thể tạo thư mục lỗi: ' . $directory);
             }
 
-            $destination = $directory . DIRECTORY_SEPARATOR . $prefix . '_' . $originalName;
+            // Keep the original filename. The error directory already identifies
+            // the error type, so adding a PASS/rule prefix only makes the file
+            // harder to find and changes the name supplied by the user.
+            $destination = $directory . DIRECTORY_SEPARATOR . $archiveName;
+            if (is_file($destination) && strcasecmp($destination, $canonicalSource) !== 0) {
+                @unlink($destination);
+                if (is_file($destination . '.error.txt')) @unlink($destination . '.error.txt');
+            }
             if ($moveSource && empty($created)) {
                 if (!rename($sourcePath, $destination)) {
                     throw new RuntimeException('Không thể chuyển file vào thư mục lỗi: ' . $directory);
@@ -43,19 +52,13 @@ class XmlErrorArchiveOrganizer
             } elseif (!self::linkOrCopy($canonicalSource, $destination)) {
                 throw new RuntimeException('Không thể tạo bản phân loại file trong thư mục lỗi: ' . $directory);
             }
-            $details = array(
-                'Số lỗi: ' . $group['count'],
-                'File XML: ' . $group['file_type'],
-                'ID rule: ' . $group['rule_id'],
-                'Loại rule: ' . $group['rule_type'],
-                'Giá trị rule: ' . ($group['rule_value'] !== '' ? $group['rule_value'] : '(trống)'),
-                'Tên lỗi: ' . $group['error_name'],
-                'File gốc: ' . $originalName,
-                '',
-                implode(PHP_EOL, $group['details'])
-            );
+            $details = array_merge(array('File gốc: ' . $archiveName, ''), $allDetails);
             file_put_contents($destination . '.error.txt', implode(PHP_EOL, $details) . PHP_EOL, LOCK_EX);
             $created[] = $destination;
+
+            // A file is archived under the first matching error directory only.
+            // This avoids duplicate copies and keeps the original filename.
+            break;
         }
         return $created;
     }
@@ -129,6 +132,21 @@ class XmlErrorArchiveOrganizer
         return substr($value, 0, 32);
     }
 
+    private static function removeLegacyPrefix($fileName, $errorName)
+    {
+        $fileName = basename((string) $fileName);
+        $errorSlug = self::slug($errorName, 'LOI');
+        $pattern = '/^PASS\d+_XML\d+_R[^_]+_[a-f0-9]{8}_' . preg_quote($errorSlug, '/') . '_/i';
+        $cleanName = preg_replace($pattern, '', $fileName, 1);
+        // Older archives may contain a truncated error slug. In that case,
+        // retain the original hồ sơ name, which starts with its numeric ID.
+        if ($cleanName === $fileName
+            && preg_match('/^PASS\d+_XML\d+_R[^_]+_[a-f0-9]{8}_.+?_(\d[\w.-]*)$/i', $fileName, $matches)) {
+            $cleanName = $matches[1];
+        }
+        return is_string($cleanName) && $cleanName !== '' ? $cleanName : $fileName;
+    }
+
     private static function removePreviousCopies($failedDirectory, $originalName, $sourcePath)
     {
         if (!is_dir($failedDirectory)) return;
@@ -139,7 +157,8 @@ class XmlErrorArchiveOrganizer
                 if (!$file->isFile()) continue;
                 if (strcasecmp($file->getPathname(), $sourcePath) === 0) continue;
                 $name = $file->getFilename();
-                if (substr($name, -strlen($suffix)) === $suffix
+                if ($name === $originalName || $name === $originalName . '.error.txt'
+                    || substr($name, -strlen($suffix)) === $suffix
                     || substr($name, -strlen($suffix . '.error.txt')) === $suffix . '.error.txt') {
                     @unlink($file->getPathname());
                 }

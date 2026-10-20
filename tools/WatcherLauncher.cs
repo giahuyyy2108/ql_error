@@ -22,13 +22,14 @@ internal static class WatcherLauncher
 
     private static int Main(string[] args)
     {
-        Console.OutputEncoding = Encoding.UTF8;
+        try { Console.OutputEncoding = Encoding.UTF8; } catch { }
         string projectRoot = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
         string configPath = Path.Combine(projectRoot, "conf", "config.php");
         string phpPath = ReadConfiguredPath(configPath, "_XML_WATCHER_PHP_PATH_", projectRoot, Path.Combine(Path.GetPathRoot(projectRoot), "xampp", "php", "php.exe"));
         string watcherPath = ReadConfiguredPath(configPath, "_XML_WATCHER_SCRIPT_PATH_", projectRoot, Path.Combine(projectRoot, "scripts", "watch_xml.php"));
         string runtimePath = ReadConfiguredPath(configPath, "_XML_WATCHER_RUNTIME_PATH_", projectRoot, Path.Combine(projectRoot, "storage", "watcher"));
         string progressPath = Path.Combine(runtimePath, ".xml_import_progress.json");
+        string turnPath = Path.Combine(runtimePath, ".xml_worker_turn");
         string layoutPath = Path.Combine(runtimePath, ".xml_import_progress_top");
         string logPath = Path.Combine(projectRoot, "storage", "watcher", "logs", DateTime.Now.ToString("yyyyMMdd"), "watcher.launcher.log");
         if (!File.Exists(phpPath)) return Fail(logPath, "PHP executable was not found: " + phpPath);
@@ -40,7 +41,7 @@ internal static class WatcherLauncher
         {
             if (!ownsMutex) { Console.WriteLine("WatcherLauncher is already running."); return 0; }
             Console.Title = "QL Error - XML Watcher";
-            ResetProgressState(progressPath);
+            ResetProgressState(progressPath, turnPath);
             bool consoleProgressEnabled = EnableConsoleProgress();
             if (consoleProgressEnabled)
             {
@@ -85,10 +86,11 @@ internal static class WatcherLauncher
         catch { return fallback; }
     }
 
-    private static void ResetProgressState(string progressPath)
+    private static void ResetProgressState(string progressPath, string turnPath)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(progressPath));
         File.WriteAllText(progressPath, "{\"items\":{},\"workers\":{}}");
+        File.WriteAllText(turnPath, "1");
     }
 
     private static bool EnableConsoleProgress()
