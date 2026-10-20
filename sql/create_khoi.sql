@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS `khoi` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `ten` VARCHAR(255) NOT NULL,
+  PRIMARY KEY (`id`), KEY `idx_khoi_ten` (`ten`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

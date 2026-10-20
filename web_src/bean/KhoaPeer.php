@@ -20,7 +20,7 @@ class KhoaPeer
         $length = (int) $length;
         $search = trim((string) $search);
 
-        $totalResult = $this->connection->query('SELECT COUNT(*) AS total FROM khoa');
+        $totalResult = $this->connection->query('SELECT COUNT(*) AS total FROM khoa_phong');
         if (!$totalResult) {
             throw new RuntimeException('Không thể tải danh mục khoa.');
         }
@@ -30,9 +30,9 @@ class KhoaPeer
         $where = '';
         $like = '%' . $search . '%';
         if ($search !== '') {
-            $where = ' WHERE khoa.ma LIKE ? OR khoa.ten LIKE ? OR khoa.ghi_chu LIKE ?
-                       OR khoa.ma_khoa_goc LIKE ? OR khoa.quyet_dinh LIKE ? ';
-            $countStatement = $this->connection->prepare('SELECT COUNT(*) AS total FROM khoa' . $where);
+            $where = ' WHERE khoa_phong.ma LIKE ? OR khoa_phong.ten LIKE ? OR khoa_phong.ghi_chu LIKE ?
+                       OR khoa_phong.ma_khoa_goc LIKE ? OR khoa_phong.quyet_dinh LIKE ? ';
+            $countStatement = $this->connection->prepare('SELECT COUNT(*) AS total FROM khoa_phong' . $where);
             if (!$countStatement) {
                 throw new RuntimeException('Không thể chuẩn bị tìm kiếm danh mục khoa.');
             }
@@ -46,13 +46,13 @@ class KhoaPeer
 
         $limit = $length < 0 ? '' : ' LIMIT ' . $start . ', ' . max(1, $length);
         $statement = $this->connection->prepare(
-            'SELECT khoa.ma, khoa.stt, khoa.ten, khoa.ghi_chu, khoa.ma_khoa_goc,
-                    khoa.is_active, khoa.quyet_dinh, khoa.ngay_hieu_luc, khoa.source_url
-             FROM khoa
-             LEFT JOIN khoa AS khoa_goc ON khoa_goc.ma = khoa.ma_khoa_goc' . $where . '
-             ORDER BY COALESCE(khoa.stt, khoa_goc.stt) ASC,
-                      CASE WHEN khoa.stt IS NULL THEN 1 ELSE 0 END ASC,
-                      khoa.ma ASC' . $limit
+            'SELECT khoa_phong.ma, khoa_phong.stt, khoa_phong.ten, khoa_phong.ghi_chu, khoa_phong.ma_khoa_goc,
+                    khoa_phong.is_active, khoa_phong.quyet_dinh, khoa_phong.ngay_hieu_luc, khoa_phong.source_url
+             FROM khoa_phong
+             LEFT JOIN khoa_phong AS khoa_goc ON khoa_goc.ma = khoa_phong.ma_khoa_goc' . $where . '
+             ORDER BY COALESCE(khoa_phong.stt, khoa_goc.stt) ASC,
+                      CASE WHEN khoa_phong.stt IS NULL THEN 1 ELSE 0 END ASC,
+                      khoa_phong.ma ASC' . $limit
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu danh mục khoa.');
