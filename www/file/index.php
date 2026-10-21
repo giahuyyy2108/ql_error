@@ -13,6 +13,9 @@
                 </button>
             </li>
             <li>
+                <button type="button" id="btn-push-portal" class="btn btn-warning"><i class="fa fa-upload"></i> Đẩy cổng</button>
+            </li>
+            <li>
                 <button type="button" id="btn-delete-selected" class="btn btn-danger" disabled>
                     <i class="fa fa-trash"></i> Xóa đã chọn
                 </button>

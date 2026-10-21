@@ -156,6 +156,37 @@ class fileAction
         ));
     }
 
+    public function pushPortal()
+    {
+        $ids = json_decode((string) $this->request->getParameter('ids', false), true);
+        if (!is_array($ids) || !$ids) return $this->json(array('success' => false, 'message' => 'Vui lòng chọn file cần đẩy cổng.'));
+        $done = 0; $skipped = 0;
+        try {
+            $root = dirname(__DIR__, 2); $temp = $root . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . 'temp';
+            if (!is_dir($temp)) mkdir($temp, 0775, true);
+            foreach ($this->filePeer->getPortalFilesByIds($ids) as $file) {
+                $path = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $file['file_path']);
+                if (!is_file($path)) { $skipped++; continue; }
+                $content = file_get_contents($path); $decoded = XmlFileDecoder::decodeDanhSachHoSo($content);
+                $decodedContent = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                if ($decodedContent === false) { $skipped++; continue; }
+                $values = XmlFileDecoder::extractValuesFromFileType($decoded, 'XML1', array('CCCD','MA_BN','HO_TEN','NGAY_SINH','MA_THE_BHYT'));
+                $cccd = trim((string) ($values['MA_BN'] ?? ''));
+                if ($cccd === '') { $skipped++; continue; }
+                global $connect; $connect->begin_transaction();
+                $q = $connect->prepare('INSERT IGNORE INTO cong_benhnhan (cccd, hoten, namsinh, ma_the_bhyt) VALUES (?, ?, ?, ?)');
+                $name = (string) ($values['HO_TEN'] ?? ''); $birth = (string) ($values['NGAY_SINH'] ?? ''); $card = (string) ($values['MA_THE_BHYT'] ?? '');
+                $q->bind_param('ssss', $cccd, $name, $birth, $card); $q->execute(); $q->close();
+                $q = $connect->prepare('INSERT IGNORE INTO cong_hoso (cccd, malk, ten_file, noidung, nguoi_day, id_khoa) VALUES (?, ?, ?, ?, ?, ?)');
+                $user = isset($_SESSION['sUserName']) ? $_SESSION['sUserName'] : ''; $khoa = isset($_SESSION['id_khoa']) ? $_SESSION['id_khoa'] : null;
+                $q->bind_param('ssssss', $cccd, $file['ma_lk'], $file['ten'], $decodedContent, $user, $khoa); $q->execute(); $inserted = $q->affected_rows; $q->close();
+                if ($inserted > 0) { $this->filePeer->markPortalPushed($file['id']); rename($path, $temp . DIRECTORY_SEPARATOR . basename($path)); $done++; } else $skipped++;
+                $connect->commit();
+            }
+            return $this->json(array('success' => true, 'done' => $done, 'skipped' => $skipped));
+        } catch (Throwable $e) { if (isset($connect) && $connect instanceof mysqli) @$connect->rollback(); return $this->json(array('success'=>false,'message'=>$e->getMessage())); }
+    }
+
     public function getAuditLogs()
     {
         $maLk = trim((string) $this->request->getParameter('ma_lk', false));

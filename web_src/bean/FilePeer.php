@@ -35,7 +35,7 @@ class FilePeer
             $userStatement->close();
         }
 
-        $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, kichthuoc, processing_status,
+        $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, kichthuoc, processing_status, da_day_cong,
                        validation_result, update_at, create_at
                 FROM `file`
                 WHERE update_at >= ? AND update_at < ?'
@@ -76,6 +76,7 @@ class FilePeer
                 'total_amount' => $summary['total_amount'],
                 'size' => (int) $row['kichthuoc'],
                 'status' => $row['processing_status'],
+                'da_day_cong' => (bool) $row['da_day_cong'],
                 'modified' => $timestamp ? date('d/m/Y H:i:s', $timestamp) : '',
                 'timestamp' => $timestamp ?: 0
             );
@@ -456,6 +457,34 @@ class FilePeer
         $query->bind_param('s', $maLk); $query->execute(); $result = $query->get_result();
         $rows = array(); while ($row = $result->fetch_assoc()) $rows[] = $row;
         $query->close(); return $rows;
+    }
+
+    public function getPortalFiles($date)
+    {
+        $q = $this->connection->prepare("SELECT id, ten, ma_lk, file_path FROM file WHERE DATE(update_at)=? AND processing_status='processed' AND da_day_cong=0 ORDER BY id");
+        if (!$q) throw new RuntimeException('Không thể tải file đẩy cổng.');
+        $q->bind_param('s', $date); $q->execute(); $result = $q->get_result(); $rows = array();
+        while ($row = $result->fetch_assoc()) $rows[] = $row;
+        $q->close(); return $rows;
+    }
+
+    public function getPortalFilesByIds(array $ids)
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids), function ($id) { return $id > 0; }));
+        if (!$ids) return array();
+        $marks = implode(',', array_fill(0, count($ids), '?'));
+        $types = str_repeat('i', count($ids));
+        $q = $this->connection->prepare("SELECT id, ten, ma_lk, file_path FROM file WHERE id IN ($marks) AND processing_status='processed' AND da_day_cong=0");
+        $q->bind_param($types, ...$ids); $q->execute(); $result = $q->get_result(); $rows = array();
+        while ($row = $result->fetch_assoc()) $rows[] = $row;
+        $q->close(); return $rows;
+    }
+
+    public function markPortalPushed($id)
+    {
+        $q = $this->connection->prepare('UPDATE file SET da_day_cong=1 WHERE id=?');
+        if (!$q) throw new RuntimeException('Không thể cập nhật trạng thái đẩy cổng.');
+        $q->bind_param('i', $id); $ok = $q->execute(); $q->close(); return $ok;
     }
 
     public function getById($id)

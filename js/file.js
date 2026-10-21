@@ -43,6 +43,7 @@
         $('#btn-delete-selected').prop('disabled', count === 0).text(
             count ? 'Xóa đã chọn (' + count + ')' : 'Xóa đã chọn'
         );
+        $('#btn-push-portal').prop('disabled', count === 0);
         var pageCheckboxes = $('#datatable-file .file-select');
         var checkedOnPage = pageCheckboxes.filter(':checked').length;
         $('#select-all-files')
@@ -1525,6 +1526,17 @@
         }).always(function () {
             button.prop('disabled', false);
         });
+    });
+
+    $('#btn-push-portal').on('click', function () {
+        var ids = Object.keys(selectedFileIds).map(Number);
+        if (!ids.length) { alert('Vui lòng chọn file cần đẩy cổng.'); return; }
+        if (!confirm('Đẩy các file đã chọn lên cổng?')) return;
+        var button = $(this).prop('disabled', true);
+        $.post(baseUrl + 'file/pushPortal/', {ids: JSON.stringify(ids)}, function (r) {
+            alert(r.success ? 'Đã đẩy ' + r.done + ' hồ sơ. Bỏ qua ' + r.skipped + ' hồ sơ.' : r.message);
+            button.prop('disabled', false); selectedFileIds = {}; updateSelectionControls(); table.ajax.reload(null, false);
+        }, 'json').fail(function () { alert('Không thể đẩy cổng.'); button.prop('disabled', false); });
     });
 
     $('#btn-reset-file-search').on('click', function () {
