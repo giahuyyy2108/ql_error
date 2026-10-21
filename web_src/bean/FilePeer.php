@@ -126,18 +126,19 @@ class FilePeer
         return $summary;
     }
 
-    public function getErrorReportRows($date)
+    public function getErrorReportRows($date, $to = null)
     {
+        $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
         $sql = 'SELECT ma_lk, ma_bn, ngay_lap, processing_status, validation_result
                 FROM `file`
-                WHERE DATE(update_at) = ?
+                WHERE update_at >= ? AND update_at < ?
                   AND validation_result IS NOT NULL AND validation_result <> \'\'
                 ORDER BY update_at DESC, id DESC';
         $statement = $this->connection->prepare($sql);
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu báo cáo lỗi.');
         }
-        $statement->bind_param('s', $date);
+        $statement->bind_param('ss', $date, $to);
         $statement->execute();
         $result = $statement->get_result();
         if (!$result) {
@@ -180,13 +181,14 @@ class FilePeer
         return $reportRows;
     }
 
-    public function getAllFileReportRows($date)
+    public function getAllFileReportRows($date, $to = null)
     {
+        $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
         $sql = 'SELECT ma_lk, ma_bn, ngay_lap, validation_result
-                FROM `file` WHERE DATE(update_at) = ? ORDER BY update_at DESC, id DESC';
+                FROM `file` WHERE update_at >= ? AND update_at < ? ORDER BY update_at DESC, id DESC';
         $statement = $this->connection->prepare($sql);
         if (!$statement) throw new RuntimeException('Không thể chuẩn bị dữ liệu tổng hợp file.');
-        $statement->bind_param('s', $date);
+        $statement->bind_param('ss', $date, $to);
         $statement->execute();
         $result = $statement->get_result();
         if (!$result) throw new RuntimeException('Không thể tải dữ liệu tổng hợp file.');

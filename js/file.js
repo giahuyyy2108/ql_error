@@ -1398,6 +1398,8 @@
         fileSearchTimer = window.setTimeout(searchFiles, 200);
     });
 
+    window.exportErrorReportSheets = exportErrorReportSheets;
+
     $('#btn-export-file-excel').on('click', function () {
         var button = $(this).prop('disabled', true);
         $.ajax({

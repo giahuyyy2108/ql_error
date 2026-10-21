@@ -15,8 +15,8 @@ require_once __DIR__ . '/../bean/HeThongPeer.php';
 
 class fileAction
 {
-    private $request;
-    private $filePeer;
+    protected $request;
+    protected $filePeer;
     private $maxFileSize = 5242880; // 5 MB
 
     public function __construct()
@@ -195,13 +195,17 @@ class fileAction
 
     public function getErrorReport()
     {
-        $date = $this->selectedDate();
+        $period = trim((string) $this->request->getParameter('period', false));
+        $value = trim((string) $this->request->getParameter('date', false));
+        $month = $period === 'month' ? DateTime::createFromFormat('!Y-m', $value) : false;
+        $date = $month ? $month->format('Y-m-01') : $this->selectedDate();
         if ($date === null) {
             return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
         }
         try {
-            $rows = $this->filePeer->getErrorReportRows($date);
-            $files = $this->filePeer->getAllFileReportRows($date);
+            $to = $month ? (clone $month)->modify('+1 month')->format('Y-m-01') : null;
+            $rows = $this->filePeer->getErrorReportRows($date, $to);
+            $files = $this->filePeer->getAllFileReportRows($date, $to);
             return $this->json(array('success' => true, 'data' => $rows, 'files' => $files));
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
