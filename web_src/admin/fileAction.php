@@ -27,6 +27,24 @@ class fileAction
 
     public function index()
     {
+        $currentKhoa = null;
+        if (!empty($_SESSION['sUserName'])) {
+            global $connect;
+            $db = new db_mysql();
+            $db->connect();
+            $db->selectdb();
+            $statement = $connect->prepare(
+                'SELECT id_khoa FROM `user` WHERE username = ? LIMIT 1'
+            );
+            $username = $_SESSION['sUserName'];
+            $statement->bind_param('s', $username);
+            $statement->execute();
+            if ($row = $statement->get_result()->fetch_assoc()) {
+                $currentKhoa = $row['id_khoa'];
+            }
+            $statement->close();
+        }
+        $this->request->setAttribute('currentUserKhoa', $currentKhoa);
         if (empty($_SESSION['xml_file_csrf'])) {
             $_SESSION['xml_file_csrf'] = bin2hex(random_bytes(32));
         }
@@ -83,7 +101,11 @@ class fileAction
         }
 
         try {
-            $queuedName = $this->queueUploadedXml($upload['tmp_name'], $fileName);
+            $queuedName = $this->queueUploadedXml(
+                $upload['tmp_name'],
+                $fileName,
+                $this->request->getParameter('id_khoa')
+            );
         } catch (Throwable $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
@@ -442,8 +464,9 @@ class fileAction
         return $fileName;
     }
 
-    private function queueUploadedXml($temporaryUploadPath, $fileName)
+    private function queueUploadedXml($temporaryUploadPath, $fileName, $postedKhoa = null)
     {
+        global $connect;
         $directory = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml';
         if (!is_dir($directory) || !is_writable($directory)) {
             throw new RuntimeException('Thư mục hàng đợi XML không thể ghi dữ liệu.');
@@ -461,6 +484,32 @@ class fileAction
             @unlink($stagingPath);
             throw new RuntimeException('Không thể hoàn tất việc đưa file vào hàng đợi.');
         }
+
+        $userKhoa = ($postedKhoa !== null && $postedKhoa !== '')
+            ? (int) $postedKhoa : null;
+        $currentUsername = !empty($_SESSION['sUserName'])
+            ? $_SESSION['sUserName']
+            : (isset($_SESSION['username']) ? $_SESSION['username'] : '');
+        if ($currentUsername !== '') {
+            $db = new db_mysql();
+            $db->connect();
+            $result = $db->query(
+                "SELECT id_khoa FROM `user` WHERE username='"
+                . addslashes($currentUsername) . "' LIMIT 1"
+            );
+            if ($row = $db->fetch_Array($result)) {
+                $userKhoa = $row['id_khoa'];
+            }
+        }
+        $queueStatement = $connect->prepare(
+            'INSERT INTO `xml_upload_queue` (file_name, id_khoa) VALUES (?, ?)'
+        );
+        $queuedFileName = basename($destination);
+        $queueKhoa = $userKhoa === null ? null : (string) $userKhoa;
+        $queueStatement->bind_param('ss', $queuedFileName, $queueKhoa);
+        $queueStatement->execute();
+        $queueStatement->close();
+
         return basename($destination);
     }
 

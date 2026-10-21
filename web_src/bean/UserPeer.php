@@ -33,6 +33,7 @@ class UserPeer
 		$user->setUser("adminType", $result["adminType"]);
 		$user->setUser("quyen", $result["quyen"]);
 		$user->setUser("maNQ", $result["maNQ"]);
+		$user->setUser("id_khoa", isset($result["id_khoa"]) ? $result["id_khoa"] : null);
 		$user->setUser("nd_block", $result["nd_block"]);
 		//$user->setUser("changeQuyen",$result["changeQuyen"]);			
 
@@ -195,9 +196,9 @@ class UserPeer
 	function save($user, $pass = 0)
 	{
 		if ($user->getUser("id") == "" || $user->getUser("id") == 0) {
-			$sql = "INSERT INTO `user`(`username`, `password`,`hoTen`,`diaChi`,`email`,`dienThoai`,`quyen`,`maNQ`) 
+			$sql = "INSERT INTO `user`(`username`, `password`,`hoTen`,`diaChi`,`email`,`dienThoai`,`quyen`,`maNQ`,`id_khoa`) 
 					VALUES ('" . $user->getUser("username") . "','" . md5($user->getUser("password")) . "','" . $user->getUser("hoTen") . "',
-					'" . $user->getUser("diaChi") . "','" . $user->getUser("email") . "','" . $user->getUser("dienThoai") . "','" . $user->getUser("quyen") . "','" . $user->getUser("maNQ") . "')";
+					'" . $user->getUser("diaChi") . "','" . $user->getUser("email") . "','" . $user->getUser("dienThoai") . "','" . $user->getUser("quyen") . "','" . $user->getUser("maNQ") . "','" . $user->getUser("id_khoa") . "')";
 		} else {
 			if ($pass == 0) {
 				if ($user->getUser("password") == "") { // sua user khong doi pass
@@ -208,6 +209,7 @@ class UserPeer
 								  `dienThoai`='" . $user->getUser("dienThoai") . "',
 								  `quyen` = '" . $user->getUser("quyen") . "',
 								  `maNQ` = '" . $user->getUser("maNQ") . "'
+								  ,`id_khoa` = '" . $user->getUser("id_khoa") . "'
 							WHERE `id` =  '" . $user->getUser("id") . "' ";
 				} else { // sua user co doi pass
 					$sql = "UPDATE `user` SET 
@@ -218,6 +220,7 @@ class UserPeer
 								  `dienThoai` = '" . $user->getUser("dienThoai") . "',
 								  `quyen` = '" . $user->getUser("quyen") . "',
 								  `maNQ` = '" . $user->getUser("maNQ") . "'
+								  ,`id_khoa` = '" . $user->getUser("id_khoa") . "'
 							WHERE `id` =  '" . $user->getUser("id") . "' ";
 				}
 			} else { // doi pass

@@ -42,6 +42,12 @@ $listNQ = $request->getAttribute("listNQ");
 			}
 ?>
 			</select>
+			<select id="khoa" class="select form-control">
+				<option value="">-- Chọn khoa --</option>
+				<? foreach ($request->getAttribute("listKhoa") as $khoa) { ?>
+				<option value="<?=$khoa['id']?>"><?=$khoa['ten']?></option>
+				<? } ?>
+			</select>
 		</div>
 		<table id="datatable-user" class="table table-striped table-bordered dt-responsive nowrap" cellspacing="0" width="100%">
 			<thead>
@@ -51,6 +57,7 @@ $listNQ = $request->getAttribute("listNQ");
 					<th data-type="String" validate-type="true" exception="edit">Tên đăng nhập <span style="color:red">*</span></th>
 					<th data-type="Password" validate-type="true">Mật khẩu <span style="color:red">*</span></th>
 					<th data-type="Select" objectid="nhomquyen" validate-type="true">Nhóm quyền </th>
+					<th data-type="Select" objectid="khoa">id_khoa</th>
 					<th>Thao tác</th>
 				</tr>
 			</thead>

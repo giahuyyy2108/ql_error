@@ -89,10 +89,23 @@ function init_DataTables() {
 				}
 			},	
 			
-			{                
+			{
 				"targets": 5,
-				"width": '5%',
+				"width": '15%',
+				"data": "id_khoa",
+				"defaultContent": "",
+				"render": function (data) {
+					var value = data == null ? '' : data;
+					return '<input type="hidden" id="selectid" value="' + value + '">' + $("#khoa option[value='" + value + "']").text();
+				}
+			},
+			{
+				"targets": 6,
+				"width": '10%',
+				"className": "text-center",
+				"responsivePriority": 1,
 				"data" : "id",
+				"defaultContent": "",
 				"sortable": false,
 				"render": function ( data, type, row ) {
 					var save = "",update = "", del = "", id = "", polyci = "", lock="";
@@ -163,7 +176,7 @@ $(document).ready(function() {
 		save = '<a id="btn-update" class="add" title="Lưu" data-toggle="tooltip"><i class="glyphicon glyphicon-floppy-disk" style="color: green;"></i></a>';
 		addInput($('#datatable-user'),$(this).closest('tr'));					
 		$(this).closest('tr').find(".edit, .polici, .lock, .delete").toggle();			
-		$(this).closest('tr').find("td:eq(5)").append(save);
+		$(this).closest('tr').find("td:eq(6)").append(save);
 	});
 	
 	// Delete row on delete button click

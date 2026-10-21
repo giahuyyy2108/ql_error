@@ -17,10 +17,29 @@ class FilePeer
 
     public function getList($date)
     {
+        $isAdmin = isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1;
+        $userKhoa = null;
+        $filterByKhoa = false;
+        if (!$isAdmin) {
+            $userStatement = $this->connection->prepare(
+                'SELECT id_khoa FROM `user` WHERE username = ? LIMIT 1'
+            );
+            $username = isset($_SESSION['sUserName']) ? $_SESSION['sUserName'] : '';
+            $userStatement->bind_param('s', $username);
+            $userStatement->execute();
+            $userRow = $userStatement->get_result()->fetch_assoc();
+            if ($userRow && $userRow['id_khoa'] !== null) {
+                $userKhoa = (int) $userRow['id_khoa'];
+                $filterByKhoa = true;
+            }
+            $userStatement->close();
+        }
+
         $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, kichthuoc, processing_status,
                        validation_result, update_at, create_at
                 FROM `file`
-                WHERE update_at >= ? AND update_at < ?
+                WHERE update_at >= ? AND update_at < ?'
+                . ($filterByKhoa ? ' AND id_khoa = ?' : '') . '
                 ORDER BY update_at DESC, id DESC';
         $statement = $this->connection->prepare($sql);
         if (!$statement) {
@@ -28,7 +47,11 @@ class FilePeer
         }
         $dateFrom = $date . ' 00:00:00';
         $dateTo = date('Y-m-d 00:00:00', strtotime($date . ' +1 day'));
-        $statement->bind_param('ss', $dateFrom, $dateTo);
+        if ($filterByKhoa) {
+            $statement->bind_param('ssi', $dateFrom, $dateTo, $userKhoa);
+        } else {
+            $statement->bind_param('ss', $dateFrom, $dateTo);
+        }
         $statement->execute();
         $result = $statement->get_result();
         if (!$result) {
@@ -249,19 +272,71 @@ class FilePeer
 
         $statement = $this->connection->prepare(
             'INSERT INTO `file`
-             (ten, ma_lk, ma_bn, ho_ten, thongtin_bn, ngay_lap, kichthuoc, file_path, processing_status, validation_result)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+             (ten, ma_lk, ma_bn, ho_ten, thongtin_bn, ngay_lap, kichthuoc, file_path, processing_status, validation_result, id_khoa)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu file.');
         }
 
         $size = (string) $size;
-        $statement->bind_param('ssssssssss', $name, $maLk, $maBn, $hoTen, $jsonThongTinBn, $ngayLap, $size, $filePath, $status, $jsonValidation);
+        $idKhoa = null;
+        $queueStatement = $this->connection->prepare(
+            'SELECT id_khoa FROM `xml_upload_queue` WHERE file_name = ? LIMIT 1'
+        );
+        $queuedFileName = basename($filePath);
+        $queueStatement->bind_param('s', $queuedFileName);
+        $queueStatement->execute();
+        $queueRow = $queueStatement->get_result()->fetch_assoc();
+        if ($queueRow && $queueRow['id_khoa'] !== null) {
+            $idKhoa = (int) $queueRow['id_khoa'];
+        }
+        $queueStatement->close();
+
+        $metaPath = $filePath . '.meta.json';
+        if (!is_file($metaPath)) {
+            $queueMetaPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage'
+                . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR
+                . basename($filePath) . '.meta.json';
+            if (is_file($queueMetaPath)) {
+                $metaPath = $queueMetaPath;
+            }
+        }
+        if (is_file($metaPath)) {
+            $meta = json_decode((string) file_get_contents($metaPath), true);
+            $idKhoa = isset($meta['id_khoa']) && $meta['id_khoa'] !== null
+                ? (int) $meta['id_khoa'] : null;
+        }
+        if ($idKhoa === null && !empty($_SESSION['sUserName'])) {
+            $userStatement = $this->connection->prepare(
+                'SELECT id_khoa FROM `user` WHERE username = ? LIMIT 1'
+            );
+            $username = $_SESSION['sUserName'];
+            $userStatement->bind_param('s', $username);
+            $userStatement->execute();
+            $userRow = $userStatement->get_result()->fetch_assoc();
+            if ($userRow && $userRow['id_khoa'] !== null) {
+                $idKhoa = (int) $userRow['id_khoa'];
+            }
+            $userStatement->close();
+        }
+        $idKhoaValue = $idKhoa === null ? null : (string) $idKhoa;
+        $statement->bind_param('sssssssssss', $name, $maLk, $maBn, $hoTen, $jsonThongTinBn, $ngayLap, $size, $filePath, $status, $jsonValidation, $idKhoaValue);
         if (!$statement->execute()) {
             $statement->close();
             throw new RuntimeException('Không thể lưu file vào cơ sở dữ liệu.');
         }
+
+        if (is_file($metaPath)) {
+            @unlink($metaPath);
+        }
+
+        $deleteQueue = $this->connection->prepare(
+            'DELETE FROM `xml_upload_queue` WHERE file_name = ?'
+        );
+        $deleteQueue->bind_param('s', $queuedFileName);
+        $deleteQueue->execute();
+        $deleteQueue->close();
 
         $id = $statement->insert_id;
         $statement->close();

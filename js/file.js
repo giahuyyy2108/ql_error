@@ -1611,6 +1611,7 @@
     function uploadSingleXmlFile(file) {
         var formData = new FormData();
         formData.append('xmlFile', file, file.name);
+        formData.append('id_khoa', $('#current-user-khoa').val() || '');
         formData.append('csrf_token', csrfToken);
         return $.ajax({
             url: baseUrl + 'file/upload/',

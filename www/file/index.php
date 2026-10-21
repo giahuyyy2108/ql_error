@@ -91,6 +91,7 @@
 </div>
 
 <input type="hidden" id="xml-file-csrf" value="<?=htmlspecialchars($request->getAttribute('xmlFileCsrf'), ENT_QUOTES, 'UTF-8')?>">
+<input type="hidden" id="current-user-khoa" value="<?=htmlspecialchars((string) $request->getAttribute('currentUserKhoa'), ENT_QUOTES, 'UTF-8')?>">
 
 <?php require __DIR__ . '/partials/upload-modal.php'; ?>
 <?php require __DIR__ . '/partials/view-modal.php'; ?>

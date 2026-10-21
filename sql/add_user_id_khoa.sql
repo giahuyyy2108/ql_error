@@ -1,0 +1,5 @@
+ALTER TABLE `user` ADD COLUMN `id_khoa` INT NULL AFTER `maNQ`;
+ALTER TABLE `user`
+    ADD CONSTRAINT `fk_user_khoa`
+    FOREIGN KEY (`id_khoa`) REFERENCES `khoa` (`id`)
+    ON UPDATE CASCADE ON DELETE SET NULL;

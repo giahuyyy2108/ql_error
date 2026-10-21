@@ -24,6 +24,14 @@ class userAction
 		$arrNQ = $nhomquyenPeer->getListNQ();
 
 		$this->request->setAttribute("listNQ", $arrNQ);
+		$db = new db_mysql();
+		$db->connect();
+		$result = $db->query("SELECT id, ten FROM khoa ORDER BY ten ASC");
+		$listKhoa = array();
+		while ($row = $db->fetch_Array($result)) {
+			$listKhoa[] = $row;
+		}
+		$this->request->setAttribute("listKhoa", $listKhoa);
 
 		$this->request->setModel("www/admin/nguoidung/nguoiDung.htm");
 		return true;
@@ -115,6 +123,7 @@ class userAction
 			$User->set("username", $arrayData[1]);
 			$User->set("password", $arrayData[2]);
 			$User->set("maNQ", $arrayData[3]);
+			$User->set("id_khoa", isset($arrayData[4]) && $arrayData[4] !== '' ? $arrayData[4] : null);
 
 			$nhomquyen = $nhomquyenPeer->getNQID($arrayData[3]);
 			if ($nhomquyen != false)
@@ -130,6 +139,7 @@ class userAction
 				$User->set("password", $arrayData[2]);
 
 			$User->set("maNQ", $arrayData[3]);
+			$User->set("id_khoa", isset($arrayData[4]) && $arrayData[4] !== '' ? $arrayData[4] : null);
 
 			$userOld = $this->userPeer->getUserID($userId);
 			$User->set("quyen", $userOld->get("quyen"));

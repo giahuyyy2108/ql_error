@@ -34,8 +34,8 @@ class TableLookupService
             'conditions' => array('is_active')
         ),
         'khoa' => array(
-            'table' => 'khoa_phong',
-            'columns' => array('ma'),
+            'table' => 'khoa',
+            'columns' => array('id'),
             'conditions' => array('is_active')
         ),
         'ma_tinhthanh' => array(
