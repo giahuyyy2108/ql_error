@@ -156,6 +156,14 @@ class fileAction
         ));
     }
 
+    public function getAuditLogs()
+    {
+        $maLk = trim((string) $this->request->getParameter('ma_lk', false));
+        if ($maLk === '') return $this->json(array('success' => false, 'message' => 'Thiếu MALK.'));
+        try { return $this->json(array('success' => true, 'data' => $this->filePeer->getAuditLogs($maLk))); }
+        catch (Throwable $exception) { return $this->json(array('success' => false, 'message' => $exception->getMessage())); }
+    }
+
     public function download()
     {
         $id = (int) $this->request->getParameter('id', false);
@@ -506,11 +514,12 @@ class fileAction
             }
         }
         $queueStatement = $connect->prepare(
-            'INSERT INTO `xml_upload_queue` (file_name, id_khoa) VALUES (?, ?)'
+            'INSERT INTO `xml_upload_queue` (file_name, id_khoa, username) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE id_khoa = VALUES(id_khoa), username = VALUES(username)'
         );
         $queuedFileName = basename($destination);
         $queueKhoa = $userKhoa === null ? null : (string) $userKhoa;
-        $queueStatement->bind_param('ss', $queuedFileName, $queueKhoa);
+        $queueStatement->bind_param('sss', $queuedFileName, $queueKhoa, $currentUsername);
         $queueStatement->execute();
         $queueStatement->close();
 

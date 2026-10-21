@@ -1118,12 +1118,15 @@
     }
 
     function applyXmlViewMode() {
+        var auditMode = xmlViewMode === 'audit';
         var sourceMode = xmlViewMode === 'source';
         $('#decoded-xml-source').toggle(sourceMode);
         $('#decoded-json-tree').toggle(xmlViewMode === 'tree');
         $('#decoded-table-view').toggle(xmlViewMode === 'table');
         $('#decoded-error-statistics').toggle(xmlViewMode === 'errors');
         $('#patient-info').toggle(xmlViewMode === 'errors');
+        $('#audit-panel').toggle(auditMode);
+        $('.xml-view-layout').toggle(!auditMode);
         $('#validation-summary, #validation-valid-summary').toggle(xmlViewMode !== 'errors');
         $('.xml-file-picker').toggle(xmlViewMode !== 'errors' && !sourceMode);
         $('#xml-source-navigation').toggle(sourceMode);
@@ -1138,7 +1141,7 @@
 
     $('[data-xml-view]').on('click', function () {
         var requestedMode = $(this).attr('data-xml-view');
-        xmlViewMode = requestedMode === 'tree' || requestedMode === 'table' || requestedMode === 'errors' ? requestedMode : 'source';
+        xmlViewMode = requestedMode === 'tree' || requestedMode === 'table' || requestedMode === 'errors' || requestedMode === 'audit' ? requestedMode : 'source';
         renderSelectedDecodedFile();
     });
 
@@ -1828,6 +1831,8 @@
     $('#datatable-file').on('click', '.btn-view-file', function () {
         var id = $(this).attr('data-id');
         var name = $(this).attr('data-malk');
+        $('#btn-view-audit').data('malk', name);
+        $('#audit-panel').hide();
         currentDecodedContent = null;
         currentValidationResults = [];
         currentViewFileName = '';
@@ -1900,6 +1905,36 @@
                 message = 'Phiên đăng nhập đã hết hạn. Vui lòng tải lại trang và đăng nhập lại.';
             }
             $('#decoded-json-tree').text(message);
+        });
+    });
+
+    $(document).on('click', '#btn-view-audit', function () {
+        var panel = $('#audit-panel'), list = $('#audit-list').empty();
+        $('.xml-view-layout, #patient-info').hide();
+        $('#btn-view-audit').addClass('active');
+        $.getJSON(baseUrl + 'file/getAuditLogs/', {ma_lk: $(this).data('malk')}, function (response) {
+            if (!response.success) { list.append($('<tr><td colspan="6">').text(response.message)); }
+            else if (!response.data.length) { list.append('<tr><td colspan="6">Chưa có nhật ký.</td></tr>'); }
+            else response.data.forEach(function (row) { var tr = $('<tr>'); [row.created_at,row.action,row.username,row.khoa_name,row.file_name,(row.file_path_old || '') + (row.file_path_new ? ' → ' + row.file_path_new : ''),row.error_detail].forEach(function (v) { tr.append($('<td>').text(v || '')); }); list.append(tr); });
+            panel.show();
+        });
+    });
+
+    $(document).on('click', '#modal-view-xml .xml-view-toolbar button:not(#btn-view-audit)', function () {
+        $('#audit-panel').hide();
+        $('.xml-view-layout').show();
+        applyXmlViewMode();
+        $('#btn-view-audit').removeClass('active');
+    });
+
+    $(document).on('click', '#btn-search-audit', function () {
+        var malk = $.trim($('#audit-malk').val()), list = $('#audit-tab-list').empty();
+        if (!malk) { list.append('<tr><td colspan="8">Vui lòng nhập MALK.</td></tr>'); return; }
+        list.append('<tr><td colspan="8">Đang tải...</td></tr>');
+        $.getJSON(baseUrl + 'file/getAuditLogs/', {ma_lk: malk}, function (response) {
+            list.empty();
+            if (!response.success || !response.data.length) { list.append($('<tr><td colspan="8">').text(response.success ? 'Chưa có nhật ký.' : response.message)); return; }
+            response.data.forEach(function (row) { var tr = $('<tr>'); [row.created_at,row.action,row.username,row.khoa_name,row.file_name,row.file_path_old,row.file_path_new,row.error_detail].forEach(function (v) { tr.append($('<td>').text(v || '')); }); list.append(tr); });
         });
     });
 

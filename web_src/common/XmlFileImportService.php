@@ -105,7 +105,8 @@ class XmlFileImportService
                 'ma_lk' => $maLk,
                 'name' => $fileName,
                 'validation' => $validationResult,
-                'old_file_path' => $existing['file_path']
+                'old_file_path' => $existing['file_path'],
+                'old_file' => $existing
             );
         }
         $id = $this->filePeer->insert(

@@ -50,11 +50,11 @@ Database chỉ lưu metadata, đường dẫn file, trạng thái và kết qu�
 
 File không đạt rule vẫn được import với trạng thái `failed`. Mỗi lần người dùng mở file, hệ thống chạy validation lại và tự chuyển file giữa `failed` và `processed` nếu kết quả thay đổi.
 
-Nếu `MA_LK` đã tồn tại, file mới không bị bỏ qua: hệ thống quét lại đúng một lần, cập nhật bản ghi hiện có (giữ nguyên ID) và chuyển phiên bản file cũ vào `deleted` để giữ 30 ngày.
+Nếu `MA_LK` đã tồn tại, file mới không bị bỏ qua: hệ thống quét lại đúng một lần, cập nhật bản ghi hiện có (giữ nguyên ID) và lưu phiên bản file cũ vào `storage/xml/archive/YYYYMMDD` theo ngày thay thế. Tên file được tạo hậu tố nếu bị trùng nên không ghi đè phiên bản cũ.
 
 Nút **Quét lại tất cả** đưa các bản ghi vào trạng thái `pending_revalidation` rồi tự xử lý từng lô 2 file ngay từ giao diện. Worker nền cũng có thể nhận cùng hàng đợi; mỗi lô được khóa nhận việc để hai tiến trình không quét trùng một file.
 
-File bị người dùng xóa được chuyển vào `storage/xml/deleted`, giữ 30 ngày rồi worker mới xóa vĩnh viễn.
+File bị người dùng xóa được chuyển vào `storage/xml/deleted`, giữ 30 ngày rồi worker mới xóa vĩnh viễn. Các phiên bản cũ do trùng `MA_LK` được lưu riêng trong `archive` và không nằm trong luồng dọn `deleted`.
 
 ## Log worker
 

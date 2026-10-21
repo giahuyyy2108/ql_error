@@ -80,11 +80,12 @@ $processingDir = $processingRootDir . DIRECTORY_SEPARATOR . 'worker-' . $options
 $processedDir = $inboxDir . DIRECTORY_SEPARATOR . 'processed';
 $failedDir = $inboxDir . DIRECTORY_SEPARATOR . 'failed';
 $deletedDir = $inboxDir . DIRECTORY_SEPARATOR . 'deleted';
+$archiveDir = $inboxDir . DIRECTORY_SEPARATOR . 'archive';
 $runtimeDir = $defaultRuntimeDir;
 $turnPath = $runtimeDir . DIRECTORY_SEPARATOR . '.xml_worker_turn';
 $runtimeLogsRoot = $runtimeDir . DIRECTORY_SEPARATOR . 'logs';
 $runtimeLogDir = $runtimeLogsRoot . DIRECTORY_SEPARATOR . date('Ymd');
-foreach (array($inboxDir, $processingRootDir, $processingDir, $processedDir, $failedDir, $deletedDir, $runtimeDir, $runtimeLogsRoot, $runtimeLogDir) as $directory) {
+foreach (array($inboxDir, $processingRootDir, $processingDir, $processedDir, $failedDir, $deletedDir, $archiveDir, $runtimeDir, $runtimeLogsRoot, $runtimeLogDir) as $directory) {
     if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
         fwrite(STDERR, "Không thể tạo thư mục: " . $directory . "\n");
         exit(1);
@@ -457,6 +458,7 @@ $process = function ($path) use (
     $processedDir,
     $failedDir,
     $deletedDir,
+    $archiveDir,
     $uniqueDestination,
     $archive,
     $datedDirectory,
@@ -514,16 +516,49 @@ $process = function ($path) use (
             );
         }
         if ($result['status'] === 'reimported' && !empty($result['old_file_path'])) {
+            $oldErrors = isset($result['old_file']['validation_result'])
+                ? $result['old_file']['validation_result'] : null;
+            $oldErrorList = array();
+            $oldValidation = json_decode((string) $oldErrors, true);
+            if (is_array($oldValidation)) {
+                foreach ($oldValidation as $validationItem) {
+                    foreach ((isset($validationItem['errors']) && is_array($validationItem['errors']) ? $validationItem['errors'] : array()) as $error) {
+                        $message = isset($error['message']) ? (string) $error['message'] : 'Lỗi validation';
+                        $field = isset($error['field_name']) ? (string) $error['field_name'] : '';
+                        $oldErrorList[] = $field !== '' ? $field . ': ' . $message : $message;
+                    }
+                }
+            }
+            $oldErrors = $oldErrorList ? implode(PHP_EOL, $oldErrorList) : (string) $oldErrors;
+            $filePeer->saveAuditLog($result['id'], $result['ma_lk'], $result['name'], 'UPDATE', $result['old_file_path'], $finalStoredPath, $oldErrors);
             $oldPath = preg_match('/^[A-Za-z]:[\\\\\/]/', $result['old_file_path']) === 1
                 ? $result['old_file_path']
                 : $projectRoot . DIRECTORY_SEPARATOR
                     . str_replace('/', DIRECTORY_SEPARATOR, $result['old_file_path']);
             $resolvedOldPath = realpath($oldPath);
+            if ($resolvedOldPath === false) {
+                $search = new RecursiveIteratorIterator(
+                    new RecursiveDirectoryIterator($inboxDir, FilesystemIterator::SKIP_DOTS)
+                );
+                foreach ($search as $candidate) {
+                    if ($candidate->isFile() && strcasecmp($candidate->getFilename(), basename($oldPath)) === 0) {
+                        $resolvedOldPath = $candidate->getRealPath();
+                        break;
+                    }
+                }
+            }
             if ($resolvedOldPath !== false && is_file($resolvedOldPath)
                 && strcasecmp($resolvedOldPath, $finalPath) !== 0) {
-                $deletedPath = $uniqueDestination($deletedDir, basename($resolvedOldPath));
+                $archiveDateDir = $archiveDir . DIRECTORY_SEPARATOR . date('Ymd');
+                if (!is_dir($archiveDateDir) && !mkdir($archiveDateDir, 0775, true) && !is_dir($archiveDateDir)) {
+                    throw new RuntimeException('Không thể tạo thư mục lưu phiên bản cũ.');
+                }
+                $archiveBase = pathinfo(basename($resolvedOldPath), PATHINFO_FILENAME)
+                    . '_' . date('Ymd_His') . '.xml';
+                $deletedPath = $uniqueDestination($archiveDateDir, $archiveBase);
                 if (rename($resolvedOldPath, $deletedPath)) {
                     touch($deletedPath);
+                    $filePeer->saveFileHistory($result['old_file'], $deletedPath);
                     $oldErrorPath = $resolvedOldPath . '.error.txt';
                     if (is_file($oldErrorPath)) {
                         $deletedErrorPath = $deletedPath . '.error.txt';

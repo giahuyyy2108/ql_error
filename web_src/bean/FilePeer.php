@@ -233,7 +233,7 @@ class FilePeer
     public function getByMaLk($maLk)
     {
         $statement = $this->connection->prepare(
-            'SELECT id, ten, ma_lk, kichthuoc, file_path, processing_status, validation_result
+            'SELECT id, ten, ma_lk, kichthuoc, file_path, processing_status, validation_result, id_khoa
              FROM `file` WHERE ma_lk = ? LIMIT 1'
         );
         if (!$statement) {
@@ -383,6 +383,79 @@ class FilePeer
         }
         $statement->close();
         return true;
+    }
+
+    public function saveFileHistory($existing, $archivePath)
+    {
+        $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : null;
+        if ($username === null || $username === '') {
+            $queue = $this->connection->prepare('SELECT username FROM `xml_upload_queue` WHERE file_name = ? LIMIT 1');
+            if ($queue) {
+                $queuedName = (string) $existing['ten'];
+                $queue->bind_param('s', $queuedName);
+                $queue->execute();
+                $queueRow = $queue->get_result()->fetch_assoc();
+                $username = $queueRow && $queueRow['username'] !== null ? (string) $queueRow['username'] : null;
+                $queue->close();
+            }
+        }
+        $khoaName = null;
+        if (isset($existing['id_khoa']) && $existing['id_khoa'] !== null) {
+            $query = $this->connection->prepare('SELECT ten FROM `khoa` WHERE id = ? LIMIT 1');
+            if ($query) {
+                $idKhoa = (int) $existing['id_khoa'];
+                $query->bind_param('i', $idKhoa);
+                $query->execute();
+                $row = $query->get_result()->fetch_assoc();
+                $khoaName = $row ? (string) $row['ten'] : null;
+                $query->close();
+            }
+        }
+        $hash = is_file($archivePath) ? hash_file('sha256', $archivePath) : null;
+        $query = $this->connection->prepare(
+            'INSERT INTO `file_history` (file_id, ma_lk, file_name, replaced_at, username, khoa_name, file_path, file_hash, old_validation_result)
+             VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?)'
+        );
+        if (!$query) throw new RuntimeException('Không thể chuẩn bị lịch sử file.');
+        $id = (int) $existing['id'];
+        $maLk = (string) $existing['ma_lk'];
+        $name = (string) $existing['ten'];
+        $validation = isset($existing['validation_result']) ? $existing['validation_result'] : null;
+        $query->bind_param('isssssss', $id, $maLk, $name, $username, $khoaName, $archivePath, $hash, $validation);
+        if (!$query->execute()) throw new RuntimeException('Không thể lưu lịch sử file.');
+        $query->close();
+    }
+
+    public function saveAuditLog($fileId, $maLk, $fileName, $action, $oldPath, $newPath, $errorDetail = null)
+    {
+        $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : null;
+        if (($username === null || $username === '') && $fileName !== '') {
+            $queue = $this->connection->prepare('SELECT username FROM `xml_upload_queue` WHERE file_name = ? LIMIT 1');
+            if ($queue) {
+                $queue->bind_param('s', $fileName); $queue->execute();
+                $queueRow = $queue->get_result()->fetch_assoc();
+                $username = $queueRow && $queueRow['username'] !== null ? (string) $queueRow['username'] : null;
+                $queue->close();
+            }
+        }
+        $query = $this->connection->prepare(
+            'INSERT INTO `file_audit_logs` (file_id, ma_lk, file_name, action, username, file_path_old, file_path_new, error_detail)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        if (!$query) throw new RuntimeException('Không thể chuẩn bị nhật ký truy vết.');
+        $id = $fileId === null ? null : (int) $fileId;
+        $query->bind_param('isssssss', $id, $maLk, $fileName, $action, $username, $oldPath, $newPath, $errorDetail);
+        if (!$query->execute()) throw new RuntimeException('Không thể lưu nhật ký truy vết.');
+        $query->close();
+    }
+
+    public function getAuditLogs($maLk)
+    {
+        $query = $this->connection->prepare('SELECT created_at, action, username, khoa_name, file_name, file_path_old, file_path_new, error_detail FROM file_audit_logs WHERE ma_lk = ? ORDER BY created_at DESC, id DESC');
+        if (!$query) throw new RuntimeException('Không thể tải nhật ký truy vết.');
+        $query->bind_param('s', $maLk); $query->execute(); $result = $query->get_result();
+        $rows = array(); while ($row = $result->fetch_assoc()) $rows[] = $row;
+        $query->close(); return $rows;
     }
 
     public function getById($id)
