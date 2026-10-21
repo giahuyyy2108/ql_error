@@ -10,7 +10,7 @@
     var currentDecodedContent = null;
     var currentValidationResults = [];
     var currentViewFileName = '';
-    var xmlViewMode = 'source';
+    var xmlViewMode = 'errors';
     var xmlDisplaySettings = { show_errors: true, show_valid: true };
     var revalidationInProgress = false;
     var uploadInProgress = false;
@@ -745,7 +745,7 @@
             .filter('[data-file-index="' + index + '"]')
             .addClass('is-active').attr('aria-selected', 'true');
         var tree = $('#decoded-json-tree').empty();
-        $('#decoded-xml-source, #decoded-table-view').empty();
+        $('#decoded-xml-source, #decoded-table-view, #decoded-error-statistics').empty();
         if (!decodedFiles[index]) {
             tree.text('Không có nội dung đã giải mã.');
             $('#decoded-xml-source, #decoded-table-view').text('Không có nội dung đã giải mã.');
@@ -786,7 +786,62 @@
         );
         renderXmlSource(selected);
         renderDecodedTable(selected);
+        renderErrorStatistics(selected);
         applyXmlViewMode();
+    }
+
+    function renderPatientInfo(data) {
+        function value(names) {
+            for (var i = 0; i < names.length; i++) {
+                var found = firstFieldValue(data, names[i]);
+                if (found != null && String(found).trim() !== '') return String(found).trim();
+            }
+            return '-';
+        }
+        function formatDate(value) {
+            var text = String(value || '').trim();
+            var match = /^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})/.exec(text);
+            return match ? match[3] + '/' + match[2] + '/' + match[1] : (text || '-');
+        }
+        $('#patient-info-name').text(value(['HO_TEN']));
+        var patientCode = value(['MA_BN']);
+        $('#patient-info-code').text(patientCode).attr('data-copy-value', patientCode === '-' ? '' : patientCode);
+        $('#patient-info-insurance').text(value(['MA_THE_BHYT']));
+        $('#patient-info-birth').text(value(['NGAY_SINH']));
+        var gender = value(['GIOI_TINH']);
+        $('#patient-info-gender').text(gender === '1' ? 'Nam' : (gender === '2' ? 'Nữ' : gender));
+        $('#patient-info-address').text(value(['DIA_CHI']));
+        $('#patient-info-treatment').text(formatDate(value(['NGAY_VAO'])) + ' - ' + formatDate(value(['NGAY_RA'])));
+    }
+
+    function renderErrorStatistics(selected) {
+        var container = $('#decoded-error-statistics').empty();
+        var errors = [];
+        (decodedFiles || []).forEach(function (file) {
+            (file.errors || []).forEach(function (error) {
+                var severity = String(error.severity || error.level || error.muc_do || '').toLowerCase();
+                if (severity === 'warning' || severity.indexOf('warn') !== -1 || severity.indexOf('cảnh báo') !== -1 || severity.indexOf('canh bao') !== -1) return;
+                errors.push({ error: error, xml: file.type || '' });
+            });
+        });
+        var table = $('<table class="table table-striped table-bordered error-statistics-table">');
+        $('<thead><tr><th>ID lỗi</th><th>Tên lỗi</th><th>XML</th><th>Nguyên nhân</th><th>Hướng xử lý</th></tr></thead>').appendTo(table);
+        var body = $('<tbody>').appendTo(table);
+        if (!errors.length) {
+            $('<tr><td colspan="5" class="text-center text-muted">Không có lỗi trong XML này.</td></tr>').appendTo(body);
+        } else {
+            errors.forEach(function (item) {
+                var error = item.error;
+                $('<tr>').append(
+                    $('<td>').text(error.rule_id == null ? '' : error.rule_id),
+                    $('<td>').text(error.display_name || error.field_name || ''),
+                    $('<td>').text(item.xml),
+                    $('<td>').text(error.message || ''),
+                    $('<td>').text(error.huongxuly || 'Chưa cập nhật hướng xử lý')
+                ).appendTo(body);
+            });
+        }
+        container.append('<h4><i class="fa fa-bar-chart"></i> Thống kê các lỗi</h4>').append(table);
     }
 
     function xmlElementName(name) {
@@ -1067,11 +1122,14 @@
         $('#decoded-xml-source').toggle(sourceMode);
         $('#decoded-json-tree').toggle(xmlViewMode === 'tree');
         $('#decoded-table-view').toggle(xmlViewMode === 'table');
-        $('.xml-file-picker').toggle(!sourceMode);
+        $('#decoded-error-statistics').toggle(xmlViewMode === 'errors');
+        $('#patient-info').toggle(xmlViewMode === 'errors');
+        $('#validation-summary, #validation-valid-summary').toggle(xmlViewMode !== 'errors');
+        $('.xml-file-picker').toggle(xmlViewMode !== 'errors' && !sourceMode);
         $('#xml-source-navigation').toggle(sourceMode);
         $('.cost-reconciliation').toggle(sourceMode);
         $('.xml-view-layout').toggleClass('is-content-only', !sourceMode);
-        $('.xml-view-content').toggleClass('is-table-mode', xmlViewMode === 'table');
+        $('.xml-view-content').toggleClass('is-table-mode', xmlViewMode === 'table' || xmlViewMode === 'errors');
         $('[data-xml-view]').each(function () {
             var active = $(this).attr('data-xml-view') === xmlViewMode;
             $(this).toggleClass('btn-primary active', active).toggleClass('btn-default', !active);
@@ -1080,7 +1138,7 @@
 
     $('[data-xml-view]').on('click', function () {
         var requestedMode = $(this).attr('data-xml-view');
-        xmlViewMode = requestedMode === 'tree' || requestedMode === 'table' ? requestedMode : 'source';
+        xmlViewMode = requestedMode === 'tree' || requestedMode === 'table' || requestedMode === 'errors' ? requestedMode : 'source';
         renderSelectedDecodedFile();
     });
 
@@ -1785,6 +1843,7 @@
             $('<span>').addClass('xml-source-line').text('Đang tải...')
         );
         $('#decoded-table-view').text('Đang tải...');
+        $('#decoded-error-statistics').text('Đang tải...');
         applyXmlViewMode();
         $('#cost-reconciliation-content').text('Đang tính...');
         resetCostReconciliationPosition();
@@ -1807,6 +1866,7 @@
             );
             currentDecodedContent = response.decoded;
             currentValidationResults = response.validation || [];
+            renderPatientInfo(response.decoded);
             var patientName = firstFieldValue(response.decoded, 'HO_TEN');
             $('#view-file-name').text(
                 patientName == null || String(patientName).trim() === '' ? name : String(patientName).trim()

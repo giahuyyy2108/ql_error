@@ -113,6 +113,7 @@
                 render: compactText
             },
             { data: 'error_message', width: '18%', render: compactErrorMessage },
+            { data: 'huongxuly', width: '18%', render: compactErrorMessage },
             {
                 data: 'is_active',
                 width: '9%',
@@ -213,20 +214,27 @@
                     row.field_name,
                     row.display_name,
                     row.rule_type,
-                    row.error_message
+                    row.error_message,
+                    row.huongxuly
                 ];
             }),
             paging: false,
             searching: false,
             ordering: false,
             dom: 'B',
-            columns: [
+            columns: [ /*
                 { title: 'STT' },
                 { title: 'Loại XML' },
                 { title: 'Tên trường' },
                 { title: 'Tên hiển thị' },
                 { title: 'Loại rule' },
                 { title: 'Thông báo lỗi' }
+                { title: 'Hướng xử lý' }
+            */],
+            columns: [
+                { title: 'STT' }, { title: 'Loai XML' }, { title: 'Ten truong' },
+                { title: 'Ten hien thi' }, { title: 'Loai rule' },
+                { title: 'Thong bao loi' }, { title: 'Huong xu ly' }
             ],
             buttons: [{
                 extend: 'excelHtml5',
@@ -262,6 +270,7 @@
         updateRuleTypeHelp();
         $('#rule-value').val(row.rule_value == null ? '' : row.rule_value);
         $('#rule-error-message').val(row.error_message);
+        $('#rule-huongxuly').val(row.huongxuly == null ? '' : row.huongxuly);
         $('#rule-active').prop('checked', Number(row.is_active) === 1);
         $('#modal-rule .modal-title').text('Sửa rule');
         $('#modal-rule').modal('show');
@@ -279,6 +288,7 @@
             rule_type: $('#rule-type').val(),
             rule_value: $('#rule-value').val(),
             error_message: $('#rule-error-message').val(),
+            huongxuly: $('#rule-huongxuly').val(),
             is_active: $('#rule-active').is(':checked') ? '1' : '0',
             csrf_token: csrfToken
         };

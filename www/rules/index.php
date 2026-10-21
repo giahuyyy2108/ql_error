@@ -35,6 +35,7 @@
                     <th>Loại rule</th>
                     <th>Giá trị</th>
                     <th>Thông báo lỗi</th>
+                    <th>Hướng xử lý</th>
                     <th>Trạng thái</th>
                     <th>Thao tác</th>
                 </tr>
@@ -190,6 +191,8 @@
                     <div class="form-group">
                         <label for="rule-error-message">Thông báo lỗi <span class="text-danger">*</span></label>
                         <textarea id="rule-error-message" name="error_message" class="form-control" rows="3" required></textarea>
+                        <label for="rule-huongxuly">Hướng xử lý</label>
+                        <textarea id="rule-huongxuly" name="huongxuly" class="form-control" rows="3"></textarea>
                     </div>
                     <div class="checkbox">
                         <label><input type="checkbox" id="rule-active" checked> Đang hoạt động</label>

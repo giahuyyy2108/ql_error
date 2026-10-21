@@ -1697,6 +1697,7 @@ class XmlRulesValidator
             'display_name' => $rule['display_name'],
             'rule_type' => $rule['rule_type'],
             'rule_value' => isset($rule['rule_value']) ? (string) $rule['rule_value'] : '',
+            'huongxuly' => isset($rule['huongxuly']) ? (string) $rule['huongxuly'] : '',
             'path' => $path,
             'value' => is_scalar($value) ? (string) $value : null,
             'message' => $message !== null ? $message : $rule['error_message'],

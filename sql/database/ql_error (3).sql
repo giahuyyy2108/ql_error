@@ -21217,6 +21217,7 @@ CREATE TABLE `xml_validation_rules` (
   `rule_type` varchar(50) NOT NULL,
   `rule_value` text DEFAULT NULL,
   `error_message` text NOT NULL,
+  `huongxuly` text DEFAULT NULL,
   `is_active` tinyint(4) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
