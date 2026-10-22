@@ -2,6 +2,8 @@
 
 class XmlValidationRulePeer
 {
+    const MAX_LOCK_RETRIES = 3;
+
     private $connection;
 
     public function __construct()
@@ -121,6 +123,7 @@ class XmlValidationRulePeer
 
     public function insert(array $rule)
     {
+        return $this->retryOnLockConflict(function () use ($rule) {
         $sql = 'INSERT INTO xml_validation_rules
                 (file_type, field_name, display_name, rule_type, rule_value, error_message, huongxuly, is_active)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
@@ -141,16 +144,19 @@ class XmlValidationRulePeer
             $rule['is_active']
         );
         if (!$statement->execute()) {
+            $errorCode = (int) $statement->errno;
             $statement->close();
-            throw new RuntimeException('Không thể thêm rule.');
+            throw new RuntimeException('Không thể thêm rule.', $errorCode);
         }
         $id = $statement->insert_id;
         $statement->close();
         return $id;
+        });
     }
 
     public function update($id, array $rule)
     {
+        return $this->retryOnLockConflict(function () use ($id, $rule) {
         $sql = 'UPDATE xml_validation_rules
                 SET file_type = ?, field_name = ?, display_name = ?, rule_type = ?,
                     rule_value = ?, error_message = ?, huongxuly = ?, is_active = ?
@@ -173,15 +179,18 @@ class XmlValidationRulePeer
             $id
         );
         if (!$statement->execute()) {
+            $errorCode = (int) $statement->errno;
             $statement->close();
-            throw new RuntimeException('Không thể cập nhật rule.');
+            throw new RuntimeException('Không thể cập nhật rule.', $errorCode);
         }
         $statement->close();
         return true;
+        });
     }
 
     public function updateActive($id, $isActive)
     {
+        return $this->retryOnLockConflict(function () use ($id, $isActive) {
         $statement = $this->connection->prepare(
             'UPDATE xml_validation_rules SET is_active = ? WHERE id = ?'
         );
@@ -191,8 +200,9 @@ class XmlValidationRulePeer
         $isActive = $isActive ? 1 : 0;
         $statement->bind_param('ii', $isActive, $id);
         if (!$statement->execute()) {
+            $errorCode = (int) $statement->errno;
             $statement->close();
-            throw new RuntimeException('Không thể cập nhật trạng thái rule.');
+            throw new RuntimeException('Không thể cập nhật trạng thái rule.', $errorCode);
         }
         $exists = $statement->affected_rows > 0;
         $statement->close();
@@ -209,18 +219,45 @@ class XmlValidationRulePeer
             $check->close();
         }
         return $exists;
+        });
     }
 
     public function delete($id)
     {
+        return $this->retryOnLockConflict(function () use ($id) {
         $statement = $this->connection->prepare('DELETE FROM xml_validation_rules WHERE id = ?');
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị thao tác xóa rule.');
         }
         $statement->bind_param('i', $id);
-        $statement->execute();
+        if (!$statement->execute()) {
+            $errorCode = (int) $statement->errno;
+            $statement->close();
+            throw new RuntimeException('Không thể xóa rule.', $errorCode);
+        }
         $deleted = $statement->affected_rows > 0;
         $statement->close();
         return $deleted;
+        });
+    }
+
+    private function retryOnLockConflict(callable $operation)
+    {
+        for ($attempt = 1; $attempt <= self::MAX_LOCK_RETRIES; $attempt++) {
+            try {
+                return $operation();
+            } catch (Throwable $exception) {
+                $errorCode = (int) $exception->getCode();
+                $retryable = in_array($errorCode, array(1205, 1213), true);
+                if (!$retryable || $attempt === self::MAX_LOCK_RETRIES) {
+                    throw $exception;
+                }
+
+                // Jitter prevents concurrent requests from colliding again immediately.
+                usleep(($attempt * 100000) + mt_rand(0, 100000));
+            }
+        }
+
+        throw new RuntimeException('Không thể thực hiện thao tác rule.');
     }
 }

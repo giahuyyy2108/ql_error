@@ -2,6 +2,7 @@
 
 class FilePeer
 {
+    const MAX_DEADLOCK_RETRIES = 3;
     private $dbsql;
     private $connection;
 
@@ -39,6 +40,7 @@ class FilePeer
                        validation_result, update_at, create_at
                 FROM `file`
                 WHERE update_at >= ? AND update_at < ?'
+                . ' AND da_day_cong = 0'
                 . ($filterByKhoa ? ' AND id_khoa = ?' : '') . '
                 ORDER BY update_at DESC, id DESC';
         $statement = $this->connection->prepare($sql);
@@ -551,6 +553,14 @@ class FilePeer
 
     public function markAllForRevalidation($date)
     {
+        // Serialize queue creation and batch claiming on the same MySQL mutex.
+        // This prevents the range UPDATE below from racing with FOR UPDATE.
+        $mutex = $this->connection->query("SELECT GET_LOCK('ql_error_revalidation_queue', 10)");
+        if (!$mutex || (int) $mutex->fetch_row()[0] !== 1) {
+            throw new RuntimeException('Hàng đợi quét lại đang được xử lý, vui lòng thử lại.');
+        }
+        $mutex->free();
+        try {
         $pendingStatement = $this->connection->prepare(
             "SELECT COUNT(*) AS total FROM `file`
              WHERE DATE(update_at) = ?
@@ -575,34 +585,74 @@ class FilePeer
             "UPDATE `file`
              SET processing_status = 'pending_revalidation', update_at = update_at
              WHERE DATE(update_at) = ?
-               AND processing_status NOT IN ('pending_revalidation', 'revalidating')"
+               AND processing_status NOT IN ('pending_revalidation', 'revalidating')
+             LIMIT 100"
         );
         if (!$statement) {
             throw new RuntimeException('Không thể tạo hàng đợi quét lại.');
         }
-        $statement->bind_param('s', $date);
-        $statement->execute();
-        $affectedRows = $statement->affected_rows;
+        $affectedRows = 0;
+        // Update small batches so the watcher never competes with one large
+        // range lock covering all files for the selected day.
+        do {
+            $statement->bind_param('s', $date);
+            if (!$statement->execute()) {
+                $errorCode = (int) $statement->errno;
+                throw new RuntimeException('Queue update failed.', $errorCode);
+            }
+            $batchRows = $statement->affected_rows;
+            $affectedRows += $batchRows;
+        } while ($batchRows > 0);
         $statement->close();
         return $affectedRows;
+        } catch (Throwable $exception) {
+            $errorCode = (int) $exception->getCode();
+            if ($errorCode === 0) {
+                $errorCode = (int) $this->connection->errno;
+            }
+            static $queueRetryCount = 0;
+            if (in_array($errorCode, array(1205, 1213), true) && $queueRetryCount < self::MAX_DEADLOCK_RETRIES) {
+                $queueRetryCount++;
+                usleep($queueRetryCount * 200000 + mt_rand(0, 100000));
+                try {
+                    return $this->markAllForRevalidation($date);
+                } finally {
+                    $queueRetryCount--;
+                }
+            }
+            throw $exception;
+        } finally {
+            $this->connection->query("SELECT RELEASE_LOCK('ql_error_revalidation_queue')");
+        }
     }
 
     public function claimPendingRevalidation($limit = 2, $date = null)
     {
         $limit = max(1, min(20, (int) $limit));
+        $mutex = $this->connection->query("SELECT GET_LOCK('ql_error_revalidation_queue', 10)");
+        if (!$mutex || (int) $mutex->fetch_row()[0] !== 1) {
+            throw new RuntimeException('Hàng đợi quét lại đang được xử lý, vui lòng thử lại.');
+        }
+        $mutex->free();
         $this->connection->begin_transaction();
         try {
             $sql = "SELECT id, ten, ma_lk, file_path, processing_status, validation_result
                     FROM `file`
                     WHERE processing_status = 'pending_revalidation'";
             if ($date !== null) $sql .= " AND DATE(update_at) = ?";
+            // MariaDB does not support SKIP LOCKED. The GET_LOCK mutex above
+            // serializes the watcher and web requests before this row lock.
             $sql .= " ORDER BY update_at ASC, id ASC LIMIT " . $limit . " FOR UPDATE";
             $statement = $this->connection->prepare($sql);
             if (!$statement) {
                 throw new RuntimeException('Không thể chuẩn bị nhận hàng đợi quét lại.');
             }
             if ($date !== null) $statement->bind_param('s', $date);
-            $statement->execute();
+            if (!$statement->execute()) {
+                $errorCode = (int) $statement->errno;
+                $statement->close();
+                throw new RuntimeException('Queue claim failed.', $errorCode);
+            }
             $result = $statement->get_result();
             if (!$result) {
                 throw new RuntimeException('Không thể nhận hàng đợi quét lại.');
@@ -630,7 +680,26 @@ class FilePeer
             return $files;
         } catch (Throwable $exception) {
             $this->connection->rollback();
+            static $retryCount = 0;
+            $errorCode = (int) $exception->getCode();
+            if ($errorCode === 0) {
+                $errorCode = (int) $this->connection->errno;
+            }
+            if ($errorCode === 0) {
+                $errorCode = (int) $this->connection->errno;
+            }
+            if (in_array($errorCode, array(1205, 1213), true) && $retryCount < self::MAX_DEADLOCK_RETRIES) {
+                $retryCount++;
+                usleep($retryCount * 150000 + mt_rand(0, 100000));
+                try {
+                    return $this->claimPendingRevalidation($limit, $date);
+                } finally {
+                    $retryCount--;
+                }
+            }
             throw $exception;
+        } finally {
+            $this->connection->query("SELECT RELEASE_LOCK('ql_error_revalidation_queue')");
         }
     }
 

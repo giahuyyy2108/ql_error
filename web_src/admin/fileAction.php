@@ -12,6 +12,7 @@ require_once __DIR__ . '/../common/TableLookupService.php';
 require_once __DIR__ . '/../common/BhytLookupService.php';
 require_once __DIR__ . '/../common/XmlErrorArchiveOrganizer.php';
 require_once __DIR__ . '/../bean/HeThongPeer.php';
+require_once __DIR__ . '/../bean/LogPeer.php';
 
 class fileAction
 {
@@ -162,8 +163,15 @@ class fileAction
         if (!is_array($ids) || !$ids) return $this->json(array('success' => false, 'message' => 'Vui lòng chọn file cần đẩy cổng.'));
         $done = 0; $skipped = 0;
         try {
-            $root = dirname(__DIR__, 2); $temp = $root . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . 'temp';
-            if (!is_dir($temp)) mkdir($temp, 0775, true);
+            $root = dirname(__DIR__, 2);
+            // Files successfully pushed to the portal are archived by the
+            // operation date, and are no longer part of the active file list.
+            $archiveDate = date('Ymd');
+            $archiveDirectory = $root . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
+                . 'xml' . DIRECTORY_SEPARATOR . 'portal' . DIRECTORY_SEPARATOR . $archiveDate;
+            if (!is_dir($archiveDirectory) && !mkdir($archiveDirectory, 0775, true) && !is_dir($archiveDirectory)) {
+                throw new RuntimeException('Không thể tạo thư mục lưu file đã đẩy cổng.');
+            }
             foreach ($this->filePeer->getPortalFilesByIds($ids) as $file) {
                 $path = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $file['file_path']);
                 if (!is_file($path)) { $skipped++; continue; }
@@ -180,7 +188,30 @@ class fileAction
                 $q = $connect->prepare('INSERT IGNORE INTO cong_hoso (cccd, malk, ten_file, noidung, nguoi_day, id_khoa) VALUES (?, ?, ?, ?, ?, ?)');
                 $user = isset($_SESSION['sUserName']) ? $_SESSION['sUserName'] : ''; $khoa = isset($_SESSION['id_khoa']) ? $_SESSION['id_khoa'] : null;
                 $q->bind_param('ssssss', $cccd, $file['ma_lk'], $file['ten'], $decodedContent, $user, $khoa); $q->execute(); $inserted = $q->affected_rows; $q->close();
-                if ($inserted > 0) { $this->filePeer->markPortalPushed($file['id']); rename($path, $temp . DIRECTORY_SEPARATOR . basename($path)); $done++; } else $skipped++;
+                if ($inserted > 0) {
+                    $archiveName = basename($path);
+                    $archivePath = $archiveDirectory . DIRECTORY_SEPARATOR . $archiveName;
+                    if (is_file($archivePath)) {
+                        $archiveName = pathinfo($archiveName, PATHINFO_FILENAME) . '_' . $file['id'] . '.' . pathinfo($archiveName, PATHINFO_EXTENSION);
+                        $archivePath = $archiveDirectory . DIRECTORY_SEPARATOR . $archiveName;
+                    }
+                    if (!rename($path, $archivePath)) {
+                        throw new RuntimeException('Không thể chuyển file vào thư mục lưu theo ngày.');
+                    }
+                    $relativePath = 'storage/xml/portal/' . $archiveDate . '/' . $archiveName;
+                    $this->filePeer->updateStorageLocation($file['id'], $relativePath, 'processed');
+                    $this->filePeer->markPortalPushed($file['id']);
+                    $log = new Log();
+                    $log->set('chucnang', 'Đẩy cổng');
+                    $log->set(
+                        'noidung',
+                        'File: ' . $file['ten'] . ' | MALK: ' . $file['ma_lk']
+                        . ' | Đường dẫn mới: ' . $relativePath
+                    );
+                    $log->set('noidungcu', 'Đường dẫn cũ: ' . $file['file_path']);
+                    (new LogPeer())->ghiLog($log);
+                    $done++;
+                } else $skipped++;
                 $connect->commit();
             }
             return $this->json(array('success' => true, 'done' => $done, 'skipped' => $skipped));
