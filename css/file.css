@@ -34,6 +34,8 @@
 .file-stat-failed > .fa { color: #d9534f; }
 .file-stat-processing { border-left-color: #337ab7; }
 .file-stat-processing > .fa { color: #337ab7; }
+.file-stat-processing > .fa.file-stat-spin { animation: file-stat-rotate .9s linear infinite; }
+@keyframes file-stat-rotate { to { transform: rotate(360deg); } }
 .file-search-row { margin-bottom: 14px; }
 @media (max-width: 767px) {
     .file-table-controls { flex-wrap: wrap; }

@@ -32,6 +32,26 @@ class FilePeer
         return ($row && $row['id_khoa'] !== null) ? (int) $row['id_khoa'] : null;
     }
 
+    public function countQueuedUploadFiles(array $fileNames)
+    {
+        $names = array_values(array_unique(array_filter(array_map('basename', $fileNames))));
+        $queueDirectory = dirname(__DIR__, 2) . '/storage/xml';
+        $names = array_values(array_filter($names, function ($name) use ($queueDirectory) {
+            return is_file($queueDirectory . DIRECTORY_SEPARATOR . $name);
+        }));
+        if (!$names) return 0;
+        $escaped = array_map(function ($name) {
+            return "'" . $this->connection->real_escape_string($name) . "'";
+        }, $names);
+        $result = $this->connection->query(
+            'SELECT COUNT(*) AS total FROM xml_upload_queue WHERE file_name IN (' . implode(',', $escaped) . ')'
+        );
+        if (!$result) throw new RuntimeException('Không thể đọc tiến độ import.');
+        $row = $result->fetch_assoc();
+        $result->free();
+        return (int) $row['total'];
+    }
+
     public function __construct()
     {
         global $connect;
@@ -436,6 +456,16 @@ class FilePeer
             throw new RuntimeException('Không thể cập nhật file đã tồn tại.');
         }
         $statement->close();
+
+        $queuedFileName = basename($filePath);
+        $deleteQueue = $this->connection->prepare(
+            'DELETE FROM `xml_upload_queue` WHERE file_name = ?'
+        );
+        if ($deleteQueue) {
+            $deleteQueue->bind_param('s', $queuedFileName);
+            $deleteQueue->execute();
+            $deleteQueue->close();
+        }
         $this->clearFileListCache();
         return true;
     }
@@ -643,6 +673,7 @@ class FilePeer
             throw new RuntimeException('Không thể cập nhật đường dẫn lưu file.');
         }
         $statement->close();
+        $this->clearFileListCache();
         return true;
     }
 
@@ -676,6 +707,7 @@ class FilePeer
         $pendingResult->free();
         $pendingStatement->close();
         if ((int) $pendingRow['total'] > 0) {
+            $this->clearFileListCache();
             return -1;
         }
         $statement = $this->connection->prepare(
@@ -703,6 +735,7 @@ class FilePeer
             $affectedRows += $batchRows;
         } while ($batchRows > 0);
         $statement->close();
+        $this->clearFileListCache();
         return $affectedRows;
         } catch (Throwable $exception) {
             $errorCode = (int) $exception->getCode();
@@ -822,7 +855,10 @@ class FilePeer
     {
         $sql = "SELECT
                     SUM(processing_status = 'pending_revalidation') AS pending,
-                    SUM(processing_status = 'revalidating') AS revalidating
+                    SUM(processing_status = 'revalidating') AS revalidating,
+                    SUM(processing_status = 'processed') AS success,
+                    SUM(processing_status = 'failed') AS failed,
+                    COUNT(*) AS total
                 FROM `file`";
         if ($date !== null) $sql .= " WHERE DATE(update_at) = ?";
         $statement = $this->connection->prepare($sql);
@@ -843,7 +879,11 @@ class FilePeer
         return array(
             'pending' => $pending,
             'revalidating' => $revalidating,
-            'remaining' => $pending + $revalidating
+            'remaining' => $pending + $revalidating,
+            'processing' => $pending + $revalidating,
+            'success' => isset($row['success']) ? (int) $row['success'] : 0,
+            'failed' => isset($row['failed']) ? (int) $row['failed'] : 0,
+            'total' => isset($row['total']) ? (int) $row['total'] : 0
         );
     }
 
@@ -893,19 +933,13 @@ class FilePeer
             return 0;
         }
 
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $statement = $this->connection->prepare('DELETE FROM `file` WHERE id IN (' . $placeholders . ')');
-        if (!$statement) {
-            throw new RuntimeException('Không thể chuẩn bị thao tác xóa nhiều file.');
-        }
-        $types = str_repeat('i', count($ids));
-        $statement->bind_param($types, ...$ids);
-        if (!$statement->execute()) {
-            $statement->close();
+        $idList = implode(',', $ids);
+        $result = $this->connection->query('DELETE FROM `file` WHERE id IN (' . $idList . ')');
+        if ($result === false) {
             throw new RuntimeException('Không thể xóa các file đã chọn.');
         }
-        $deleted = $statement->affected_rows;
-        $statement->close();
+        $deleted = $this->connection->affected_rows;
+        $this->clearFileListCache();
         return $deleted;
     }
 

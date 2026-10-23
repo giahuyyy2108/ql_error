@@ -1279,14 +1279,16 @@
             var modified = new Date(Number(row.timestamp) * 1000);
             if (localDateKey(modified) !== selectedDate) return;
             statistics.total++;
-            if (row.status === 'failed') statistics.failed++;
-            else if (row.status === 'processed') statistics.success++;
-            else statistics.processing++;
+            var status = String(row.status || row.processing_status || '').toLowerCase();
+            if (status === 'failed') statistics.failed++;
+            else if (status === 'pending_revalidation' || status === 'revalidating' || status === 'processing') statistics.processing++;
+            else statistics.success++;
         });
         $('#file-stat-total').text(statistics.total);
         $('#file-stat-success').text(statistics.success);
         $('#file-stat-failed').text(statistics.failed);
         $('#file-stat-processing').text(statistics.processing);
+        $('.file-stat-processing > .fa').toggleClass('file-stat-spin', statistics.processing > 0);
     }
 
     if ($.fn.datepicker) {
@@ -1441,7 +1443,7 @@
                         '<button type="button" class="btn btn-sm btn-danger btn-file-action btn-delete-file" data-id="' + row.id + '" data-name="' + name + '" title="Xóa file" aria-label="Xóa file">' +
                         '<i class="fa fa-trash"></i></button>';
                 }
-            }
+            },
         ],
         createdRow: function (row, data) {
             $(row).toggleClass('file-row-has-error', Number(data.error_count) > 0);
@@ -1522,17 +1524,32 @@
         function watchProgressSse(total) {
             button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét realtime...');
             if (!window.EventSource) { watchProgress(total); return; }
-            var stream = new EventSource(baseUrl + 'file/revalidationStream/?date=' + encodeURIComponent(selectedDate));
+            var stream = new EventSource(baseUrl + 'file/revalidationStream/?date=' + encodeURIComponent(selectedDate), { withCredentials: true });
+            var realtimeFallback = window.setInterval(function () {
+                requestFileData(false);
+            }, 1000);
+            function closeRealtime() {
+                window.clearInterval(realtimeFallback);
+                stream.close();
+            }
             stream.addEventListener('progress', function (event) {
                 var data = JSON.parse(event.data || '{}');
                 var progress = data.progress || {};
                 var remaining = Number(progress.remaining) || 0;
+                var currentRows = table.rows().data().toArray();
+                var total = currentRows.length;
+                var failed = currentRows.filter(function (row) { return row.status === 'failed'; }).length;
+                var processing = remaining;
+                $('#file-stat-total').text(total);
+                $('#file-stat-failed').text(failed);
+                $('#file-stat-processing').text(processing);
+                $('#file-stat-success').text(Math.max(0, total - failed - processing));
                 requestFileData(false);
                 button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét realtime... (' + (total - remaining) + '/' + total + ')');
-                if (remaining <= 0) { stream.close(); finish('Đã quét xong ' + total + ' file.'); }
+                if (remaining <= 0) { closeRealtime(); finish('Đã quét xong ' + total + ' file.'); }
             });
             stream.addEventListener('error', function () {
-                stream.close();
+                closeRealtime();
                 watchProgress(total);
             });
         }
@@ -1664,6 +1681,8 @@
 
         function finish(message) {
             revalidationInProgress = false;
+            $('#file-stat-processing').text('0');
+            $('.file-stat-processing > .fa').removeClass('file-stat-spin');
             $('#file-stat-date').prop('disabled', false);
             button.prop('disabled', false).html(originalHtml);
             requestFileData();
@@ -1679,7 +1698,11 @@
                 if (!response.success) { finish(response.message || 'Không thể đọc tiến độ quét lại.'); return; }
                 var progress = response.progress || {};
                 var remaining = Number(progress.remaining) || 0;
-                requestFileData(false);
+                $('#file-stat-total').text(Number(progress.total) || 0);
+                $('#file-stat-success').text(Number(progress.success) || 0);
+                $('#file-stat-failed').text(Number(progress.failed) || 0);
+                $('#file-stat-processing').text(Number(progress.processing) || remaining);
+                $('.file-stat-processing > .fa').toggleClass('file-stat-spin', (Number(progress.processing) || remaining) > 0);
                 if (remaining > 0) {
                     button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét qua watcher... (' + (total - remaining) + '/' + total + ')');
                     window.setTimeout(function () { watchProgress(total); }, 1000);
@@ -1723,6 +1746,34 @@
             });
         } */
 
+        function watchProgressSse(total) {
+            button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét realtime...');
+            if (!window.EventSource) { watchProgress(total); return; }
+            var stream = new EventSource(baseUrl + 'file/revalidationStream/?date=' + encodeURIComponent(selectedDate), { withCredentials: true });
+            var receivedEvent = false;
+            var watchdog = window.setTimeout(function () {
+                if (receivedEvent) return;
+                stream.close();
+                watchProgress(total);
+            }, 2000);
+            function closeStream() { window.clearTimeout(watchdog); stream.close(); }
+            stream.addEventListener('progress', function (event) {
+                receivedEvent = true;
+                window.clearTimeout(watchdog);
+                var data = JSON.parse(event.data || '{}');
+                var progress = data.progress || {};
+                var remaining = Number(progress.remaining) || 0;
+                $('#file-stat-total').text(Number(progress.total) || 0);
+                $('#file-stat-success').text(Number(progress.success) || 0);
+                $('#file-stat-failed').text(Number(progress.failed) || 0);
+                $('#file-stat-processing').text(Number(progress.processing) || remaining);
+                $('.file-stat-processing > .fa').toggleClass('file-stat-spin', (Number(progress.processing) || remaining) > 0);
+                button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét realtime... (' + (total - remaining) + '/' + total + ')');
+                if (remaining <= 0) { closeStream(); finish('Đã quét xong ' + total + ' file.'); }
+            });
+            stream.addEventListener('error', function () { closeStream(); watchProgress(total); });
+        }
+
         $.ajax({
             url: baseUrl + 'file/revalidateAll/',
             type: 'POST',
@@ -1745,6 +1796,7 @@
     // Files imported by the background watcher do not pass through this page,
     // so periodically refresh the table while the tab is visible.
     setInterval(function () {
+        if (revalidationInProgress) return;
         requestFileData(false);
     }, 30000);
 
@@ -1780,11 +1832,40 @@
         }
 
         uploadInProgress = true;
+        $('#file-stat-processing').text(files.length);
+        $('.file-stat-processing > .fa').addClass('file-stat-spin');
         $('#xml-drop-zone').addClass('is-uploading');
         $('#btn-upload-xml').prop('disabled', true);
         var succeeded = 0;
         var failed = 0;
         var details = [];
+        var queuedFileNames = [];
+
+        function waitForImportedFiles() {
+            if (!queuedFileNames.length) {
+                $('#file-stat-processing').text('0');
+                $('.file-stat-processing > .fa').removeClass('file-stat-spin');
+                requestFileData();
+                return;
+            }
+            $.ajax({
+                url: baseUrl + 'file/uploadProgress/', type: 'POST', dataType: 'json',
+                data: { files: JSON.stringify(queuedFileNames), date: selectedFileDate() }
+            }).done(function (response) {
+                var remaining = Number(response.remaining) || 0;
+                var statistics = response.statistics || {};
+                $('#file-stat-total').text(Number(statistics.total) || 0);
+                $('#file-stat-success').text(Number(statistics.success) || 0);
+                $('#file-stat-failed').text(Number(statistics.failed) || 0);
+                $('#file-stat-processing').text(remaining);
+                if (!response.success || remaining > 0) {
+                    window.setTimeout(waitForImportedFiles, 1000);
+                    return;
+                }
+                $('.file-stat-processing > .fa').removeClass('file-stat-spin');
+                requestFileData();
+            }).fail(function () { window.setTimeout(waitForImportedFiles, 1500); });
+        }
 
         function finishQueue() {
             uploadInProgress = false;
@@ -1796,7 +1877,7 @@
             var summary = 'Đã đưa ' + succeeded + ' file vào hàng đợi, ' + failed + ' file tải thất bại.';
             if (details.length) summary += '\n' + details.join('\n');
             showUploadMessage(summary, failed === 0);
-            requestFileData();
+            waitForImportedFiles();
         }
 
         function processFile(index) {
@@ -1804,6 +1885,7 @@
                 finishQueue();
                 return;
             }
+            $('#file-stat-processing').text(files.length - index);
 
             var file = files[index];
             $('#xml-drop-file-name').text(file.name).show();
@@ -1828,6 +1910,7 @@
             uploadSingleXmlFile(file).done(function (response) {
                 if (response.success) {
                     succeeded++;
+                    queuedFileNames.push(response.name || file.name);
                 } else {
                     failed++;
                     details.push(file.name + ': ' + (response.message || 'Không thể nhập file.'));
@@ -1838,6 +1921,7 @@
                     ? xhr.responseJSON.message : 'Có lỗi xảy ra khi tải file lên.';
                 details.push(file.name + ': ' + message);
             }).always(function () {
+                $('#file-stat-processing').text(Math.max(0, files.length - index - 1));
                 processFile(index + 1);
             });
         }

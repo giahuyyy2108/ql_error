@@ -441,30 +441,57 @@ class fileAction
         }
     }
 
+    public function uploadProgress()
+    {
+        $raw = (string) $this->request->getParameter('files', false);
+        $files = json_decode($raw, true);
+        if (!is_array($files)) return $this->json(array('success' => false, 'message' => 'Danh sách file không hợp lệ.'));
+        try {
+            $remaining = $this->filePeer->countQueuedUploadFiles($files);
+            $date = $this->selectedDate();
+            $statistics = $date !== null ? $this->filePeer->getRevalidationProgress($date) : array();
+            $statistics['processing'] = $remaining;
+            $statistics['total'] = (isset($statistics['total']) ? (int) $statistics['total'] : 0) + $remaining;
+            return $this->json(array('success' => true, 'remaining' => $remaining, 'statistics' => $statistics));
+        } catch (RuntimeException $exception) {
+            return $this->json(array('success' => false, 'message' => $exception->getMessage()));
+        }
+    }
+
     public function revalidationStream()
     {
         $date = $this->selectedDate();
         if ($date === null) return $this->json(array('success' => false, 'message' => 'Ngày không hợp lệ.'));
         if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
         @set_time_limit(35);
+        @ini_set('zlib.output_compression', '0');
+        @ini_set('output_buffering', '0');
+        if (function_exists('apache_setenv')) @apache_setenv('no-gzip', '1');
         header('Content-Type: text/event-stream; charset=utf-8');
         header('Cache-Control: no-cache, no-store');
         header('X-Accel-Buffering: no');
+        header('Connection: keep-alive');
+        header('Content-Encoding: none');
+        while (ob_get_level() > 0) @ob_end_flush();
+        echo ':' . str_repeat(' ', 4096) . "\n\n";
+        flush();
         for ($i = 0; $i < 30; $i++) {
             try {
                 $progress = $this->filePeer->getRevalidationProgress($date);
-                echo 'event: progress\n';
+                echo "event: progress\n";
                 echo 'data: ' . json_encode(array('success' => true, 'progress' => $progress), JSON_UNESCAPED_UNICODE) . "\n\n";
                 @ob_flush();
                 flush();
                 if ((int) ($progress['remaining'] ?? 0) <= 0) break;
             } catch (Throwable $exception) {
-                echo 'event: error\n';
+                echo "event: error\n";
                 echo 'data: ' . json_encode(array('success' => false, 'message' => $exception->getMessage()), JSON_UNESCAPED_UNICODE) . "\n\n";
                 flush();
                 break;
             }
             sleep(1);
+            echo ": heartbeat\n\n";
+            flush();
         }
         exit;
     }
