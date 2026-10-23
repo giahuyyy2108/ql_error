@@ -441,6 +441,34 @@ class fileAction
         }
     }
 
+    public function revalidationStream()
+    {
+        $date = $this->selectedDate();
+        if ($date === null) return $this->json(array('success' => false, 'message' => 'Ngày không hợp lệ.'));
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+        @set_time_limit(35);
+        header('Content-Type: text/event-stream; charset=utf-8');
+        header('Cache-Control: no-cache, no-store');
+        header('X-Accel-Buffering: no');
+        for ($i = 0; $i < 30; $i++) {
+            try {
+                $progress = $this->filePeer->getRevalidationProgress($date);
+                echo 'event: progress\n';
+                echo 'data: ' . json_encode(array('success' => true, 'progress' => $progress), JSON_UNESCAPED_UNICODE) . "\n\n";
+                @ob_flush();
+                flush();
+                if ((int) ($progress['remaining'] ?? 0) <= 0) break;
+            } catch (Throwable $exception) {
+                echo 'event: error\n';
+                echo 'data: ' . json_encode(array('success' => false, 'message' => $exception->getMessage()), JSON_UNESCAPED_UNICODE) . "\n\n";
+                flush();
+                break;
+            }
+            sleep(1);
+        }
+        exit;
+    }
+
     private function revalidateQueuedFile(array $file)
     {
         $storedPath = $this->resolveStoredFilePath($file['file_path']);

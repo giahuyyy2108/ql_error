@@ -275,16 +275,16 @@
 /* Bảng file tóm tắt hồ sơ: co gọn để hiển thị đủ 10 cột. */
 .file-table-scroll { overflow-x: auto; }
 #datatable-file {
-    min-width: 900px;
-    font-size: 11.5px;
+    min-width: 760px;
+    font-size: 10.5px;
 }
 #datatable-file th,
 #datatable-file td {
-    padding: 5px 4px;
-    line-height: 1.25;
+    padding: 3px 3px;
+    line-height: 1.15;
 }
 #datatable-file thead th {
-    font-size: 11px;
+    font-size: 10px;
     white-space: normal;
 }
 #datatable-file.dataTable thead th.sorting,
@@ -318,9 +318,9 @@
     overflow-wrap: anywhere;
 }
 #datatable-file .btn-file-action {
-    width: 27px;
-    height: 25px;
-    padding: 3px 5px;
+    width: 24px;
+    height: 22px;
+    padding: 2px 4px;
 }
 #datatable-file tbody tr.file-row-has-error > td {
     color: #8a1f1b;
@@ -453,6 +453,9 @@
 .error-statistics-table th:nth-child(7) { width: 20%; }
 .error-field-link { padding: 0; border: 0; background: transparent; color: #337ab7; text-decoration: underline; cursor: pointer; }
 .table-cell-error-focus { background-color: #ffcc80 !important; box-shadow: inset 0 0 0 2px #f57c00; }
+.error-statistics-warning > td { background-color: #fff3cd !important; color: #856404; border-color: #ffe69c; }
+.error-statistics-warning .error-field-link { color: #856404; }
+.error-statistics-error > td { background-color: #fde8e7; color: #8a1f1b; }
 .decoded-file-tabs {
     display: flex;
     width: 100%;

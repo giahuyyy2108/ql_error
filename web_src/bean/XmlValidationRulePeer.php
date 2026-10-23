@@ -17,7 +17,7 @@ class XmlValidationRulePeer
 
     public function getList()
     {
-        $sql = 'SELECT id, file_type, field_name, display_name, rule_type, rule_value, error_message, huongxuly, is_active
+        $sql = 'SELECT id, file_type, field_name, display_name, rule_type, rule_value, error_message, huongxuly, severity, is_active
                 FROM xml_validation_rules
                 ORDER BY file_type ASC, field_name ASC, id DESC';
         $result = $this->connection->query($sql);
@@ -38,7 +38,7 @@ class XmlValidationRulePeer
     public function getById($id)
     {
         $statement = $this->connection->prepare(
-            'SELECT id, file_type, field_name, display_name, rule_type, rule_value, error_message, huongxuly, is_active
+            'SELECT id, file_type, field_name, display_name, rule_type, rule_value, error_message, huongxuly, severity, is_active
              FROM xml_validation_rules WHERE id = ? LIMIT 1'
         );
         if (!$statement) throw new RuntimeException('Không thể tải thông tin rule.');
@@ -80,7 +80,7 @@ class XmlValidationRulePeer
     {
         $sql = 'SELECT validation.id, validation.file_type, validation.field_name,
                        validation.display_name, validation.rule_type, validation.rule_value,
-                       validation.error_message, validation.huongxuly, validation.is_active
+                       validation.error_message, validation.huongxuly, validation.severity, validation.is_active
                 FROM xml_validation_rules AS validation
                 INNER JOIN `rule` AS supported ON supported.code = validation.rule_type
                 WHERE validation.is_active = 1 AND supported.is_active = 1
@@ -125,22 +125,22 @@ class XmlValidationRulePeer
     {
         return $this->retryOnLockConflict(function () use ($rule) {
         $sql = 'INSERT INTO xml_validation_rules
-                (file_type, field_name, display_name, rule_type, rule_value, error_message, huongxuly, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+                (file_type, field_name, display_name, rule_type, rule_value, error_message, huongxuly, severity, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
         $statement = $this->connection->prepare($sql);
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu rule.');
         }
 
         $statement->bind_param(
-            'sssssssi',
+            'ssssssssi',
             $rule['file_type'],
             $rule['field_name'],
             $rule['display_name'],
             $rule['rule_type'],
             $rule['rule_value'],
             $rule['error_message'],
-            $rule['huongxuly'],
+            $rule['huongxuly'], $rule['severity'],
             $rule['is_active']
         );
         if (!$statement->execute()) {
@@ -159,7 +159,7 @@ class XmlValidationRulePeer
         return $this->retryOnLockConflict(function () use ($id, $rule) {
         $sql = 'UPDATE xml_validation_rules
                 SET file_type = ?, field_name = ?, display_name = ?, rule_type = ?,
-                    rule_value = ?, error_message = ?, huongxuly = ?, is_active = ?
+                    rule_value = ?, error_message = ?, huongxuly = ?, severity = ?, is_active = ?
                 WHERE id = ?';
         $statement = $this->connection->prepare($sql);
         if (!$statement) {
@@ -167,14 +167,14 @@ class XmlValidationRulePeer
         }
 
         $statement->bind_param(
-            'sssssssii',
+            'ssssssssii',
             $rule['file_type'],
             $rule['field_name'],
             $rule['display_name'],
             $rule['rule_type'],
             $rule['rule_value'],
             $rule['error_message'],
-            $rule['huongxuly'],
+            $rule['huongxuly'], $rule['severity'],
             $rule['is_active'],
             $id
         );

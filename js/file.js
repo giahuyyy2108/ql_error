@@ -817,12 +817,33 @@
 
     function renderErrorStatistics(selected) {
         var container = $('#decoded-error-statistics').empty();
+        var serviceNames = {};
+        (decodedFiles || []).forEach(function (file) {
+            if (String(file.type || '').toUpperCase() !== 'XML3') return;
+            collectExcelRecords(file.content || {}, []).forEach(function (record) {
+                var code = record.data && record.data.MA_DICH_VU;
+                var name = record.data && record.data.TEN_DICH_VU;
+                if (code != null && name != null && String(name).trim() !== '') {
+                    serviceNames[String(code).trim()] = String(name).trim();
+                }
+            });
+        });
         var errors = [];
         (decodedFiles || []).forEach(function (file) {
             (file.errors || []).forEach(function (error) {
                 var severity = String(error.severity || error.level || error.muc_do || '').toLowerCase();
+                severity = '';
                 if (severity === 'warning' || severity.indexOf('warn') !== -1 || severity.indexOf('cảnh báo') !== -1 || severity.indexOf('canh bao') !== -1) return;
-                errors.push({ error: error, xml: file.type || '', fileIndex: decodedFiles.indexOf(file) });
+                var errorCopy = $.extend({}, error);
+                var serviceName = errorCopy.service_name || errorCopy.TEN_DICH_VU || '';
+                if (!serviceName && errorCopy.key_value != null) {
+                    serviceName = serviceNames[String(errorCopy.key_value).trim()] || '';
+                }
+                if (serviceName) {
+                    errorCopy.service_name = serviceName;
+                    errorCopy.message = String(errorCopy.message || '').replace(/\{TEN_DICH_VU\}/g, serviceName);
+                }
+                errors.push({ error: errorCopy, xml: file.type || '', fileIndex: decodedFiles.indexOf(file) });
             });
         });
         var table = $('<table class="table table-striped table-bordered error-statistics-table">');
@@ -833,7 +854,8 @@
         } else {
             errors.forEach(function (item) {
                 var error = item.error;
-                $('<tr>').append(
+                var isWarning = String(error.severity || '').toLowerCase() === 'warning';
+                $('<tr>').addClass(isWarning ? 'error-statistics-warning' : 'error-statistics-error').append(
                     $('<td>').text(error.rule_id == null ? '' : error.rule_id),
                     $('<td>').text(error.display_name || error.field_name || ''),
                     $('<td>').append(
@@ -1314,6 +1336,9 @@
         return normalizeFileSearchText(searchableText).indexOf(fileSearchTerm) !== -1;
     });
 
+    $('#datatable-file thead th').eq(7).text('Tên trường');
+    $('#datatable-file thead th').eq(8).text('Số tiền');
+    $('#datatable-file thead th').eq(9).text('Thao tác');
     var table = $('#datatable-file').DataTable({
         ajax: {
             url: baseUrl + 'file/getData/',
@@ -1494,6 +1519,24 @@
 
     $('#btn-export-file-excel').on('click', function () {
         var button = $(this).prop('disabled', true);
+        function watchProgressSse(total) {
+            button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét realtime...');
+            if (!window.EventSource) { watchProgress(total); return; }
+            var stream = new EventSource(baseUrl + 'file/revalidationStream/?date=' + encodeURIComponent(selectedDate));
+            stream.addEventListener('progress', function (event) {
+                var data = JSON.parse(event.data || '{}');
+                var progress = data.progress || {};
+                var remaining = Number(progress.remaining) || 0;
+                requestFileData(false);
+                button.html('<i class="fa fa-refresh fa-spin"></i> Đang quét realtime... (' + (total - remaining) + '/' + total + ')');
+                if (remaining <= 0) { stream.close(); finish('Đã quét xong ' + total + ' file.'); }
+            });
+            stream.addEventListener('error', function () {
+                stream.close();
+                watchProgress(total);
+            });
+        }
+
         $.ajax({
             url: baseUrl + 'file/getErrorReport/',
             type: 'GET',
@@ -1691,7 +1734,7 @@
                 return;
             }
             var total = Number(response.total) || Number(response.queued) || 0;
-            watchProgress(total);
+            watchProgressSse(total);
         }).fail(function (xhr) {
             var message = xhr.responseJSON && xhr.responseJSON.message
                 ? xhr.responseJSON.message : 'Không thể tạo hàng đợi quét lại.';

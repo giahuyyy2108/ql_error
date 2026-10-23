@@ -165,6 +165,7 @@ class rulesAction
             'rule_value' => trim($this->request->getParameter('rule_value', false)),
             'error_message' => trim($this->request->getParameter('error_message', false)),
             'huongxuly' => trim($this->request->getParameter('huongxuly', false)),
+            'severity' => $this->request->getParameter('severity', false) === 'warning' ? 'warning' : 'error',
             'is_active' => $this->request->getParameter('is_active', false) === '1' ? 1 : 0
         );
 

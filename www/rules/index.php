@@ -36,6 +36,7 @@
                     <th>Giá trị</th>
                     <th>Thông báo lỗi</th>
                     <th>Hướng xử lý</th>
+                    <th>Mức độ</th>
                     <th>Trạng thái</th>
                     <th>Thao tác</th>
                 </tr>
@@ -193,6 +194,8 @@
                         <textarea id="rule-error-message" name="error_message" class="form-control" rows="3" required></textarea>
                         <label for="rule-huongxuly">Hướng xử lý</label>
                         <textarea id="rule-huongxuly" name="huongxuly" class="form-control" rows="3"></textarea>
+                        <label for="rule-severity">Mức độ</label>
+                        <select id="rule-severity" name="severity" class="form-control"><option value="error">Lỗi</option><option value="warning">Cảnh báo</option></select>
                     </div>
                     <div class="checkbox">
                         <label><input type="checkbox" id="rule-active" checked> Đang hoạt động</label>

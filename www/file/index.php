@@ -82,6 +82,7 @@
                         <th>Điều trị từ</th>
                         <th>Đến</th>
                         <th>Số lượng lỗi</th>
+                        <th>Tên trường</th>
                         <th>Số tiền</th>
                         <th>Thao tác</th>
                     </tr>

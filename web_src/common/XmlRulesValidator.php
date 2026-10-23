@@ -1727,7 +1727,7 @@ class XmlRulesValidator
             'path' => $path,
             'value' => is_scalar($value) ? (string) $value : null,
             'message' => $message !== null ? $message : $rule['error_message'],
-            'severity' => $severity
+            'severity' => isset($rule['severity']) && $rule['severity'] === 'warning' ? 'warning' : $severity
         );
     }
 

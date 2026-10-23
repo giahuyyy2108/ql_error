@@ -115,6 +115,17 @@
             { data: 'error_message', width: '18%', render: compactErrorMessage },
             { data: 'huongxuly', width: '18%', render: compactErrorMessage },
             {
+                data: 'severity',
+                width: '8%',
+                className: 'text-center',
+                render: function (data, type) {
+                    if (type !== 'display') return data || 'error';
+                    return String(data).toLowerCase() === 'warning'
+                        ? '<span class="label label-warning">Cảnh báo</span>'
+                        : '<span class="label label-danger">Lỗi</span>';
+                }
+            },
+            {
                 data: 'is_active',
                 width: '9%',
                 className: 'text-center',
@@ -271,6 +282,7 @@
         $('#rule-value').val(row.rule_value == null ? '' : row.rule_value);
         $('#rule-error-message').val(row.error_message);
         $('#rule-huongxuly').val(row.huongxuly == null ? '' : row.huongxuly);
+        $('#rule-severity').val(row.severity === 'warning' ? 'warning' : 'error');
         $('#rule-active').prop('checked', Number(row.is_active) === 1);
         $('#modal-rule .modal-title').text('Sửa rule');
         $('#modal-rule').modal('show');
@@ -289,6 +301,7 @@
             rule_value: $('#rule-value').val(),
             error_message: $('#rule-error-message').val(),
             huongxuly: $('#rule-huongxuly').val(),
+            severity: $('#rule-severity').val(),
             is_active: $('#rule-active').is(':checked') ? '1' : '0',
             csrf_token: csrfToken
         };

@@ -6,6 +6,19 @@ class FilePeer
     private $dbsql;
     private $connection;
 
+    private function fileListCachePath($date, $userKhoa)
+    {
+        $dir = dirname(__DIR__, 2) . '/storage/runtime';
+        if (!is_dir($dir)) @mkdir($dir, 0775, true);
+        return $dir . '/file-list-' . sha1($date . '|' . (string) $userKhoa) . '.json';
+    }
+
+    private function clearFileListCache()
+    {
+        $dir = dirname(__DIR__, 2) . '/storage/runtime';
+        foreach (glob($dir . '/file-list-*.json') ?: array() as $path) @unlink($path);
+    }
+
     public function getCurrentUserKhoa($username)
     {
         $statement = $this->connection->prepare(
@@ -47,6 +60,12 @@ class FilePeer
                 $filterByKhoa = true;
             }
             $userStatement->close();
+        }
+
+        $cachePath = $this->fileListCachePath($date, $filterByKhoa ? $userKhoa : 'admin');
+        if (is_file($cachePath) && (time() - (int) @filemtime($cachePath)) < 60) {
+            $cached = json_decode((string) @file_get_contents($cachePath), true);
+            if (is_array($cached)) return $cached;
         }
 
         $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, thongtin_bn, kichthuoc, processing_status, da_day_cong,
@@ -100,6 +119,7 @@ class FilePeer
         $result->free();
         $statement->close();
 
+        @file_put_contents($cachePath, json_encode($files, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
         return $files;
     }
 
@@ -375,6 +395,7 @@ class FilePeer
 
         $id = $statement->insert_id;
         $statement->close();
+        $this->clearFileListCache();
         return $id;
     }
 
@@ -415,6 +436,7 @@ class FilePeer
             throw new RuntimeException('Không thể cập nhật file đã tồn tại.');
         }
         $statement->close();
+        $this->clearFileListCache();
         return true;
     }
 
@@ -602,6 +624,7 @@ class FilePeer
         }
         $updated = $statement->affected_rows >= 0;
         $statement->close();
+        $this->clearFileListCache();
 
         return $updated;
     }
