@@ -1025,6 +1025,27 @@ class XmlRulesValidator
             $when['file_type'],
             $when['field']
         );
+        $targetNames = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            $when['file_type'],
+            'TEN_DICH_VU'
+        );
+        $serviceNamesByKey = array();
+        $targetParentsByKey = array();
+        foreach ($targetKeys as $targetKey) {
+            if (!is_scalar($targetKey['value'])) continue;
+            $targetParentsByKey[trim((string) $targetKey['value'])] = self::parentPath($targetKey['path']);
+        }
+        foreach ($targetNames as $targetName) {
+            if (!is_scalar($targetName['value'])) continue;
+            $name = trim((string) $targetName['value']);
+            if ($name === '') continue;
+            $nameParent = self::parentPath($targetName['path']);
+            foreach ($targetParentsByKey as $targetKeyValue => $targetParent) {
+                if ($targetParent === $nameParent) $serviceNamesByKey[$targetKeyValue] = $name;
+            }
+        }
 
         $qualifyingKeys = array();
         foreach ($targetKeys as $targetKey) {
@@ -1066,6 +1087,11 @@ class XmlRulesValidator
                 $error = self::makeError($rule, $path, $requiredValue);
                 $error['key_field'] = $config['source_key'];
                 $error['key_value'] = $key;
+                if (isset($serviceNamesByKey[$key])) {
+                    $serviceName = $serviceNamesByKey[$key];
+                    $error['message'] = str_replace('{TEN_DICH_VU}', $serviceName, $error['message']);
+                    $error['service_name'] = $serviceName;
+                }
                 $errors[] = $error;
             }
         }

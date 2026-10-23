@@ -157,6 +157,28 @@ class fileAction
         ));
     }
 
+    public function getCongHosoData()
+    {
+        $date = trim((string) $this->request->getParameter('date', false));
+        if ($date !== '') {
+            $parsedDate = DateTime::createFromFormat('!Y-m-d', $date);
+            if (!$parsedDate || $parsedDate->format('Y-m-d') !== $date) {
+                return $this->json(array('data' => array(), 'error' => 'Ngày không hợp lệ.'));
+            }
+        } else {
+            $date = null;
+        }
+        $maLk = trim((string) $this->request->getParameter('malk', false));
+        $limit = (int) $this->request->getParameter('limit', false);
+        try {
+            return $this->json(array(
+                'data' => $this->filePeer->getCongHosoData($date, $maLk !== '' ? $maLk : null, $limit ?: 1000)
+            ));
+        } catch (Throwable $exception) {
+            return $this->json(array('data' => array(), 'error' => $exception->getMessage()));
+        }
+    }
+
     public function pushPortal()
     {
         $ids = json_decode((string) $this->request->getParameter('ids', false), true);
@@ -274,8 +296,13 @@ class fileAction
         }
         try {
             $to = $month ? (clone $month)->modify('+1 month')->format('Y-m-01') : null;
-            $rows = $this->filePeer->getErrorReportRows($date, $to);
-            $files = $this->filePeer->getAllFileReportRows($date, $to);
+            $idKhoa = null;
+            if (!isset($_SESSION['AdminType']) || (int) $_SESSION['AdminType'] !== 1) {
+                $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : '';
+                $idKhoa = $this->filePeer->getCurrentUserKhoa($username);
+            }
+            $rows = $this->filePeer->getErrorReportRows($date, $to, $idKhoa);
+            $files = $this->filePeer->getAllFileReportRows($date, $to, $idKhoa);
             return $this->json(array('success' => true, 'data' => $rows, 'files' => $files));
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
@@ -343,7 +370,11 @@ class fileAction
             return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
         }
         try {
-            $queued = $this->filePeer->markAllForRevalidation($date);
+            $idKhoa = null;
+            if (!isset($_SESSION['AdminType']) || (int) $_SESSION['AdminType'] !== 1) {
+                $idKhoa = $this->filePeer->getCurrentUserKhoa((string) ($_SESSION['sUserName'] ?? ''));
+            }
+            $queued = $this->filePeer->markAllForRevalidation($date, $idKhoa);
             $progress = $this->filePeer->getRevalidationProgress($date);
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
@@ -372,7 +403,11 @@ class fileAction
             return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
         }
         try {
-            $files = $this->filePeer->claimPendingRevalidation(2, $date);
+            $idKhoa = null;
+            if (!isset($_SESSION['AdminType']) || (int) $_SESSION['AdminType'] !== 1) {
+                $idKhoa = $this->filePeer->getCurrentUserKhoa((string) ($_SESSION['sUserName'] ?? ''));
+            }
+            $files = $this->filePeer->claimPendingRevalidation(2, $date, $idKhoa);
             $errors = array();
             foreach ($files as $file) {
                 try {

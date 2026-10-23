@@ -6,6 +6,19 @@ class FilePeer
     private $dbsql;
     private $connection;
 
+    public function getCurrentUserKhoa($username)
+    {
+        $statement = $this->connection->prepare(
+            'SELECT id_khoa FROM `user` WHERE username = ? LIMIT 1'
+        );
+        if (!$statement) throw new RuntimeException('Không thể xác định khoa của người dùng.');
+        $statement->bind_param('s', $username);
+        $statement->execute();
+        $row = $statement->get_result()->fetch_assoc();
+        $statement->close();
+        return ($row && $row['id_khoa'] !== null) ? (int) $row['id_khoa'] : null;
+    }
+
     public function __construct()
     {
         global $connect;
@@ -36,7 +49,7 @@ class FilePeer
             $userStatement->close();
         }
 
-        $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, kichthuoc, processing_status, da_day_cong,
+        $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, thongtin_bn, kichthuoc, processing_status, da_day_cong,
                        validation_result, update_at, create_at
                 FROM `file`
                 WHERE update_at >= ? AND update_at < ?'
@@ -64,7 +77,7 @@ class FilePeer
         $files = array();
         while ($row = $result->fetch_assoc()) {
             $timestamp = strtotime($row['update_at']);
-            $summary = $this->fileSummaryFromValidation($row['validation_result']);
+            $summary = $this->fileSummaryFromValidation($row['validation_result'], $row['thongtin_bn']);
             $files[] = array(
                 'id' => (int) $row['id'],
                 'name' => $row['ten'],
@@ -75,6 +88,7 @@ class FilePeer
                 'ngay_vao' => $summary['ngay_vao'],
                 'ngay_ra' => $summary['ngay_ra'],
                 'error_count' => $summary['error_count'],
+                'error_fields' => $summary['error_fields'],
                 'total_amount' => $summary['total_amount'],
                 'size' => (int) $row['kichthuoc'],
                 'status' => $row['processing_status'],
@@ -89,15 +103,20 @@ class FilePeer
         return $files;
     }
 
-    private function fileSummaryFromValidation($json)
+    private function fileSummaryFromValidation($json, $patientInfoJson = null)
     {
         $summary = array(
             'ma_the_bhyt' => '',
             'ngay_vao' => '',
             'ngay_ra' => '',
             'error_count' => 0,
+            'error_fields' => '',
             'total_amount' => 0
         );
+        $patientInfo = json_decode((string) $patientInfoJson, true);
+        if (is_array($patientInfo) && isset($patientInfo['maThe']) && is_scalar($patientInfo['maThe'])) {
+            $summary['ma_the_bhyt'] = (string) $patientInfo['maThe'];
+        }
         $validation = json_decode((string) $json, true);
         if (!is_array($validation)) return $summary;
 
@@ -117,6 +136,11 @@ class FilePeer
                     ? $item[$collectionName] : array();
                 foreach ($fields as $field) {
                     $fieldName = isset($field['field_name']) ? $field['field_name'] : '';
+                    if ($collectionName === 'errors' && $fieldName !== '') {
+                        $existing = $summary['error_fields'] === '' ? array() : explode(', ', $summary['error_fields']);
+                        if (!in_array($fieldName, $existing, true)) $existing[] = $fieldName;
+                        $summary['error_fields'] = implode(', ', $existing);
+                    }
                     if (!isset($fieldMap[$fieldName])) continue;
                     $key = $fieldMap[$fieldName];
                     if ($summary[$key] === '' || $summary[$key] === 0) {
@@ -129,19 +153,22 @@ class FilePeer
         return $summary;
     }
 
-    public function getErrorReportRows($date, $to = null)
+    public function getErrorReportRows($date, $to = null, $idKhoa = null)
     {
         $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
         $sql = 'SELECT ma_lk, ma_bn, ngay_lap, processing_status, validation_result
                 FROM `file`
                 WHERE update_at >= ? AND update_at < ?
-                  AND validation_result IS NOT NULL AND validation_result <> \'\'
+                  AND validation_result IS NOT NULL AND validation_result <> \'\'';
+        if ($idKhoa !== null) $sql .= ' AND id_khoa = ?';
+        $sql .= '
                 ORDER BY update_at DESC, id DESC';
         $statement = $this->connection->prepare($sql);
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu báo cáo lỗi.');
         }
-        $statement->bind_param('ss', $date, $to);
+        if ($idKhoa !== null) $statement->bind_param('ssi', $date, $to, $idKhoa);
+        else $statement->bind_param('ss', $date, $to);
         $statement->execute();
         $result = $statement->get_result();
         if (!$result) {
@@ -184,14 +211,17 @@ class FilePeer
         return $reportRows;
     }
 
-    public function getAllFileReportRows($date, $to = null)
+    public function getAllFileReportRows($date, $to = null, $idKhoa = null)
     {
         $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
         $sql = 'SELECT ma_lk, ma_bn, ngay_lap, validation_result
-                FROM `file` WHERE update_at >= ? AND update_at < ? ORDER BY update_at DESC, id DESC';
+                FROM `file` WHERE update_at >= ? AND update_at < ?';
+        if ($idKhoa !== null) $sql .= ' AND id_khoa = ?';
+        $sql .= ' ORDER BY update_at DESC, id DESC';
         $statement = $this->connection->prepare($sql);
         if (!$statement) throw new RuntimeException('Không thể chuẩn bị dữ liệu tổng hợp file.');
-        $statement->bind_param('ss', $date, $to);
+        if ($idKhoa !== null) $statement->bind_param('ssi', $date, $to, $idKhoa);
+        else $statement->bind_param('ss', $date, $to);
         $statement->execute();
         $result = $statement->get_result();
         if (!$result) throw new RuntimeException('Không thể tải dữ liệu tổng hợp file.');
@@ -463,7 +493,11 @@ class FilePeer
 
     public function getPortalFiles($date)
     {
-        $q = $this->connection->prepare("SELECT id, ten, ma_lk, file_path FROM file WHERE DATE(update_at)=? AND processing_status='processed' AND da_day_cong=0 ORDER BY id");
+        $q = $this->connection->prepare("SELECT f.id, f.ten, f.ma_lk, f.file_path
+            FROM file f
+            WHERE DATE(f.update_at)=? AND f.processing_status='processed' AND f.da_day_cong=0
+              AND NOT EXISTS (SELECT 1 FROM cong_hoso c WHERE c.malk = f.ma_lk)
+            ORDER BY f.id");
         if (!$q) throw new RuntimeException('Không thể tải file đẩy cổng.');
         $q->bind_param('s', $date); $q->execute(); $result = $q->get_result(); $rows = array();
         while ($row = $result->fetch_assoc()) $rows[] = $row;
@@ -476,10 +510,48 @@ class FilePeer
         if (!$ids) return array();
         $marks = implode(',', array_fill(0, count($ids), '?'));
         $types = str_repeat('i', count($ids));
-        $q = $this->connection->prepare("SELECT id, ten, ma_lk, file_path FROM file WHERE id IN ($marks) AND processing_status='processed' AND da_day_cong=0");
+        $q = $this->connection->prepare("SELECT f.id, f.ten, f.ma_lk, f.file_path
+            FROM file f
+            WHERE f.id IN ($marks) AND f.processing_status='processed' AND f.da_day_cong=0
+              AND NOT EXISTS (SELECT 1 FROM cong_hoso c WHERE c.malk = f.ma_lk)");
         $q->bind_param($types, ...$ids); $q->execute(); $result = $q->get_result(); $rows = array();
         while ($row = $result->fetch_assoc()) $rows[] = $row;
         $q->close(); return $rows;
+    }
+
+    public function getCongHosoData($date = null, $maLk = null, $limit = 1000)
+    {
+        $limit = max(1, min(5000, (int) $limit));
+        $where = array();
+        $params = array();
+        $types = '';
+        if ($date !== null) {
+            $where[] = 'DATE(created_at) = ?';
+            $params[] = $date;
+            $types .= 's';
+        }
+        if ($maLk !== null && $maLk !== '') {
+            $where[] = 'malk = ?';
+            $params[] = $maLk;
+            $types .= 's';
+        }
+        $sql = 'SELECT id, cccd, malk, ten_file, noidung, nguoi_day, id_khoa
+                FROM cong_hoso';
+        if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
+        $sql .= ' ORDER BY id DESC LIMIT ' . $limit;
+        $statement = $this->connection->prepare($sql);
+        if (!$statement) throw new RuntimeException('Không thể tải dữ liệu cổng hồ sơ.');
+        if ($params) $statement->bind_param($types, ...$params);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể tải dữ liệu cổng hồ sơ.');
+        }
+        $result = $statement->get_result();
+        $rows = array();
+        while ($row = $result->fetch_assoc()) $rows[] = $row;
+        $result->free();
+        $statement->close();
+        return $rows;
     }
 
     public function markPortalPushed($id)
@@ -551,7 +623,7 @@ class FilePeer
         return true;
     }
 
-    public function markAllForRevalidation($date)
+    public function markAllForRevalidation($date, $idKhoa = null)
     {
         // Serialize queue creation and batch claiming on the same MySQL mutex.
         // This prevents the range UPDATE below from racing with FOR UPDATE.
@@ -565,11 +637,13 @@ class FilePeer
             "SELECT COUNT(*) AS total FROM `file`
              WHERE DATE(update_at) = ?
                AND processing_status IN ('pending_revalidation', 'revalidating')"
+             . ($idKhoa !== null ? ' AND id_khoa = ?' : '')
         );
         if (!$pendingStatement) {
             throw new RuntimeException('Không thể chuẩn bị kiểm tra hàng đợi quét lại.');
         }
-        $pendingStatement->bind_param('s', $date);
+        if ($idKhoa !== null) $pendingStatement->bind_param('si', $date, $idKhoa);
+        else $pendingStatement->bind_param('s', $date);
         $pendingStatement->execute();
         $pendingResult = $pendingStatement->get_result();
         if (!$pendingResult) {
@@ -585,7 +659,8 @@ class FilePeer
             "UPDATE `file`
              SET processing_status = 'pending_revalidation', update_at = update_at
              WHERE DATE(update_at) = ?
-               AND processing_status NOT IN ('pending_revalidation', 'revalidating')
+               AND processing_status NOT IN ('pending_revalidation', 'revalidating')"
+             . ($idKhoa !== null ? ' AND id_khoa = ?' : '') . "
              LIMIT 100"
         );
         if (!$statement) {
@@ -595,7 +670,8 @@ class FilePeer
         // Update small batches so the watcher never competes with one large
         // range lock covering all files for the selected day.
         do {
-            $statement->bind_param('s', $date);
+            if ($idKhoa !== null) $statement->bind_param('si', $date, $idKhoa);
+            else $statement->bind_param('s', $date);
             if (!$statement->execute()) {
                 $errorCode = (int) $statement->errno;
                 throw new RuntimeException('Queue update failed.', $errorCode);
@@ -615,7 +691,7 @@ class FilePeer
                 $queueRetryCount++;
                 usleep($queueRetryCount * 200000 + mt_rand(0, 100000));
                 try {
-                    return $this->markAllForRevalidation($date);
+                    return $this->markAllForRevalidation($date, $idKhoa);
                 } finally {
                     $queueRetryCount--;
                 }
@@ -626,7 +702,7 @@ class FilePeer
         }
     }
 
-    public function claimPendingRevalidation($limit = 2, $date = null)
+    public function claimPendingRevalidation($limit = 2, $date = null, $idKhoa = null)
     {
         $limit = max(1, min(20, (int) $limit));
         $mutex = $this->connection->query("SELECT GET_LOCK('ql_error_revalidation_queue', 10)");
@@ -640,6 +716,7 @@ class FilePeer
                     FROM `file`
                     WHERE processing_status = 'pending_revalidation'";
             if ($date !== null) $sql .= " AND DATE(update_at) = ?";
+            if ($idKhoa !== null) $sql .= " AND id_khoa = ?";
             // MariaDB does not support SKIP LOCKED. The GET_LOCK mutex above
             // serializes the watcher and web requests before this row lock.
             $sql .= " ORDER BY update_at ASC, id ASC LIMIT " . $limit . " FOR UPDATE";
@@ -647,7 +724,9 @@ class FilePeer
             if (!$statement) {
                 throw new RuntimeException('Không thể chuẩn bị nhận hàng đợi quét lại.');
             }
-            if ($date !== null) $statement->bind_param('s', $date);
+            if ($date !== null && $idKhoa !== null) $statement->bind_param('si', $date, $idKhoa);
+            elseif ($date !== null) $statement->bind_param('s', $date);
+            elseif ($idKhoa !== null) $statement->bind_param('i', $idKhoa);
             if (!$statement->execute()) {
                 $errorCode = (int) $statement->errno;
                 $statement->close();
@@ -692,7 +771,7 @@ class FilePeer
                 $retryCount++;
                 usleep($retryCount * 150000 + mt_rand(0, 100000));
                 try {
-                    return $this->claimPendingRevalidation($limit, $date);
+                    return $this->claimPendingRevalidation($limit, $date, $idKhoa);
                 } finally {
                     $retryCount--;
                 }

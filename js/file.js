@@ -691,7 +691,7 @@
             return { data: {
                 STT: index + 1, 'MÃ BN': file.ma_bn, 'MÃ THẺ BHYT': file.ma_the_bhyt,
                 'ĐIỀU TRỊ TỪ': file.ngay_vao, 'ĐIỀU TRỊ ĐẾN': file.ngay_ra,
-                'SỐ LƯỢNG LỖI': file.count, 'SỐ TIỀN': file.total_amount,
+                'SỐ LƯỢNG LỖI': file.count, 'TÊN TRƯỜNG': file.error_fields || '', 'SỐ TIỀN': file.total_amount,
                 'MÃ LIÊN KẾT': file.ma_lk
             }, styles: file.count > 0 ? { 'SỐ LƯỢNG LỖI': 2 } : {} };
         });
@@ -822,20 +822,29 @@
             (file.errors || []).forEach(function (error) {
                 var severity = String(error.severity || error.level || error.muc_do || '').toLowerCase();
                 if (severity === 'warning' || severity.indexOf('warn') !== -1 || severity.indexOf('cảnh báo') !== -1 || severity.indexOf('canh bao') !== -1) return;
-                errors.push({ error: error, xml: file.type || '' });
+                errors.push({ error: error, xml: file.type || '', fileIndex: decodedFiles.indexOf(file) });
             });
         });
         var table = $('<table class="table table-striped table-bordered error-statistics-table">');
-        $('<thead><tr><th>ID lỗi</th><th>Tên lỗi</th><th>XML</th><th>Nguyên nhân</th><th>Hướng xử lý</th></tr></thead>').appendTo(table);
+        table.append('<thead><tr><th>ID lỗi</th><th>Tên lỗi</th><th>Tên trường</th><th>Giá trị lỗi</th><th>XML</th><th>Nguyên nhân</th><th>Hướng xử lý</th></tr></thead>');
         var body = $('<tbody>').appendTo(table);
         if (!errors.length) {
-            $('<tr><td colspan="5" class="text-center text-muted">Không có lỗi trong XML này.</td></tr>').appendTo(body);
+            $('<tr><td colspan="7" class="text-center text-muted">Không có lỗi trong XML này.</td></tr>').appendTo(body);
         } else {
             errors.forEach(function (item) {
                 var error = item.error;
                 $('<tr>').append(
                     $('<td>').text(error.rule_id == null ? '' : error.rule_id),
                     $('<td>').text(error.display_name || error.field_name || ''),
+                    $('<td>').append(
+                        $('<button type="button" class="error-field-link">')
+                            .text(error.field_name || '')
+                            .attr({
+                                'data-file-index': item.fileIndex,
+                                'data-error-path': error.path || ''
+                            })
+                    ),
+                    $('<td>').text(error.value == null ? '' : error.value),
                     $('<td>').text(item.xml),
                     $('<td>').text(error.message || ''),
                     $('<td>').text(error.huongxuly || 'Chưa cập nhật hướng xử lý')
@@ -844,6 +853,22 @@
         }
         container.append('<h4><i class="fa fa-bar-chart"></i> Thống kê các lỗi</h4>').append(table);
     }
+
+    $('#decoded-error-statistics').on('click', '.error-field-link', function () {
+        var fileIndex = Number($(this).attr('data-file-index'));
+        var errorPath = String($(this).attr('data-error-path') || '');
+        $('#decoded-file-select').val(fileIndex).trigger('change');
+        xmlViewMode = 'table';
+        applyXmlViewMode();
+        var cell = $('#decoded-table-view [data-field-path]').filter(function () {
+            return String($(this).attr('data-field-path') || '') === errorPath;
+        });
+        if (cell.length) {
+            cell.addClass('table-cell-error-focus');
+            cell[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+            setTimeout(function () { cell.removeClass('table-cell-error-focus'); }, 2500);
+        }
+    });
 
     function xmlElementName(name) {
         var normalized = String(name == null ? 'ITEM' : name).replace(/[^A-Za-z0-9_.-]/g, '_');
@@ -1066,6 +1091,7 @@
                     if (header === 'TEN_DICH_VU') cell.addClass('xml3-frozen-ten-dich-vu');
                 }
                 var fieldPath = record.path ? record.path + '.' + header : header;
+                cell.attr('data-field-path', fieldPath);
                 (selected.errors || []).some(function (error) {
                     if (String(error.path || '') !== fieldPath) return false;
                     var warning = error.severity === 'warning';
@@ -1364,6 +1390,10 @@
                     if (type !== 'display') return count;
                     return count ? '<span class="label label-danger">' + count + '</span>' : '0';
                 }
+            },
+            {
+                data: 'error_fields',
+                defaultContent: ''
             },
             {
                 data: 'total_amount',
