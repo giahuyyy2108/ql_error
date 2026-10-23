@@ -284,32 +284,10 @@ $showProgress = function (array $progress, $path) use ($options) {
     fflush(STDOUT);
 };
 
-$claimTurn = function ($path) use ($turnPath, $processingDir, $options) {
-    $handle = @fopen($turnPath, 'c+');
-    if ($handle === false || !flock($handle, LOCK_EX)) {
-        if ($handle !== false) fclose($handle);
-        return false;
-    }
-    rewind($handle);
-    $turn = trim(stream_get_contents($handle));
-    $turn = ($turn === '2') ? 2 : 1;
-    if ($turn !== (int) $options['worker_id']) {
-        flock($handle, LOCK_UN);
-        fclose($handle);
-        return false;
-    }
-    if (!@rename($path, $processingDir . DIRECTORY_SEPARATOR . basename($path))) {
-        flock($handle, LOCK_UN);
-        fclose($handle);
-        return false;
-    }
-    rewind($handle);
-    ftruncate($handle, 0);
-    fwrite($handle, $turn === 1 ? '2' : '1');
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
-    return true;
+$claimTurn = function ($path) use ($processingDir) {
+    $destination = $processingDir . DIRECTORY_SEPARATOR . basename($path);
+    if (file_exists($destination)) return false;
+    return @rename($path, $destination);
 };
 
 $logValidationErrors = function ($fileName, array $validation) use ($log) {

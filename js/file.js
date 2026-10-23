@@ -15,6 +15,7 @@
     var revalidationInProgress = false;
     var uploadInProgress = false;
     var getDataInProgress = false;
+    var warningPushFileId = 0;
     var pendingDataReload = false;
     var fileSearchTerm = '';
     var fileSearchTimer = null;
@@ -856,7 +857,11 @@
                 var error = item.error;
                 var isWarning = String(error.severity || '').toLowerCase() === 'warning';
                 $('<tr>').addClass(isWarning ? 'error-statistics-warning' : 'error-statistics-error').append(
-                    $('<td>').text(error.rule_id == null ? '' : error.rule_id),
+                    $('<td>').append(
+                        $('<span>').text(error.rule_id == null ? '' : 'Rule: ' + error.rule_id)
+                            .attr('title', error.display_name || error.rule_type || '')
+                            .addClass('rule-id-hover')
+                    ),
                     $('<td>').text(error.display_name || error.field_name || ''),
                     $('<td>').append(
                         $('<button type="button" class="error-field-link">')
@@ -1268,7 +1273,7 @@
     }
 
     function updateFileStatistics(rows) {
-        var statistics = { total: 0, success: 0, failed: 0, processing: 0 };
+        var statistics = { total: 0, success: 0, failed: 0, processing: 0, warnings: 0 };
         var dateInput = $('#file-stat-date');
         var selectedDate = selectedFileDate();
         if (!selectedDate) {
@@ -1279,6 +1284,7 @@
             var modified = new Date(Number(row.timestamp) * 1000);
             if (localDateKey(modified) !== selectedDate) return;
             statistics.total++;
+            statistics.warnings += Number(row.warning_count) || 0;
             var status = String(row.status || row.processing_status || '').toLowerCase();
             if (status === 'failed') statistics.failed++;
             else if (status === 'pending_revalidation' || status === 'revalidating' || status === 'processing') statistics.processing++;
@@ -1287,6 +1293,7 @@
         $('#file-stat-total').text(statistics.total);
         $('#file-stat-success').text(statistics.success);
         $('#file-stat-failed').text(statistics.failed);
+        $('#file-stat-warning').text(statistics.warnings);
         $('#file-stat-processing').text(statistics.processing);
         $('.file-stat-processing > .fa').toggleClass('file-stat-spin', statistics.processing > 0);
     }
@@ -1438,15 +1445,22 @@
                 render: function (data, type, row) {
                     var name = escapeHtml(row.name);
                     var malk = escapeHtml(row.ma_lk);
+                    var pushWarning = Number(row.warning_count) > 0 && Number(row.error_count) === 0 && !row.da_day_cong
+                        ? '<button type="button" class="btn btn-sm btn-warning btn-file-action btn-push-warning" data-id="' + row.id + '" title="Đẩy cổng hồ sơ cảnh báo" aria-label="Đẩy cổng hồ sơ cảnh báo"><i class="fa fa-send"></i></button>'
+                        : '';
                     return '<button type="button" class="btn btn-sm btn-info btn-file-action btn-view-file" data-id="' + row.id + '" data-malk="' + malk + '" title="Xem file" aria-label="Xem file">' +
                         '<i class="fa fa-eye"></i></button>' +
+                        pushWarning +
                         '<button type="button" class="btn btn-sm btn-danger btn-file-action btn-delete-file" data-id="' + row.id + '" data-name="' + name + '" title="Xóa file" aria-label="Xóa file">' +
                         '<i class="fa fa-trash"></i></button>';
                 }
             },
         ],
         createdRow: function (row, data) {
-            $(row).toggleClass('file-row-has-error', Number(data.error_count) > 0);
+            var hasError = Number(data.error_count) > 0;
+            var hasWarning = !hasError && Number(data.warning_count) > 0;
+            $(row).toggleClass('file-row-has-error', hasError)
+                .toggleClass('file-row-has-warning', hasWarning);
         },
         drawCallback: function () {
             updateSelectionControls();
@@ -1539,9 +1553,13 @@
                 var currentRows = table.rows().data().toArray();
                 var total = currentRows.length;
                 var failed = currentRows.filter(function (row) { return row.status === 'failed'; }).length;
+                var warnings = currentRows.reduce(function (sum, row) {
+                    return sum + (Number(row.warning_count) || 0);
+                }, 0);
                 var processing = remaining;
                 $('#file-stat-total').text(total);
                 $('#file-stat-failed').text(failed);
+                $('#file-stat-warning').text(warnings);
                 $('#file-stat-processing').text(processing);
                 $('#file-stat-success').text(Math.max(0, total - failed - processing));
                 requestFileData(false);
@@ -1629,6 +1647,50 @@
         }, 'json').fail(function () { alert('Không thể đẩy cổng.'); button.prop('disabled', false); });
     });
 
+    $('#datatable-file').on('click', '.btn-push-warning', function () {
+        warningPushFileId = Number($(this).attr('data-id'));
+        $('#modal-push-warning').modal('show');
+        var body = $('#push-warning-details').html('<tr><td colspan="5" class="text-center">Đang tải...</td></tr>');
+        $.post(baseUrl + 'file/getContent/', { id: warningPushFileId }, function (response) {
+            body.empty();
+            var count = 0;
+            (response.validation || []).forEach(function (item) {
+                (item.errors || []).forEach(function (error) {
+                    if (String(error.severity || '').toLowerCase() !== 'warning') return;
+                    count++;
+                    $('<tr>').append(
+                        $('<td>').append(
+                            $('<span>').text(error.rule_id == null ? '' : 'Rule: ' + error.rule_id)
+                                .attr('title', error.display_name || error.rule_type || '')
+                                .addClass('rule-id-hover')
+                        ),
+                        $('<td>').text(item.file_type || ''),
+                        $('<td>').text(error.field_name || ''),
+                        $('<td>').text(error.value == null ? '' : error.value),
+                        $('<td>').text(error.message || '')
+                    ).appendTo(body);
+                });
+            });
+            if (!count) body.append('<tr><td colspan="5" class="text-center">Không tìm thấy chi tiết cảnh báo.</td></tr>');
+        }, 'json').fail(function () {
+            body.html('<tr><td colspan="5" class="text-center text-danger">Không tải được chi tiết cảnh báo.</td></tr>');
+        });
+    });
+
+    $('#btn-confirm-push-warning').on('click', function () {
+        if (!warningPushFileId) return;
+        var button = $(this).prop('disabled', true);
+        $.post(baseUrl + 'file/pushPortal/', { ids: JSON.stringify([warningPushFileId]), confirm_warning: '1' }, function (response) {
+            $('#modal-push-warning').modal('hide');
+            warningPushFileId = 0;
+            alert(response.success && response.done ? 'Đã đẩy hồ sơ cảnh báo lên cổng.' : (response.message || 'Không thể đẩy hồ sơ.'));
+            requestFileData();
+        }, 'json').fail(function () {
+            alert('Không thể đẩy hồ sơ cảnh báo lên cổng.');
+        }).always(function () { button.prop('disabled', false); });
+    });
+    $('#modal-push-warning').on('hidden.bs.modal', function () { warningPushFileId = 0; });
+
     $('#btn-reset-file-search').on('click', function () {
         $('#file-search').val('').focus();
         fileSearchTerm = '';
@@ -1701,6 +1763,9 @@
                 $('#file-stat-total').text(Number(progress.total) || 0);
                 $('#file-stat-success').text(Number(progress.success) || 0);
                 $('#file-stat-failed').text(Number(progress.failed) || 0);
+                if (progress.warning_count !== undefined) {
+                    $('#file-stat-warning').text(Number(progress.warning_count) || 0);
+                }
                 $('#file-stat-processing').text(Number(progress.processing) || remaining);
                 $('.file-stat-processing > .fa').toggleClass('file-stat-spin', (Number(progress.processing) || remaining) > 0);
                 if (remaining > 0) {

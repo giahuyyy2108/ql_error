@@ -48,6 +48,10 @@
                     <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
                     <div><strong id="file-stat-failed">0</strong><span>Có lỗi</span></div>
                 </div>
+                <div class="file-stat-card file-stat-warning">
+                    <i class="fa fa-warning" aria-hidden="true"></i>
+                    <div><strong id="file-stat-warning">0</strong><span>Cảnh báo</span></div>
+                </div>
                 <div class="file-stat-card file-stat-processing">
                     <i class="fa fa-refresh" aria-hidden="true"></i>
                     <div><strong id="file-stat-processing">0</strong><span>Đang xử lý</span></div>
@@ -100,3 +104,20 @@
 <?php require __DIR__ . '/partials/upload-modal.php'; ?>
 <?php require __DIR__ . '/partials/view-modal.php'; ?>
 <?php require __DIR__ . '/partials/delete-modal.php'; ?>
+
+<div class="modal fade" id="modal-push-warning" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Xác nhận đẩy cổng</h5><button type="button" class="close" data-dismiss="modal"><span>&times;</span></button></div>
+        <div class="modal-body">
+            <p>Hồ sơ có cảnh báo. Bạn vẫn muốn đẩy cổng?</p>
+            <div class="table-responsive"><table class="table table-bordered table-condensed">
+                <thead><tr><th>Rule</th><th>XML</th><th>Tên trường</th><th>Giá trị</th><th>Nội dung cảnh báo</th></tr></thead>
+                <tbody id="push-warning-details"><tr><td colspan="5" class="text-center">Đang tải...</td></tr></tbody>
+            </table></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Không</button>
+            <button type="button" id="btn-confirm-push-warning" class="btn btn-warning">Đồng ý</button>
+        </div>
+    </div></div>
+</div>

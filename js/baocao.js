@@ -1,4 +1,75 @@
 (function ($) {
+    var reportChart;
+    function renderReportChart(rows) {
+        if (typeof Chart === 'undefined' || !document.getElementById('report-error-chart')) return;
+        var grouped = {}, ruleNames = {}, ruleSeverity = {}, ruleCosts = {}, ruleFiles = {};
+        (rows || []).forEach(function (row) {
+            var id = row.rule_id == null || row.rule_id === '' ? 'unknown' : String(row.rule_id);
+            var key = id;
+            ruleNames[key] = row.rule_name || row.display_name || row.error || row.rule_type || 'Rule ' + id;
+            if (String(row.severity || 'error').toLowerCase() === 'warning') ruleSeverity[key] = 'warning';
+            else if (!ruleSeverity[key]) ruleSeverity[key] = 'error';
+            grouped[key] = (grouped[key] || 0) + 1;
+            if (!ruleFiles[key]) ruleFiles[key] = {};
+            var fileKey = String(row.ma_lk || row.ma_bn || '');
+            if (fileKey && !ruleFiles[key][fileKey]) {
+                ruleFiles[key][fileKey] = true;
+                ruleCosts[key] = (ruleCosts[key] || 0) + (Number(row.total_amount) || 0);
+            }
+        });
+        var items = Object.keys(grouped).sort(function (a, b) { return grouped[b] - grouped[a]; }).slice(0, 10);
+        if (reportChart) reportChart.destroy();
+        $('#report-chart-empty').toggle(items.length === 0).text(items.length ? '' : 'Không có lỗi hoặc cảnh báo trong thời gian đã chọn.');
+        if (!items.length) return;
+        reportChart = new Chart(document.getElementById('report-error-chart').getContext('2d'), {
+            type: 'bar',
+            data: { labels: items.map(function (x) { return x === 'unknown' ? 'Rule: ?' : 'Rule: ' + x; }), datasets: [{ label: 'Số lần phát sinh', data: items.map(function (x) { return grouped[x]; }), backgroundColor: items.map(function (x) { return ruleSeverity[x] === 'warning' ? '#f0ad4e' : '#337ab7'; }) }] },
+            options: { responsive: true, maintainAspectRatio: false, legend: { display: false }, scales: { yAxes: [{ ticks: { beginAtZero: true, stepSize: 1 } }] },
+                tooltips: { callbacks: { label: function (tooltipItem) {
+                    var index = tooltipItem && tooltipItem.index != null ? tooltipItem.index : -1;
+                    var id = index >= 0 && items[index] ? items[index] : 'unknown';
+                    var cost = Number(ruleCosts[id] || 0).toLocaleString('vi-VN');
+                    return ' ' + (ruleNames[id] || 'Rule ' + id) + ' | Chi phí ước tính: ' + cost + ' đồng';
+                } } } }
+        });
+    }
+    function renderReportFiles(files) {
+        var box = $('#report-file-list').empty();
+        if (!files || !files.length) { box.html('<div class="alert alert-warning">Không có file trong phạm vi đã chọn.</div>'); return; }
+        function esc(value) { return $('<div>').text(value == null ? '' : value).html(); }
+        function dateVi(value) {
+            var text = String(value == null ? '' : value).replace(/\D/g, '');
+            if (text.length >= 8) return text.substring(6, 8) + '/' + text.substring(4, 6) + '/' + text.substring(0, 4);
+            return value == null ? '' : value;
+        }
+        files = files.slice().sort(function (a, b) {
+            var levelA = Number(a.error_count || 0) > 0 ? 2 : (Number(a.warning_count || 0) > 0 ? 1 : 0);
+            var levelB = Number(b.error_count || 0) > 0 ? 2 : (Number(b.warning_count || 0) > 0 ? 1 : 0);
+            return levelB - levelA;
+        });
+        var html = '<h4>Danh sách file theo phạm vi thống kê (' + files.length + ')</h4><div class="table-responsive"><table id="report-file-table" class="table table-bordered table-striped table-condensed"><thead><tr><th>STT</th><th>Mã liên kết</th><th>Mã BN</th><th>Điều trị từ</th><th>Điều trị đến</th><th>Số tiền</th></tr></thead><tbody>';
+        files.forEach(function (file, index) {
+            var rowClass = Number(file.error_count || 0) > 0 ? 'report-file-error' : (Number(file.warning_count || 0) > 0 ? 'report-file-warning' : '');
+            html += '<tr class="' + rowClass + '" data-file-status="' + (rowClass || 'normal') + '"><td>' + (index + 1) + '</td><td>' + esc(file.ma_lk) + '</td><td>' + esc(file.ma_bn) + '</td><td>' + esc(dateVi(file.ngay_vao)) + '</td><td>' + esc(dateVi(file.ngay_ra)) + '</td><td class="text-right">' + esc(file.total_amount) + '</td></tr>';
+        });
+        box.html(html + '</tbody></table></div>');
+        if ($.fn.DataTable) {
+            $('#report-file-table').DataTable({
+                pageLength: 100,
+                lengthChange: false,
+                scrollY: '360px',
+                scrollCollapse: true,
+                searching: true,
+                ordering: true,
+                createdRow: function (row) {
+                    var status = $(row).attr('data-file-status');
+                    if (status === 'report-file-error') $(row).find('td').css({ backgroundColor: '#f8d7da', color: '#721c24' });
+                    if (status === 'report-file-warning') $(row).find('td').css({ backgroundColor: '#fff3cd', color: '#856404' });
+                },
+                language: { search: 'Tìm:', info: 'Hiển thị _START_ đến _END_ trong _TOTAL_ file', infoEmpty: 'Không có file', zeroRecords: 'Không tìm thấy file' }
+            });
+        }
+    }
     function exportXlsx(html, filename) {
         var doc = new DOMParser().parseFromString(html, 'text/html'), rows = [];
         doc.querySelectorAll('table tr').forEach(function (tr) { rows.push(Array.prototype.map.call(tr.children, function (c) { return c.textContent; })); });
@@ -32,6 +103,21 @@
         $('#report-date').toggle(!month);
         $('#report-month').toggle(month);
     });
+    $('#report-scope').on('change', function () {
+        var byDepartment = this.value === 'khoa';
+        $('#report-khoa-wrap').css('visibility', byDepartment ? 'visible' : 'hidden');
+        if (!byDepartment) $('#report-khoa').val('0');
+    }).trigger('change');
+    $('#btn-show-chart').on('click', function () {
+        if ($('#report-scope').val() === 'khoa' && Number($('#report-khoa').val()) < 1) {
+            $('#report-message').text('Vui lòng chọn khoa cần thống kê.').removeClass('alert-info alert-success').addClass('alert-danger');
+            return;
+        }
+        var type = $('#report-type').val(), raw = type === 'month' ? $('#report-month').val() : $('#report-date').val();
+        var p = raw.split('/'), value = type === 'month' ? (p[1] + '-' + p[0]) : (p[2] + '-' + p[1] + '-' + p[0]);
+        $.getJSON('../baocao/getErrorReport/', { date: value, period: type, report_scope: $('#report-scope').val(), report_khoa: $('#report-khoa').val() })
+            .done(function (r) { if (r.success) { renderReportChart(r.data || []); renderReportFiles(r.files || []); $('#report-message').text('Đã cập nhật biểu đồ.').removeClass('alert-danger alert-info').addClass('alert-success'); } });
+    });
     $('#btn-export-report').on('click', function () {
         var type = $('#report-type').val();
         var raw = type === 'month' ? $('#report-month').val() : $('#report-date').val();
@@ -39,7 +125,7 @@
         var value = type === 'month' ? (parts[1] + '-' + parts[0]) : (parts[2] + '-' + parts[1] + '-' + parts[0]);
         if (!value) { $('#report-message').text('Vui lòng chọn thời gian.').addClass('alert-danger'); return; }
         var button = $(this).prop('disabled', true);
-        $.getJSON('../baocao/getErrorReport/', { date: value, period: type })
+        $.getJSON('../baocao/getErrorReport/', { date: value, period: type, report_scope: $('#report-scope').val(), report_khoa: $('#report-khoa').val() })
             .done(function (response) {
                 if (!response.success) { $('#report-message').text(response.message).addClass('alert-danger'); return; }
                 function cell(value) { return '<td>' + String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>'; }

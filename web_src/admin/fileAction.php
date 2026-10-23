@@ -182,12 +182,13 @@ class fileAction
     public function pushPortal()
     {
         $ids = json_decode((string) $this->request->getParameter('ids', false), true);
+        $confirmedWarning = $this->request->getParameter('confirm_warning', false) === '1';
         if (!is_array($ids) || !$ids) return $this->json(array('success' => false, 'message' => 'Vui lòng chọn file cần đẩy cổng.'));
         $done = 0; $skipped = 0;
         try {
             $root = dirname(__DIR__, 2);
-            // Files successfully pushed to the portal are archived by the
-            // operation date, and are no longer part of the active file list.
+            // Keep the original XML and file_path. The portal copy is only
+            // an archive/audit copy and must not remove file information.
             $archiveDate = date('Ymd');
             $archiveDirectory = $root . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
                 . 'xml' . DIRECTORY_SEPARATOR . 'portal' . DIRECTORY_SEPARATOR . $archiveDate;
@@ -217,11 +218,10 @@ class fileAction
                         $archiveName = pathinfo($archiveName, PATHINFO_FILENAME) . '_' . $file['id'] . '.' . pathinfo($archiveName, PATHINFO_EXTENSION);
                         $archivePath = $archiveDirectory . DIRECTORY_SEPARATOR . $archiveName;
                     }
-                    if (!rename($path, $archivePath)) {
+                    if (!copy($path, $archivePath)) {
                         throw new RuntimeException('Không thể chuyển file vào thư mục lưu theo ngày.');
                     }
                     $relativePath = 'storage/xml/portal/' . $archiveDate . '/' . $archiveName;
-                    $this->filePeer->updateStorageLocation($file['id'], $relativePath, 'processed');
                     $this->filePeer->markPortalPushed($file['id']);
                     $log = new Log();
                     $log->set('chucnang', 'Đẩy cổng');
@@ -229,6 +229,7 @@ class fileAction
                         'noidung',
                         'File: ' . $file['ten'] . ' | MALK: ' . $file['ma_lk']
                         . ' | Đường dẫn mới: ' . $relativePath
+                        . ($confirmedWarning ? ' | Người dùng đã đồng ý đẩy hồ sơ có cảnh báo' : '')
                     );
                     $log->set('noidungcu', 'Đường dẫn cũ: ' . $file['file_path']);
                     (new LogPeer())->ghiLog($log);
@@ -289,15 +290,26 @@ class fileAction
     {
         $period = trim((string) $this->request->getParameter('period', false));
         $value = trim((string) $this->request->getParameter('date', false));
+        $fromValue = trim((string) $this->request->getParameter('from_date', false));
+        $toValue = trim((string) $this->request->getParameter('to_date', false));
+        $reportScope = trim((string) $this->request->getParameter('report_scope', 'hospital'));
+        $reportKhoa = (int) $this->request->getParameter('report_khoa', 0);
         $month = $period === 'month' ? DateTime::createFromFormat('!Y-m', $value) : false;
-        $date = $month ? $month->format('Y-m-01') : $this->selectedDate();
+        $date = $month ? $month->format('Y-m-01') : ($fromValue !== '' ? $fromValue : $this->selectedDate());
         if ($date === null) {
             return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
         }
         try {
             $to = $month ? (clone $month)->modify('+1 month')->format('Y-m-01') : null;
+            if (!$month && $toValue !== '') {
+                $end = DateTime::createFromFormat('!Y-m-d', $toValue);
+                if (!$end) return $this->json(array('success' => false, 'message' => 'Khoảng ngày không hợp lệ.'));
+                $to = $end->modify('+1 day')->format('Y-m-d');
+            }
             $idKhoa = null;
-            if (!isset($_SESSION['AdminType']) || (int) $_SESSION['AdminType'] !== 1) {
+            if ($reportScope === 'khoa' && $reportKhoa > 0 && isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1) {
+                $idKhoa = $reportKhoa;
+            } elseif (!isset($_SESSION['AdminType']) || (int) $_SESSION['AdminType'] !== 1) {
                 $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : '';
                 $idKhoa = $this->filePeer->getCurrentUserKhoa($username);
             }
@@ -636,18 +648,34 @@ class fileAction
             throw new RuntimeException('Thư mục hàng đợi XML không thể ghi dữ liệu.');
         }
         $destination = $directory . DIRECTORY_SEPARATOR . $fileName;
+        $uploadLockPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage'
+            . DIRECTORY_SEPARATOR . 'watcher' . DIRECTORY_SEPARATOR . 'upload_' . sha1($fileName) . '.lock';
+        $uploadLock = fopen($uploadLockPath, 'c');
+        if ($uploadLock === false || !flock($uploadLock, LOCK_EX)) {
+            if ($uploadLock !== false) fclose($uploadLock);
+            throw new RuntimeException('Không thể khóa tên file để tải lên.');
+        }
+        $deadline = microtime(true) + 30;
+        while (file_exists($destination) && microtime(true) < $deadline) usleep(100000);
         if (file_exists($destination)) {
-            $destination = $directory . DIRECTORY_SEPARATOR . pathinfo($fileName, PATHINFO_FILENAME)
-                . '_' . date('Ymd_His') . '_' . substr(uniqid('', true), -6) . '.xml';
+            flock($uploadLock, LOCK_UN);
+            fclose($uploadLock);
+            throw new RuntimeException('File cùng tên đang được xử lý, vui lòng thử lại sau.');
         }
         $stagingPath = $destination . '.uploading.' . substr(uniqid('', true), -8);
         if (!move_uploaded_file($temporaryUploadPath, $stagingPath)) {
+            flock($uploadLock, LOCK_UN);
+            fclose($uploadLock);
             throw new RuntimeException('Không thể ghi file tải lên vào hàng đợi.');
         }
         if (!rename($stagingPath, $destination)) {
             @unlink($stagingPath);
+            flock($uploadLock, LOCK_UN);
+            fclose($uploadLock);
             throw new RuntimeException('Không thể hoàn tất việc đưa file vào hàng đợi.');
         }
+        flock($uploadLock, LOCK_UN);
+        fclose($uploadLock);
 
         $userKhoa = ($postedKhoa !== null && $postedKhoa !== '')
             ? (int) $postedKhoa : null;

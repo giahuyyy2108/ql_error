@@ -127,6 +127,7 @@ class FilePeer
                 'ngay_vao' => $summary['ngay_vao'],
                 'ngay_ra' => $summary['ngay_ra'],
                 'error_count' => $summary['error_count'],
+                'warning_count' => $summary['warning_count'],
                 'error_fields' => $summary['error_fields'],
                 'total_amount' => $summary['total_amount'],
                 'size' => (int) $row['kichthuoc'],
@@ -150,6 +151,7 @@ class FilePeer
             'ngay_vao' => '',
             'ngay_ra' => '',
             'error_count' => 0,
+            'warning_count' => 0,
             'error_fields' => '',
             'total_amount' => 0
         );
@@ -171,12 +173,15 @@ class FilePeer
             $summary['error_count'] += isset($item['error_count'])
                 ? (int) $item['error_count']
                 : (isset($item['errors']) && is_array($item['errors']) ? count($item['errors']) : 0);
+            $summary['warning_count'] += isset($item['warning_count'])
+                ? (int) $item['warning_count'] : 0;
             foreach (array('valid_fields', 'errors') as $collectionName) {
                 $fields = isset($item[$collectionName]) && is_array($item[$collectionName])
                     ? $item[$collectionName] : array();
                 foreach ($fields as $field) {
                     $fieldName = isset($field['field_name']) ? $field['field_name'] : '';
-                    if ($collectionName === 'errors' && $fieldName !== '') {
+                    $isWarning = isset($field['severity']) && strtolower((string) $field['severity']) === 'warning';
+                    if ($collectionName === 'errors' && !$isWarning && $fieldName !== '') {
                         $existing = $summary['error_fields'] === '' ? array() : explode(', ', $summary['error_fields']);
                         if (!in_array($fieldName, $existing, true)) $existing[] = $fieldName;
                         $summary['error_fields'] = implode(', ', $existing);
@@ -239,6 +244,9 @@ class FilePeer
                         'value' => isset($error['value']) && is_scalar($error['value'])
                             ? (string) $error['value'] : '',
                         'error' => isset($error['message']) ? (string) $error['message'] : 'Lỗi validation',
+                        'rule_id' => isset($error['rule_id']) ? (int) $error['rule_id'] : null,
+                        'rule_name' => isset($error['display_name']) ? (string) $error['display_name'] : '',
+                        'severity' => isset($error['severity']) ? (string) $error['severity'] : 'error',
                         'notes' => '',
                         'date' => $documentDate,
                         'status' => $file['processing_status'] === 'failed' ? 'CHƯA FIX' : 'ĐÃ FIX'
@@ -272,6 +280,7 @@ class FilePeer
                 'ma_lk' => (string) $file['ma_lk'], 'ma_bn' => (string) ($file['ma_bn'] ?: ''),
                 'ma_the_bhyt' => $summary['ma_the_bhyt'], 'ngay_vao' => $summary['ngay_vao'],
                 'ngay_ra' => $summary['ngay_ra'], 'error_count' => $summary['error_count'],
+                'warning_count' => $summary['warning_count'],
                 'total_amount' => $summary['total_amount'], 'date' => $this->formatDocumentDate($file['ngay_lap'])
             );
         }
@@ -560,14 +569,23 @@ class FilePeer
     {
         $ids = array_values(array_filter(array_map('intval', $ids), function ($id) { return $id > 0; }));
         if (!$ids) return array();
-        $marks = implode(',', array_fill(0, count($ids), '?'));
-        $types = str_repeat('i', count($ids));
-        $q = $this->connection->prepare("SELECT f.id, f.ten, f.ma_lk, f.file_path
+        $idList = implode(',', $ids);
+        $q = $this->connection->prepare("SELECT f.id, f.ten, f.ma_lk, f.file_path, f.validation_result
             FROM file f
-            WHERE f.id IN ($marks) AND f.processing_status='processed' AND f.da_day_cong=0
+            WHERE f.id IN ($idList) AND f.da_day_cong=0
               AND NOT EXISTS (SELECT 1 FROM cong_hoso c WHERE c.malk = f.ma_lk)");
-        $q->bind_param($types, ...$ids); $q->execute(); $result = $q->get_result(); $rows = array();
-        while ($row = $result->fetch_assoc()) $rows[] = $row;
+        $q->execute(); $result = $q->get_result(); $rows = array();
+        while ($row = $result->fetch_assoc()) {
+            $validation = json_decode((string) $row['validation_result'], true);
+            $hasErrors = false;
+            foreach (is_array($validation) ? $validation : array() as $item) {
+                if ((int) ($item['error_count'] ?? 0) > 0) { $hasErrors = true; break; }
+            }
+            if (!$hasErrors) {
+                unset($row['validation_result']);
+                $rows[] = $row;
+            }
+        }
         $q->close(); return $rows;
     }
 
@@ -876,6 +894,26 @@ class FilePeer
         $statement->close();
         $pending = isset($row['pending']) ? (int) $row['pending'] : 0;
         $revalidating = isset($row['revalidating']) ? (int) $row['revalidating'] : 0;
+        // validation_result is an array of XML results; warning_count is stored per item.
+        $warningSql = 'SELECT validation_result FROM `file`';
+        if ($date !== null) $warningSql .= ' WHERE DATE(update_at) = ?';
+        $warningStatement = $this->connection->prepare($warningSql);
+        $warningCount = 0;
+        if ($warningStatement) {
+            if ($date !== null) $warningStatement->bind_param('s', $date);
+            if ($warningStatement->execute()) {
+                $warningResult = $warningStatement->get_result();
+                while ($warningRow = $warningResult->fetch_assoc()) {
+                    $validation = json_decode((string) $warningRow['validation_result'], true);
+                    if (!is_array($validation)) continue;
+                    foreach ($validation as $item) {
+                        if (is_array($item)) $warningCount += (int) ($item['warning_count'] ?? 0);
+                    }
+                }
+                $warningResult->free();
+            }
+            $warningStatement->close();
+        }
         return array(
             'pending' => $pending,
             'revalidating' => $revalidating,
@@ -883,6 +921,7 @@ class FilePeer
             'processing' => $pending + $revalidating,
             'success' => isset($row['success']) ? (int) $row['success'] : 0,
             'failed' => isset($row['failed']) ? (int) $row['failed'] : 0,
+            'warning_count' => $warningCount,
             'total' => isset($row['total']) ? (int) $row['total'] : 0
         );
     }
