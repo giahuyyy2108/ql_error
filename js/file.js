@@ -14,6 +14,9 @@
     var xmlDisplaySettings = { show_errors: true, show_valid: true };
     var revalidationInProgress = false;
     var uploadInProgress = false;
+    var batchUploadProgressActive = false;
+    var queuedUploadProcessing = 0;
+    var queuedUploadProgressTimer = null;
     var getDataInProgress = false;
     var warningPushFileId = 0;
     var pendingDataReload = false;
@@ -1290,12 +1293,39 @@
             else if (status === 'pending_revalidation' || status === 'revalidating' || status === 'processing') statistics.processing++;
             else statistics.success++;
         });
+        statistics.total += queuedUploadProcessing;
+        statistics.processing += queuedUploadProcessing;
         $('#file-stat-total').text(statistics.total);
         $('#file-stat-success').text(statistics.success);
         $('#file-stat-failed').text(statistics.failed);
         $('#file-stat-warning').text(statistics.warnings);
         $('#file-stat-processing').text(statistics.processing);
         $('.file-stat-processing > .fa').toggleClass('file-stat-spin', statistics.processing > 0);
+    }
+
+    function refreshQueuedUploadProgress() {
+        window.clearTimeout(queuedUploadProgressTimer);
+        if (batchUploadProgressActive || uploadInProgress) {
+            queuedUploadProgressTimer = window.setTimeout(refreshQueuedUploadProgress, 1000);
+            return;
+        }
+        $.ajax({
+            url: baseUrl + 'file/uploadProgress/',
+            type: 'POST',
+            dataType: 'json',
+            data: { date: selectedFileDate() }
+        }).done(function (response) {
+            if (!response.success) return;
+            queuedUploadProcessing = Number(response.remaining) || 0;
+            updateFileStatistics(table.rows().data().toArray());
+            if (queuedUploadProcessing > 0) {
+                queuedUploadProgressTimer = window.setTimeout(refreshQueuedUploadProgress, 1000);
+            } else {
+                window.setTimeout(function () { requestFileData(false); }, 0);
+            }
+        }).fail(function () {
+            queuedUploadProgressTimer = window.setTimeout(refreshQueuedUploadProgress, 2000);
+        });
     }
 
     if ($.fn.datepicker) {
@@ -1489,6 +1519,7 @@
         $('#select-all-files').prop('checked', false).prop('indeterminate', false);
         updateSelectionControls();
         requestFileData();
+        refreshQueuedUploadProgress();
     });
 
     function dataReloadIsBlocked() {
@@ -1865,6 +1896,8 @@
         requestFileData(false);
     }, 30000);
 
+    refreshQueuedUploadProgress();
+
     $('#btn-open-upload').on('click', function () {
         $('#form-upload-xml')[0].reset();
         $('#xml-drop-file-name').hide().text('');
@@ -1897,6 +1930,8 @@
         }
 
         uploadInProgress = true;
+        batchUploadProgressActive = true;
+        queuedUploadProcessing = files.length;
         $('#file-stat-processing').text(files.length);
         $('.file-stat-processing > .fa').addClass('file-stat-spin');
         $('#xml-drop-zone').addClass('is-uploading');
@@ -1908,9 +1943,12 @@
 
         function waitForImportedFiles() {
             if (!queuedFileNames.length) {
+                batchUploadProgressActive = false;
+                queuedUploadProcessing = 0;
                 $('#file-stat-processing').text('0');
                 $('.file-stat-processing > .fa').removeClass('file-stat-spin');
                 requestFileData();
+                refreshQueuedUploadProgress();
                 return;
             }
             $.ajax({
@@ -1918,6 +1956,7 @@
                 data: { files: JSON.stringify(queuedFileNames), date: selectedFileDate() }
             }).done(function (response) {
                 var remaining = Number(response.remaining) || 0;
+                queuedUploadProcessing = remaining;
                 var statistics = response.statistics || {};
                 $('#file-stat-total').text(Number(statistics.total) || 0);
                 $('#file-stat-success').text(Number(statistics.success) || 0);
@@ -1927,8 +1966,10 @@
                     window.setTimeout(waitForImportedFiles, 1000);
                     return;
                 }
+                batchUploadProgressActive = false;
                 $('.file-stat-processing > .fa').removeClass('file-stat-spin');
                 requestFileData();
+                refreshQueuedUploadProgress();
             }).fail(function () { window.setTimeout(waitForImportedFiles, 1500); });
         }
 
@@ -1986,6 +2027,7 @@
                     ? xhr.responseJSON.message : 'Có lỗi xảy ra khi tải file lên.';
                 details.push(file.name + ': ' + message);
             }).always(function () {
+                queuedUploadProcessing = Math.max(0, files.length - index - 1);
                 $('#file-stat-processing').text(Math.max(0, files.length - index - 1));
                 processFile(index + 1);
             });

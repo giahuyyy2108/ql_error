@@ -455,12 +455,29 @@ class fileAction
 
     public function uploadProgress()
     {
-        $raw = (string) $this->request->getParameter('files', false);
-        $files = json_decode($raw, true);
-        if (!is_array($files)) return $this->json(array('success' => false, 'message' => 'Danh sách file không hợp lệ.'));
+        $raw = $this->request->getParameter('files', false);
+        $files = null;
+        if ($raw !== false && $raw !== null && trim((string) $raw) !== '') {
+            $files = json_decode((string) $raw, true);
+            if (!is_array($files)) {
+                return $this->json(array('success' => false, 'message' => 'Danh sách file không hợp lệ.'));
+            }
+        }
         try {
-            $remaining = $this->filePeer->countQueuedUploadFiles($files);
             $date = $this->selectedDate();
+            if ($date === null) {
+                return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
+            }
+            $remaining = $files !== null
+                ? $this->filePeer->countQueuedUploadFiles($files)
+                : $this->filePeer->countActiveQueuedUploadFiles();
+            if ($files === null) {
+                return $this->json(array(
+                    'success' => true,
+                    'remaining' => $remaining,
+                    'statistics' => array('processing' => $remaining)
+                ));
+            }
             $statistics = $date !== null ? $this->filePeer->getRevalidationProgress($date) : array();
             $statistics['processing'] = $remaining;
             $statistics['total'] = (isset($statistics['total']) ? (int) $statistics['total'] : 0) + $remaining;

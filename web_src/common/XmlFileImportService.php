@@ -27,35 +27,39 @@ class XmlFileImportService
         if ($size === false) {
             throw new RuntimeException('Không thể xác định dung lượng file XML.');
         }
-
-        $content = file_get_contents($path);
-        if ($content === false) {
-            throw new RuntimeException('Không thể đọc nội dung file XML.');
+        $size = (int) $size;
+        if ($size <= 0 || $size > $this->maxFileSize) {
+            throw new RuntimeException('File XML phải có dung lượng từ 1 byte đến 5 MB.');
         }
 
+        $decodedResult = XmlFileDecoder::decodeDanhSachHoSoPathWithMetadata($path);
         return $this->importContent(
             basename($path),
-            $content,
+            null,
             $size,
-            $storedPath !== null ? $storedPath : $path
+            $storedPath !== null ? $storedPath : $path,
+            $decodedResult
         );
     }
 
-    public function importContent($fileName, $content, $size, $filePath)
+    public function importContent($fileName, $content, $size, $filePath, $decodedResult = null)
     {
         $fileName = $this->normalizeFileName($fileName);
         $size = (int) $size;
         if ($size <= 0 || $size > $this->maxFileSize) {
             throw new RuntimeException('File XML phải có dung lượng từ 1 byte đến 5 MB.');
         }
-        if (!is_string($content) || $content === '') {
+        if ($decodedResult === null && (!is_string($content) || $content === '')) {
             throw new RuntimeException('Nội dung file XML rỗng.');
         }
         if (!is_string($filePath) || trim($filePath) === '') {
             throw new RuntimeException('Đường dẫn lưu file XML không hợp lệ.');
         }
 
-        $decodedContent = XmlFileDecoder::decodeDanhSachHoSo($content);
+        if ($decodedResult === null) {
+            $decodedResult = XmlFileDecoder::decodeDanhSachHoSoWithMetadata($content);
+        }
+        $decodedContent = $decodedResult['content'];
         $maLk = XmlFileDecoder::extractMaLk($decodedContent);
         $xml1Patient = XmlFileDecoder::extractValuesFromFileType(
             $decodedContent,
@@ -64,7 +68,10 @@ class XmlFileImportService
         );
         $maBn = $xml1Patient['MA_BN'];
         $hoTen = $xml1Patient['HO_TEN'];
-        $ngayLap = XmlFileDecoder::extractNgayLap($content);
+        $ngayLap = $decodedResult['ngay_lap'];
+        // The original XML string is no longer needed after decoding. Release
+        // it before validation/BHYT lookup, which may keep the decoded tree.
+        unset($decodedResult, $content);
         $validationResult = $this->validationCallback === null
             ? null
             : call_user_func($this->validationCallback, $decodedContent);

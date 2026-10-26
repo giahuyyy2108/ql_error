@@ -35,9 +35,9 @@ class FilePeer
     public function countQueuedUploadFiles(array $fileNames)
     {
         $names = array_values(array_unique(array_filter(array_map('basename', $fileNames))));
-        $queueDirectory = dirname(__DIR__, 2) . '/storage/xml';
-        $names = array_values(array_filter($names, function ($name) use ($queueDirectory) {
-            return is_file($queueDirectory . DIRECTORY_SEPARATOR . $name);
+        $activeNames = $this->activeQueuedXmlNames();
+        $names = array_values(array_filter($names, function ($name) use ($activeNames) {
+            return isset($activeNames[$name]);
         }));
         if (!$names) return 0;
         $escaped = array_map(function ($name) {
@@ -50,6 +50,88 @@ class FilePeer
         $row = $result->fetch_assoc();
         $result->free();
         return (int) $row['total'];
+    }
+
+    public function countActiveQueuedUploadFiles($date = null)
+    {
+        $activeNames = $this->activeQueuedXmlNames();
+        if (!$activeNames) return 0;
+
+        $isAdmin = isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1;
+        $userKhoa = null;
+        $filterByKhoa = false;
+        if (!$isAdmin) {
+            $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : '';
+            $userStatement = $this->connection->prepare(
+                'SELECT id_khoa FROM `user` WHERE username = ? LIMIT 1'
+            );
+            if (!$userStatement) throw new RuntimeException('Không thể xác định khoa của người dùng.');
+            $userStatement->bind_param('s', $username);
+            $userStatement->execute();
+            $userRow = $userStatement->get_result()->fetch_assoc();
+            if ($userRow && $userRow['id_khoa'] !== null) {
+                $userKhoa = (int) $userRow['id_khoa'];
+                $filterByKhoa = true;
+            }
+            $userStatement->close();
+        }
+
+        $sql = 'SELECT file_name FROM `xml_upload_queue`';
+        $conditions = array();
+        $dateFrom = null;
+        $dateTo = null;
+        if ($date !== null) {
+            $conditions[] = 'created_at >= ? AND created_at < ?';
+            $dateFrom = $date . ' 00:00:00';
+            $dateTo = date('Y-m-d 00:00:00', strtotime($date . ' +1 day'));
+        }
+        if ($filterByKhoa) $conditions[] = 'id_khoa = ?';
+        if ($conditions) $sql .= ' WHERE ' . implode(' AND ', $conditions);
+
+        $statement = $this->connection->prepare($sql);
+        if (!$statement) throw new RuntimeException('Không thể đọc hàng đợi import.');
+        if ($date !== null && $filterByKhoa) {
+            $statement->bind_param('ssi', $dateFrom, $dateTo, $userKhoa);
+        } elseif ($date !== null) {
+            $statement->bind_param('ss', $dateFrom, $dateTo);
+        } elseif ($filterByKhoa) {
+            $statement->bind_param('i', $userKhoa);
+        }
+        $statement->execute();
+        $result = $statement->get_result();
+        if (!$result) {
+            $statement->close();
+            throw new RuntimeException('Không thể đọc hàng đợi import.');
+        }
+
+        $count = 0;
+        while ($row = $result->fetch_assoc()) {
+            if (isset($activeNames[basename((string) $row['file_name'])])) $count++;
+        }
+        $result->free();
+        $statement->close();
+        return $count;
+    }
+
+    private function activeQueuedXmlNames()
+    {
+        $queueDirectory = dirname(__DIR__, 2) . '/storage/xml';
+        $names = array();
+        $collect = function ($directory) use (&$names) {
+            if (!is_dir($directory)) return;
+            foreach (new DirectoryIterator($directory) as $entry) {
+                if ($entry->isDot() || !$entry->isFile()) continue;
+                if (strtolower($entry->getExtension()) !== 'xml') continue;
+                $names[$entry->getFilename()] = true;
+            }
+        };
+
+        $collect($queueDirectory);
+        $processingRoot = $queueDirectory . DIRECTORY_SEPARATOR . 'processing';
+        foreach (glob($processingRoot . DIRECTORY_SEPARATOR . 'worker-*', GLOB_ONLYDIR) ?: array() as $workerDirectory) {
+            $collect($workerDirectory);
+        }
+        return $names;
     }
 
     public function __construct()
