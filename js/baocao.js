@@ -6,7 +6,7 @@
         (rows || []).forEach(function (row) {
             var id = row.rule_id == null || row.rule_id === '' ? 'unknown' : String(row.rule_id);
             var key = id;
-            ruleNames[key] = row.rule_name || row.display_name || row.error || row.rule_type || 'Rule ' + id;
+            ruleNames[key] = row.error || row.message || row.rule_name || row.rule_type || 'Lỗi validation';
             if (String(row.severity || 'error').toLowerCase() === 'warning') ruleSeverity[key] = 'warning';
             else if (!ruleSeverity[key]) ruleSeverity[key] = 'error';
             grouped[key] = (grouped[key] || 0) + 1;
@@ -18,18 +18,20 @@
             }
         });
         var items = Object.keys(grouped).sort(function (a, b) { return grouped[b] - grouped[a]; }).slice(0, 10);
+        var totalCount = Object.keys(grouped).reduce(function (sum, key) { return sum + grouped[key]; }, 0);
         if (reportChart) reportChart.destroy();
         $('#report-chart-empty').toggle(items.length === 0).text(items.length ? '' : 'Không có lỗi hoặc cảnh báo trong thời gian đã chọn.');
         if (!items.length) return;
         reportChart = new Chart(document.getElementById('report-error-chart').getContext('2d'), {
             type: 'bar',
-            data: { labels: items.map(function (x) { return x === 'unknown' ? 'Rule: ?' : 'Rule: ' + x; }), datasets: [{ label: 'Số lần phát sinh', data: items.map(function (x) { return grouped[x]; }), backgroundColor: items.map(function (x) { return ruleSeverity[x] === 'warning' ? '#f0ad4e' : '#337ab7'; }) }] },
-            options: { responsive: true, maintainAspectRatio: false, legend: { display: false }, scales: { yAxes: [{ ticks: { beginAtZero: true, stepSize: 1 } }] },
+            data: { labels: items.map(function (x) { return x === 'unknown' ? 'Rule: ?' : 'Rule: ' + x; }), datasets: [{ label: 'Tỷ lệ phát sinh', data: items.map(function (x) { return totalCount ? grouped[x] * 100 / totalCount : 0; }), backgroundColor: items.map(function (x) { return ruleSeverity[x] === 'warning' ? '#f0ad4e' : '#337ab7'; }) }] },
+            options: { responsive: true, maintainAspectRatio: false, legend: { display: false }, scales: { yAxes: [{ ticks: { beginAtZero: true, stepSize: 10, callback: function (value) { return value + '%'; } }, scaleLabel: { display: true, labelString: 'Tỷ lệ (%)' } }] },
                 tooltips: { callbacks: { label: function (tooltipItem) {
                     var index = tooltipItem && tooltipItem.index != null ? tooltipItem.index : -1;
                     var id = index >= 0 && items[index] ? items[index] : 'unknown';
+                    var percentage = totalCount ? (grouped[id] * 100 / totalCount) : 0;
                     var cost = Number(ruleCosts[id] || 0).toLocaleString('vi-VN');
-                    return ' ' + (ruleNames[id] || 'Rule ' + id) + ' | Chi phí ước tính: ' + cost + ' đồng';
+                    return ' ' + (ruleNames[id] || 'Rule ' + id) + ': ' + grouped[id] + ' lượt (' + percentage.toFixed(1) + '%) | Chi phí ước tính: ' + cost + ' đồng';
                 } } } }
         });
     }
@@ -89,6 +91,17 @@
             save(zip.generate({type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
         }
     }
+    function reportFilename(value) {
+        var filename = 'bao-cao-' + value;
+        if ($('#report-scope').val() === 'khoa') {
+            var khoaName = $('#report-khoa option:selected').text().trim();
+            if (khoaName && Number($('#report-khoa').val()) > 0) {
+                khoaName = khoaName.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '-');
+                filename += '-khoa-' + khoaName;
+            }
+        }
+        return filename + '.xlsx';
+    }
     var now = new Date();
     if ($.fn.datepicker) {
         $.fn.datepicker.dates.vi = { days: ['Chủ nhật','Thứ hai','Thứ ba','Thứ tư','Thứ năm','Thứ sáu','Thứ bảy'], daysShort: ['CN','T2','T3','T4','T5','T6','T7'], daysMin: ['CN','T2','T3','T4','T5','T6','T7'], months: ['Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'], monthsShort: ['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'], today: 'Hôm nay', clear: 'Xóa', titleFormat: 'MM yyyy' };
@@ -144,12 +157,12 @@
                     Object.keys(grouped).sort().forEach(function (e, i) { html += '<tr>' + cell(i + 1) + cell(e) + dates.map(function (d) { return cell(grouped[e][d] || 0); }).join('') + '</tr>'; });
                     html += '<tr>' + cell('') + cell('TỔNG FILE LỖI THEO NGÀY') + dates.map(function (d) { return cell((response.data || []).filter(function (r) { return (r.date || 'Không rõ ngày') === d; }).length); }).join('') + '</tr>';
                     html += '<tr>' + cell('') + cell('TỔNG BHTT') + dates.map(function (d) { var total = 0; (response.files || []).forEach(function (f) { if (f.date === d) total += Number(f.total_amount) || 0; }); return cell(total); }).join('') + '</tr></table></body></html>';
-                    exportXlsx(html, 'bao-cao-' + value + '.xlsx');
+                    exportXlsx(html, reportFilename(value));
                     $('#report-message').text('Đã xuất báo cáo tháng thành công.').removeClass('alert-danger').addClass('alert-success');
                     return;
                 }
                 if (window.exportErrorReportSheets) {
-                    window.exportErrorReportSheets(response.data || [], response.files || [], 'bao-cao-' + value + '.xlsx');
+                    window.exportErrorReportSheets(response.data || [], response.files || [], reportFilename(value));
                     $('#report-message').text('Đã xuất báo cáo thành công.').removeClass('alert-danger').addClass('alert-success');
                     return;
                 }
@@ -158,7 +171,7 @@
                 html += '</table><br><h2>TỔNG HỢP FILE</h2><table border="1"><tr><th>STT</th><th>Mã liên kết</th><th>Mã BN</th><th>Mã thẻ BHYT</th><th>Điều trị từ</th><th>Điều trị đến</th><th>Số lượng lỗi</th><th>Số tiền</th></tr>';
                 (response.files || []).forEach(function (r, i) { html += '<tr>' + [i + 1, r.ma_lk, r.ma_bn, r.ma_the_bhyt, r.ngay_vao, r.ngay_ra, r.error_count, r.total_amount].map(cell).join('') + '</tr>'; });
                 html += '</table></body></html>';
-                exportXlsx(html, 'bao-cao-' + value + '.xlsx');
+                exportXlsx(html, reportFilename(value));
                 $('#report-message').text('Đã xuất báo cáo thành công.').removeClass('alert-danger').addClass('alert-success');
             }).fail(function () { $('#report-message').text('Không thể tải dữ liệu báo cáo.').addClass('alert-danger'); })
             .always(function () { button.prop('disabled', false); });

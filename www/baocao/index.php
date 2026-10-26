@@ -5,12 +5,6 @@
     </div>
     <div class="x_content">
         <section class="report-card">
-            <div class="report-card-heading">
-                <div>
-                    <h3><i class="fa fa-file-excel-o"></i> Xuất báo cáo Excel</h3>
-                    <p>Chọn ngày hoặc tháng cần tổng hợp.</p>
-                </div>
-            </div>
             <div class="row report-filter-row">
                 <div class="col-sm-3 col-md-2">
                     <label for="report-type">Loại báo cáo</label>
@@ -45,24 +39,14 @@
                     <button id="btn-export-report" type="button" class="btn btn-success btn-block">
                         <i class="fa fa-download"></i> Xuất Excel
                     </button>
-                </div>
-            </div>
-        </section>
-
-        <section class="report-card report-chart-card">
-            <div class="report-card-heading">
-                <div>
-                    <h3><i class="fa fa-bar-chart"></i> Biểu đồ lỗi và cảnh báo</h3>
-                    <p>Hiển thị 10 lỗi hoặc cảnh báo phát sinh nhiều nhất.</p>
-                </div>
-            </div>
-            <div class="row report-filter-row">
-                <div class="col-sm-4 col-sm-offset-8 col-md-3 col-md-offset-9 report-actions">
                     <button id="btn-show-chart" type="button" class="btn btn-primary btn-block">
                         <i class="fa fa-refresh"></i> Xem biểu đồ
                     </button>
                 </div>
             </div>
+        </section>
+
+        <section class="report-card report-chart-card">
             <div class="chart-container">
                 <canvas id="report-error-chart"></canvas>
                 <div id="report-chart-empty" class="report-chart-empty">Chọn phạm vi rồi bấm “Xem biểu đồ”.</div>

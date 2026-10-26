@@ -195,7 +195,7 @@ class fileAction
             if (!is_dir($archiveDirectory) && !mkdir($archiveDirectory, 0775, true) && !is_dir($archiveDirectory)) {
                 throw new RuntimeException('Không thể tạo thư mục lưu file đã đẩy cổng.');
             }
-            foreach ($this->filePeer->getPortalFilesByIds($ids) as $file) {
+            foreach ($this->filePeer->getPortalFilesByIds($ids, $confirmedWarning) as $file) {
                 $path = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $file['file_path']);
                 if (!is_file($path)) { $skipped++; continue; }
                 $content = file_get_contents($path); $decoded = XmlFileDecoder::decodeDanhSachHoSo($content);

@@ -945,6 +945,7 @@
 .report-page .report-card-heading { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:1px solid #edf0f3; margin-bottom:10px; padding-bottom:7px; }
 .report-page .report-card-heading h3 { margin:0 0 3px; color:#34495e; font-size:16px; font-weight:600; }
 .report-page .report-card-heading h3 i { color:#337ab7; margin-right:8px; }
+.report-page .report-chart-card .report-card-heading > #btn-show-chart { width:25%; min-width:180px; min-height:34px; }
 .report-page .report-card-heading p { color:#7f8c8d; margin:0; }
 .report-page .report-filter-row { display:flex; align-items:flex-end; flex-wrap:wrap; }
 .report-page .report-filter-row > div { margin-bottom:4px; }
@@ -953,8 +954,9 @@
 .report-page .report-filter-row label { color:#52606d; font-weight:600; }
 .report-page .report-actions { padding-top:0; display:flex; align-items:flex-end; }
 .report-page .report-actions .btn { width:100%; min-height:34px; margin-bottom:0; }
+.report-page .report-chart-card .report-actions { margin-left:auto; }
 .report-page .report-khoa-slot { visibility:hidden; }
-.report-page .chart-container { position:relative; height:220px; max-width:620px; margin:10px auto 0; padding:4px 16px; border:1px dashed #d7dee5; border-radius:6px; background:#fbfcfd; }
+.report-page .chart-container { position:relative; width:100%; height:400px; max-width:none; margin:10px auto 0; padding:8px 24px; border:1px dashed #d7dee5; border-radius:6px; background:#fbfcfd; }
 .report-page .report-chart-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#8a97a3; text-align:center; pointer-events:none; }
 .report-page .report-chart-legend { color:#667784; font-size:13px; margin-top:10px; text-align:right; }
 .report-page .report-chart-legend span { display:inline-block; width:12px; height:12px; border-radius:2px; margin:0 4px 0 12px; vertical-align:-1px; }
@@ -971,5 +973,7 @@
     .report-page .report-filter-row { display:block; }
     .report-page .report-filter-row > div { margin-bottom:12px; }
     .report-page .report-actions { padding-top:0; }
-    .report-page .chart-container { height:240px; margin-top:10px; padding:6px; }
+    .report-page .report-chart-card .report-card-heading { display:block; }
+    .report-page .report-chart-card .report-card-heading > #btn-show-chart { margin-top:10px; width:100%; }
+    .report-page .chart-container { height:360px; margin-top:10px; padding:8px 12px; }
 }

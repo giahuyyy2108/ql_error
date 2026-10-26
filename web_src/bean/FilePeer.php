@@ -565,7 +565,7 @@ class FilePeer
         $q->close(); return $rows;
     }
 
-    public function getPortalFilesByIds(array $ids)
+    public function getPortalFilesByIds(array $ids, $allowWarnings = false)
     {
         $ids = array_values(array_filter(array_map('intval', $ids), function ($id) { return $id > 0; }));
         if (!$ids) return array();
@@ -578,10 +578,12 @@ class FilePeer
         while ($row = $result->fetch_assoc()) {
             $validation = json_decode((string) $row['validation_result'], true);
             $hasErrors = false;
+            $hasWarnings = false;
             foreach (is_array($validation) ? $validation : array() as $item) {
                 if ((int) ($item['error_count'] ?? 0) > 0) { $hasErrors = true; break; }
+                $hasWarnings = $hasWarnings || (int) ($item['warning_count'] ?? 0) > 0;
             }
-            if (!$hasErrors) {
+            if (!$hasErrors && ($allowWarnings || !$hasWarnings)) {
                 unset($row['validation_result']);
                 $rows[] = $row;
             }
