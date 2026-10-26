@@ -470,7 +470,7 @@ class fileAction
             }
             $remaining = $files !== null
                 ? $this->filePeer->countQueuedUploadFiles($files)
-                : $this->filePeer->countActiveQueuedUploadFiles();
+                : $this->filePeer->countActiveQueuedUploadFiles($date);
             if ($files === null) {
                 return $this->json(array(
                     'success' => true,

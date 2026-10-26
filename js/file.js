@@ -1051,6 +1051,23 @@
         }
         var headers = [];
         var known = {};
+        var selectedType = String(selected.type || '').toUpperCase();
+        var xml3ServiceTargets = {};
+
+        if (selectedType === 'XML4') {
+            (decodedFiles || []).forEach(function (file, fileIndex) {
+                if (String(file.type || '').toUpperCase() !== 'XML3') return;
+                collectExcelRecords(file.content || {}, []).forEach(function (record) {
+                    var serviceCode = record.data && record.data.MA_DICH_VU;
+                    serviceCode = serviceCode == null ? '' : String(serviceCode).trim();
+                    if (!serviceCode || xml3ServiceTargets[serviceCode]) return;
+                    xml3ServiceTargets[serviceCode] = {
+                        fileIndex: fileIndex,
+                        path: record.path ? record.path + '.MA_DICH_VU' : 'MA_DICH_VU'
+                    };
+                });
+            });
+        }
         records.forEach(function (record) {
             Object.keys(record.data).forEach(function (key) {
                 if (!known[key] && (record.data[key] === null || typeof record.data[key] !== 'object')) {
@@ -1059,7 +1076,7 @@
                 }
             });
         });
-        if (String(selected.type || '').toUpperCase() === 'XML2') {
+        if (selectedType === 'XML2') {
             var priorityHeaders = ['STT', 'TEN_THUOC' ,'MA_THUOC'];
             headers = priorityHeaders.filter(function (header) {
                 return known[header];
@@ -1067,7 +1084,7 @@
                 return priorityHeaders.indexOf(header) === -1;
             }));
         }
-        if (String(selected.type || '').toUpperCase() === 'XML3') {
+        if (selectedType === 'XML3') {
             var xml3PriorityHeaders = ['STT', 'TEN_DICH_VU'];
             headers = xml3PriorityHeaders.filter(function (header) {
                 return known[header];
@@ -1087,12 +1104,12 @@
                         .append($('<span>').addClass('decoded-table-sort-label').text(header))
                         .append($('<span>').addClass('decoded-table-sort-icon').attr('aria-hidden', 'true').text('↕'))
                 );
-            if (String(selected.type || '').toUpperCase() === 'XML2') {
+            if (selectedType === 'XML2') {
                 if (header === 'STT') cell.addClass('xml2-frozen-stt');
                 if (header === 'TEN_THUOC') cell.addClass('xml2-frozen-ten-thuoc');
                 if (header === 'MA_THUOC') cell.addClass('xml2-frozen-ma-thuoc');
             }
-            if (String(selected.type || '').toUpperCase() === 'XML3') {
+            if (selectedType === 'XML3') {
                 if (header === 'STT') cell.addClass('xml3-frozen-stt');
                 if (header === 'TEN_DICH_VU') cell.addClass('xml3-frozen-ten-dich-vu');
             }
@@ -1110,13 +1127,28 @@
                 var cell = $('<td>')
                     .text(formattedValue === null ? rawValue : formattedValue)
                     .attr('title', rawValue);
+                if (selectedType === 'XML4' && header === 'MA_DICH_VU') {
+                    var xml3Target = xml3ServiceTargets[String(rawValue).trim()];
+                    if (xml3Target) {
+                        cell.empty().append(
+                            $('<button type="button">')
+                                .addClass('xml-service-link')
+                                .text(rawValue)
+                                .attr({
+                                    'title': 'Mở MA_DICH_VU tương ứng trong XML3',
+                                    'data-target-file-index': xml3Target.fileIndex,
+                                    'data-target-field-path': xml3Target.path
+                                })
+                        );
+                    }
+                }
                 if (formattedValue !== null) cell.addClass('table-number-cell');
-                if (String(selected.type || '').toUpperCase() === 'XML2') {
+                if (selectedType === 'XML2') {
                     if (header === 'STT') cell.addClass('xml2-frozen-stt');
                     if (header === 'TEN_THUOC') cell.addClass('xml2-frozen-ten-thuoc');
                     if (header === 'MA_THUOC') cell.addClass('xml2-frozen-ma-thuoc');
                 }
-                if (String(selected.type || '').toUpperCase() === 'XML3') {
+                if (selectedType === 'XML3') {
                     if (header === 'STT') cell.addClass('xml3-frozen-stt');
                     if (header === 'TEN_DICH_VU') cell.addClass('xml3-frozen-ten-dich-vu');
                 }
@@ -1173,6 +1205,24 @@
         });
         tableElement.append(body).appendTo(container);
     }
+
+    $('#decoded-table-view').on('click', '.xml-service-link', function () {
+        var targetFileIndex = Number($(this).attr('data-target-file-index'));
+        var targetFieldPath = String($(this).attr('data-target-field-path') || '');
+        if (!decodedFiles[targetFileIndex] || !targetFieldPath) return;
+
+        xmlViewMode = 'table';
+        $('#decoded-file-select').val(targetFileIndex).trigger('change');
+
+        var targetCell = $('#decoded-table-view [data-field-path]').filter(function () {
+            return String($(this).attr('data-field-path') || '') === targetFieldPath;
+        }).first();
+        if (!targetCell.length) return;
+
+        targetCell.addClass('table-cell-error-focus');
+        targetCell[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        window.setTimeout(function () { targetCell.removeClass('table-cell-error-focus'); }, 2500);
+    });
 
     function applyXmlViewMode() {
         var auditMode = xmlViewMode === 'audit';
@@ -1315,13 +1365,22 @@
             dataType: 'json',
             data: { date: selectedFileDate() }
         }).done(function (response) {
-            if (!response.success) return;
+            if (!response.success) {
+                queuedUploadProgressTimer = window.setTimeout(refreshQueuedUploadProgress, 2000);
+                return;
+            }
             queuedUploadProcessing = Number(response.remaining) || 0;
             updateFileStatistics(table.rows().data().toArray());
+            // The watcher updates the database independently from this page.
+            // Reload after the progress request has fully completed so newly
+            // processed/failed rows appear while the queue is still running.
+            window.setTimeout(function () { requestFileData(false); }, 0);
             if (queuedUploadProcessing > 0) {
                 queuedUploadProgressTimer = window.setTimeout(refreshQueuedUploadProgress, 1000);
             } else {
-                window.setTimeout(function () { requestFileData(false); }, 0);
+                // Keep a light poll alive so work queued by another user is
+                // detected without requiring a page refresh.
+                queuedUploadProgressTimer = window.setTimeout(refreshQueuedUploadProgress, 5000);
             }
         }).fail(function () {
             queuedUploadProgressTimer = window.setTimeout(refreshQueuedUploadProgress, 2000);
@@ -1889,12 +1948,21 @@
         });
     });
 
-    // Files imported by the background watcher do not pass through this page,
-    // so periodically refresh the table while the tab is visible.
+    // Files imported/revalidated by background workers do not pass through
+    // this page. Refresh quickly while something is processing, and keep the
+    // previous low-frequency refresh while idle.
+    var lastIdleFileRefreshAt = Date.now();
     setInterval(function () {
-        if (revalidationInProgress) return;
-        requestFileData(false);
-    }, 30000);
+        if (document.hidden) return;
+        var processing = Number($('#file-stat-processing').text()) || 0;
+        var now = Date.now();
+        // Upload progress already refreshes the table every second. This
+        // fallback mainly keeps revalidation (including after F5) live.
+        if ((processing > 0 && queuedUploadProcessing <= 0)
+            || now - lastIdleFileRefreshAt >= 30000) {
+            if (requestFileData(false) && processing <= 0) lastIdleFileRefreshAt = now;
+        }
+    }, 2000);
 
     refreshQueuedUploadProgress();
 
@@ -1963,6 +2031,7 @@
                 $('#file-stat-failed').text(Number(statistics.failed) || 0);
                 $('#file-stat-processing').text(remaining);
                 if (!response.success || remaining > 0) {
+                    window.setTimeout(function () { requestFileData(false); }, 0);
                     window.setTimeout(waitForImportedFiles, 1000);
                     return;
                 }

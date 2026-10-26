@@ -1,5 +1,9 @@
 <?php
 
+class RevalidationQueueBusyException extends RuntimeException
+{
+}
+
 class FilePeer
 {
     const MAX_DEADLOCK_RETRIES = 3;
@@ -785,7 +789,7 @@ class FilePeer
         // This prevents the range UPDATE below from racing with FOR UPDATE.
         $mutex = $this->connection->query("SELECT GET_LOCK('ql_error_revalidation_queue', 10)");
         if (!$mutex || (int) $mutex->fetch_row()[0] !== 1) {
-            throw new RuntimeException('Hàng đợi quét lại đang được xử lý, vui lòng thử lại.');
+            throw new RevalidationQueueBusyException('Hàng đợi quét lại đang được xử lý, vui lòng thử lại.');
         }
         $mutex->free();
         try {
@@ -860,12 +864,15 @@ class FilePeer
         }
     }
 
-    public function claimPendingRevalidation($limit = 2, $date = null, $idKhoa = null)
+    public function claimPendingRevalidation($limit = 2, $date = null, $idKhoa = null, $lockTimeoutSeconds = 10)
     {
         $limit = max(1, min(20, (int) $limit));
-        $mutex = $this->connection->query("SELECT GET_LOCK('ql_error_revalidation_queue', 10)");
+        $lockTimeoutSeconds = max(0, (int) $lockTimeoutSeconds);
+        $mutex = $this->connection->query(
+            "SELECT GET_LOCK('ql_error_revalidation_queue', " . $lockTimeoutSeconds . ")"
+        );
         if (!$mutex || (int) $mutex->fetch_row()[0] !== 1) {
-            throw new RuntimeException('Hàng đợi quét lại đang được xử lý, vui lòng thử lại.');
+            throw new RevalidationQueueBusyException('Hàng đợi quét lại đang được xử lý, vui lòng thử lại.');
         }
         $mutex->free();
         $this->connection->begin_transaction();
@@ -929,7 +936,7 @@ class FilePeer
                 $retryCount++;
                 usleep($retryCount * 150000 + mt_rand(0, 100000));
                 try {
-                    return $this->claimPendingRevalidation($limit, $date, $idKhoa);
+                    return $this->claimPendingRevalidation($limit, $date, $idKhoa, $lockTimeoutSeconds);
                 } finally {
                     $retryCount--;
                 }

@@ -608,7 +608,11 @@ $revalidatePending = function () use (
     $resetDatabase
 ) {
     try {
-        $pendingFiles = $filePeer->claimPendingRevalidation(20);
+        // Revalidation is shared by every watcher and the web UI. If another
+        // process owns the queue mutex, skip this cycle and try again later.
+        $pendingFiles = $filePeer->claimPendingRevalidation(20, null, null, 0);
+    } catch (RevalidationQueueBusyException $exception) {
+        return;
     } catch (Throwable $exception) {
         $log('Không thể đọc hàng đợi quét lại: ' . $exception->getMessage(), 'ERROR');
         try {
