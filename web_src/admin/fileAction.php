@@ -32,7 +32,18 @@ class fileAction
     {
         $this->request = new Request();
         $this->filePeer = new FilePeer();
-        $this->fileStorage = new FileStorageService();
+        $storageRoot = null;
+        try {
+            $pathConfig = (new HeThongPeer())->getInputPath();
+            if (is_array($pathConfig) && isset($pathConfig['path'])
+                && trim((string) $pathConfig['path']) !== ''
+            ) {
+                $storageRoot = $pathConfig['path'];
+            }
+        } catch (Throwable $ignored) {
+            $storageRoot = null;
+        }
+        $this->fileStorage = new FileStorageService(dirname(__DIR__, 2), $storageRoot);
         $this->uploadQueue = new UploadQueueService($this->filePeer, $this->fileStorage);
     }
 

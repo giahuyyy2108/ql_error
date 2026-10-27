@@ -60,6 +60,55 @@ class HeThongPeer
         return $exists;
     }
 
+    public function getInputPath()
+    {
+        $statement = $this->connection->prepare(
+            'SELECT id, tenCauHinh, path FROM path WHERE id = 1 LIMIT 1'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị dữ liệu đường dẫn đầu vào XML.');
+        }
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể đọc đường dẫn đầu vào XML.');
+        }
+
+        $result = $statement->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
+        $statement->close();
+
+        if (!$row) {
+            return null;
+        }
+
+        $row['id'] = (int) $row['id'];
+        return $row;
+    }
+
+    public function updateInputPath($path)
+    {
+        $statement = $this->connection->prepare(
+            'UPDATE path SET path = ? WHERE id = 1'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị cập nhật đường dẫn đầu vào XML.');
+        }
+        $statement->bind_param('s', $path);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể cập nhật đường dẫn đầu vào XML.');
+        }
+        $statement->close();
+
+        $check = $this->connection->query('SELECT id FROM path WHERE id = 1 LIMIT 1');
+        if (!$check) {
+            throw new RuntimeException('Không thể kiểm tra cấu hình đường dẫn đầu vào XML.');
+        }
+        $exists = $check->num_rows > 0;
+        $check->free();
+        return $exists;
+    }
+
     public function getXmlDisplaySettings()
     {
         $settings = array('show_errors' => true, 'show_valid' => true);

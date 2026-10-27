@@ -348,7 +348,7 @@ class FilePeer
                             $errorFieldName = $fileType . '.' . $fieldName;
                         }
                         $existing = $summary['error_fields'] === '' ? array() : explode(', ', $summary['error_fields']);
-                        if (!in_array($errorFieldName, $existing, true)) $existing[] = $errorFieldName;
+                        $existing[] = $errorFieldName;
                         $summary['error_fields'] = implode(', ', $existing);
                     }
                     if (!isset($fieldMap[$fieldName])) continue;

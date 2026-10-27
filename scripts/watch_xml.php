@@ -20,13 +20,43 @@ require $projectRoot . '/conf/config.php';
 $resolveProjectPath = function ($configuredPath, $fallbackPath) use ($projectRoot) {
     $configuredPath = trim((string) $configuredPath);
     if ($configuredPath === '') $configuredPath = $fallbackPath;
+    if (substr($configuredPath, 0, 2) === '\\\\' || substr($configuredPath, 0, 2) === '//') {
+        $configuredPath = str_replace('/', '\\', $configuredPath);
+        return rtrim($configuredPath, "\\/");
+    }
+    if (preg_match('/^[A-Za-z]:[\\\\\/]*$/', $configuredPath) === 1) {
+        return strtoupper(substr($configuredPath, 0, 1)) . ':\\';
+    }
     if (preg_match('/^[A-Za-z]:[\\\\\/]/', $configuredPath) === 1 || substr($configuredPath, 0, 1) === '/') {
         return rtrim($configuredPath, "\\/");
     }
     return $projectRoot . DIRECTORY_SEPARATOR . trim(str_replace('/', DIRECTORY_SEPARATOR, $configuredPath), "\\/");
 };
+$configuredInboxPath = '';
+if (class_exists('mysqli')) {
+    try {
+        $pathConnection = @mysqli_connect(
+            _DATABASE_HOST_,
+            _DATABASE_USERNAME_,
+            _DATABASE_PASSWORD_,
+            _DATABASE_NAME_
+        );
+        if ($pathConnection instanceof mysqli) {
+            $pathResult = @$pathConnection->query('SELECT path FROM path WHERE id = 1 LIMIT 1');
+            if ($pathResult && ($pathRow = $pathResult->fetch_assoc())) {
+                $configuredInboxPath = trim((string) $pathRow['path']);
+                $pathResult->free();
+            }
+            $pathConnection->close();
+        }
+    } catch (Throwable $ignored) {
+        $configuredInboxPath = '';
+    }
+}
 $defaultInboxDir = $resolveProjectPath(
-    defined('_XML_WATCHER_STORAGE_PATH_') ? _XML_WATCHER_STORAGE_PATH_ : '',
+    $configuredInboxPath !== ''
+        ? $configuredInboxPath
+        : (defined('_XML_WATCHER_STORAGE_PATH_') ? _XML_WATCHER_STORAGE_PATH_ : ''),
     'storage/xml'
 );
 $defaultRuntimeDir = $resolveProjectPath(
@@ -55,7 +85,7 @@ foreach (array_slice($argv, 1) as $argument) {
         echo "  --settle     File phải ổn định bao nhiêu giây trước khi xử lý.\n";
         echo "  --worker-id  Mã worker dương; mỗi worker dùng thư mục claim và file lock riêng.\n";
         echo "  --retention-days  Số ngày giữ file trong deleted.\n";
-        echo "  --dir        Thư mục nhận file; mặc định là storage/xml.\n";
+        echo "  --dir        Thư mục nhận file; mặc định lấy từ bảng path (ID 1).\n";
         exit(0);
     } elseif (strpos($argument, '--interval=') === 0) {
         $options['interval'] = max(1, (int) substr($argument, 11));
@@ -73,7 +103,12 @@ foreach (array_slice($argv, 1) as $argument) {
     }
 }
 
-$inboxDir = rtrim($options['dir'], "\\/");
+$inboxDir = trim((string) $options['dir']);
+if (preg_match('/^[A-Za-z]:[\\\\\/]*$/', $inboxDir) === 1) {
+    $inboxDir = strtoupper(substr($inboxDir, 0, 1)) . ':\\';
+} else {
+    $inboxDir = rtrim($inboxDir, "\\/");
+}
 if ($inboxDir === '') {
     fwrite(STDERR, "Thư mục theo dõi không hợp lệ.\n");
     exit(1);

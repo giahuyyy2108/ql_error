@@ -949,6 +949,38 @@
         }
     });
 
+    function focusDecodedFieldTarget(target) {
+        var value = String(target || '').trim();
+        var separatorIndex = value.indexOf('.');
+        if (separatorIndex <= 0 || separatorIndex >= value.length - 1) return;
+
+        var fileType = value.substring(0, separatorIndex).toUpperCase();
+        var fieldName = value.substring(separatorIndex + 1);
+        var fileIndex = -1;
+        (decodedFiles || []).some(function (file, index) {
+            if (String(file.type || '').toUpperCase() !== fileType) return false;
+            fileIndex = index;
+            return true;
+        });
+        if (fileIndex < 0) return;
+
+        xmlViewMode = 'table';
+        $('#decoded-file-select').val(fileIndex).trigger('change');
+        applyXmlViewMode();
+
+        var cells = $('#decoded-table-view [data-field-path]').filter(function () {
+            var path = String($(this).attr('data-field-path') || '');
+            return path === fieldName || path.slice(-(fieldName.length + 1)) === '.' + fieldName;
+        });
+        if (!cells.length) return;
+
+        var cell = cells.filter('.table-cell-error, .table-cell-warning').first();
+        if (!cell.length) cell = cells.first();
+        cell.addClass('table-cell-error-focus');
+        cell[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        setTimeout(function () { cell.removeClass('table-cell-error-focus'); }, 2500);
+    }
+
     function xmlElementName(name) {
         var normalized = String(name == null ? 'ITEM' : name).replace(/[^A-Za-z0-9_.-]/g, '_');
         return /^[A-Za-z_]/.test(normalized) ? normalized : 'ITEM_' + normalized;
@@ -1570,7 +1602,18 @@
             },
             {
                 data: 'error_fields',
-                defaultContent: ''
+                defaultContent: '',
+                render: function (data, type) {
+                    var value = data == null ? '' : String(data);
+                    if (type !== 'display' || value === '') return value;
+                    return value.split(', ').map(function (field) {
+                        field = $.trim(field);
+                        if (!field) return '';
+                        return '<button type="button" class="error-field-link summary-error-field-link" data-field-target="' +
+                            escapeHtml(field) + '" title="Xem ' + escapeHtml(field) + ' dạng bảng">' +
+                            escapeHtml(field) + '</button>';
+                    }).filter(Boolean).join(', ');
+                }
             },
             {
                 data: 'total_amount',
@@ -2289,9 +2332,20 @@
         event.preventDefault();
     });
 
+    $('#datatable-file').on('click', '.summary-error-field-link', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var target = String($(this).attr('data-field-target') || '');
+        var viewButton = $(this).closest('tr').find('.btn-view-file').first();
+        if (!viewButton.length) return;
+        viewButton.data('summary-field-target', target).trigger('click');
+    });
+
     $('#datatable-file').on('click', '.btn-view-file', function () {
         var id = $(this).attr('data-id');
         var name = $(this).attr('data-malk');
+        var summaryFieldTarget = String($(this).data('summary-field-target') || '');
+        $(this).removeData('summary-field-target');
         $('#btn-view-audit').data('malk', name);
         $('#audit-panel').hide();
         currentDecodedContent = null;
@@ -2356,6 +2410,7 @@
             });
             select.prop('disabled', decodedFiles.length === 0);
             renderSelectedDecodedFile();
+            if (summaryFieldTarget) focusDecodedFieldTarget(summaryFieldTarget);
         }).fail(function (xhr) {
             var message = 'Không thể đọc nội dung đã giải mã.';
             if (xhr.status === 401) {

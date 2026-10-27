@@ -15,29 +15,110 @@ class FileStorageService
         $this->projectRoot = $projectRoot !== null
             ? rtrim($projectRoot, '\\/')
             : dirname(__DIR__, 2);
-        $this->storageRoot = $storageRoot !== null
-            ? rtrim($storageRoot, '\\/')
-            : $this->projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml';
+        $configuredStorageRoot = $storageRoot !== null ? trim((string) $storageRoot) : '';
+        if ($configuredStorageRoot === '') {
+            $this->storageRoot = $this->projectRoot
+                . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml';
+            return;
+        }
+
+        $isUnc = substr($configuredStorageRoot, 0, 2) === '\\\\'
+            || substr($configuredStorageRoot, 0, 2) === '//';
+        $isAbsolute = $isUnc
+            || preg_match('/^[A-Za-z]:[\\\\\/]/', $configuredStorageRoot) === 1
+            || substr($configuredStorageRoot, 0, 1) === '/';
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $configuredStorageRoot = str_replace('/', '\\', $configuredStorageRoot);
+        } else {
+            $configuredStorageRoot = str_replace('\\', '/', $configuredStorageRoot);
+        }
+
+        if (!$isAbsolute) {
+            $configuredStorageRoot = $this->projectRoot . DIRECTORY_SEPARATOR
+                . trim($configuredStorageRoot, '\\/');
+        }
+
+        if (preg_match('/^[A-Za-z]:[\\\\\/]*$/', $configuredStorageRoot) === 1) {
+            $this->storageRoot = strtoupper(substr($configuredStorageRoot, 0, 1))
+                . ':' . DIRECTORY_SEPARATOR;
+        } else {
+            $this->storageRoot = rtrim($configuredStorageRoot, '\\/');
+        }
     }
 
     public function resolveStoredFilePath($filePath)
     {
-        $storageRoot = realpath($this->storageRoot);
-        if ($storageRoot === false || !is_string($filePath) || trim($filePath) === '') {
+        if (!is_string($filePath) || trim($filePath) === '') {
             throw new RuntimeException('Đường dẫn file XML không hợp lệ.');
         }
 
-        $isAbsolute = preg_match('/^[A-Za-z]:[\\\\\/]/', $filePath) === 1
+        $allowedRoots = array();
+        $storageRoot = realpath($this->storageRoot);
+        if ($storageRoot !== false) {
+            $allowedRoots[] = $storageRoot;
+        }
+
+        // Tương thích các hồ sơ cũ được lưu trước khi chuyển storage sang UNC.
+        // Chỉ cho phép thêm đúng thư mục storage/xml cũ, không mở rộng ra toàn project.
+        $legacyStorageRoot = realpath(
+            $this->projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml'
+        );
+        if ($legacyStorageRoot !== false) {
+            $alreadyAllowed = false;
+            foreach ($allowedRoots as $allowedRoot) {
+                if (strcasecmp($allowedRoot, $legacyStorageRoot) === 0) {
+                    $alreadyAllowed = true;
+                    break;
+                }
+            }
+            if (!$alreadyAllowed) {
+                $allowedRoots[] = $legacyStorageRoot;
+            }
+        }
+
+        $filePath = trim($filePath);
+        $isUnc = substr($filePath, 0, 2) === '\\\\'
+            || substr($filePath, 0, 2) === '//';
+        $isAbsolute = $isUnc
+            || preg_match('/^[A-Za-z]:[\\\\\/]/', $filePath) === 1
             || substr($filePath, 0, 1) === '/';
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $filePath = str_replace('/', '\\', $filePath);
+        } else {
+            $filePath = str_replace('\\', '/', $filePath);
+        }
+
         $candidate = $isAbsolute
             ? $filePath
             : $this->projectRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $filePath);
         $resolved = realpath($candidate);
-        $storagePrefix = rtrim($storageRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
-        if ($resolved === false
-            || strncasecmp($resolved, $storagePrefix, strlen($storagePrefix)) !== 0
-            || !is_file($resolved)
-        ) {
+        if ($resolved === false || !is_file($resolved)) {
+            // A network share can be accessible to the CLI user but unavailable
+            // to the Windows account running Apache. Report that separately
+            // from an XML file that is actually missing.
+            $storagePrefix = rtrim($this->storageRoot, '\\/') . DIRECTORY_SEPARATOR;
+            if ($storageRoot === false
+                && strncasecmp($candidate, $storagePrefix, strlen($storagePrefix)) === 0
+            ) {
+                throw new RuntimeException(
+                    'Không thể truy cập thư mục lưu trữ XML. '
+                    . 'Kiểm tra kết nối và quyền truy cập thư mục của tài khoản chạy Apache/PHP.'
+                );
+            }
+            throw new RuntimeException('Không tìm thấy file XML trong thư mục lưu trữ.');
+        }
+
+        $isAllowed = false;
+        foreach ($allowedRoots as $allowedRoot) {
+            $allowedPrefix = rtrim($allowedRoot, '\\/') . DIRECTORY_SEPARATOR;
+            if (strncasecmp($resolved, $allowedPrefix, strlen($allowedPrefix)) === 0) {
+                $isAllowed = true;
+                break;
+            }
+        }
+        if (!$isAllowed) {
             throw new RuntimeException('Không tìm thấy file XML trong thư mục lưu trữ.');
         }
 

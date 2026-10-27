@@ -65,6 +65,51 @@ class hethongAction
         }
     }
 
+    public function getPath()
+    {
+        try {
+            $item = $this->peer->getInputPath();
+            return $this->json(array(
+                'success' => true,
+                'data' => $item
+            ));
+        } catch (RuntimeException $exception) {
+            return $this->json(array(
+                'success' => false,
+                'data' => null,
+                'message' => $exception->getMessage()
+            ));
+        }
+    }
+
+    public function updatePath()
+    {
+        if (!$this->validCsrf()) {
+            return $this->json(array('success' => false, 'message' => 'Phiên làm việc không hợp lệ.'));
+        }
+
+        $path = trim((string) $this->request->getParameter('path', false));
+        if ($path === '') {
+            return $this->json(array('success' => false, 'message' => 'Đường dẫn đầu vào XML không được để trống.'));
+        }
+        if (strlen($path) > 255) {
+            return $this->json(array('success' => false, 'message' => 'Đường dẫn đầu vào XML tối đa 255 ký tự.'));
+        }
+
+        try {
+            if (!$this->peer->updateInputPath($path)) {
+                return $this->json(array('success' => false, 'message' => 'Không tìm thấy cấu hình Đầu vào trong bảng path.'));
+            }
+            return $this->json(array(
+                'success' => true,
+                'path' => $path,
+                'message' => 'Đã lưu đường dẫn đầu vào XML.'
+            ));
+        } catch (RuntimeException $exception) {
+            return $this->json(array('success' => false, 'message' => $exception->getMessage()));
+        }
+    }
+
     private function validCsrf()
     {
         $token = $this->request->getParameter('csrf_token', false);
