@@ -2,6 +2,9 @@
 
 class XmlRulesValidator
 {
+    // validate() là đầu vào duy nhất của validator. Các helper bên dưới được
+    // nhóm theo: chuẩn hóa rule -> tìm field -> rule đặc thù -> tạo kết quả.
+
     private static $multiValueFields = array(
         'MA_BENH_KT' => true
     );

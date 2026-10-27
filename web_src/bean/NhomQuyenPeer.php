@@ -59,79 +59,94 @@ class NhomQuyenPeer
 
 	function getNQID($nqID)
 	{
-		// tao cau truy van		
-
-		$sql_select = "SELECT * FROM nhomquyen WHERE maNQ='" . $nqID . "'";
-
-		$this->dbsql->query($sql_select);
-
-		if ($this->dbsql->num_rows() > 0) {
-			$result = $this->dbsql->fetch_array();
+		global $connect;
+		$nqID = (int) $nqID;
+		$statement = $connect->prepare("SELECT * FROM nhomquyen WHERE maNQ = ? LIMIT 1");
+		$statement->bind_param('i', $nqID);
+		$statement->execute();
+		$queryResult = $statement->get_result();
+		if ($queryResult && $queryResult->num_rows > 0) {
+			$result = $queryResult->fetch_array(MYSQLI_BOTH);
+			$statement->close();
 			return $this->setNhomQuyen($result);
 		}
+		$statement->close();
 		return false;
 	}
 
-
 	function save($_nhomquyen)
 	{
+		global $connect;
+		$maNQ = (int) $_nhomquyen->get("maNQ");
+		$tenNQ = $_nhomquyen->get("tenNQ");
+
 		if ($_nhomquyen->get("maNQ") == 0 || $_nhomquyen->get("maNQ") == "") {
-			$sql = "INSERT INTO `nhomquyen` (`maNQ` , `tenNQ`) 
-					VALUES ('" . $_nhomquyen->get("maNQ") . "' ,'" . $_nhomquyen->get("tenNQ") . "')";
+			$statement = $connect->prepare("INSERT INTO `nhomquyen` (`maNQ`, `tenNQ`) VALUES (?, ?)");
+			$statement->bind_param('is', $maNQ, $tenNQ);
 		} else {
-			$sql = "UPDATE `nhomquyen` SET `maNQ` = '" . $_nhomquyen->get("maNQ") . "',
-											`tenNQ` = '" . $_nhomquyen->get("tenNQ") . "'
-						WHERE `maNQ` = '" . $_nhomquyen->get("maNQ") . "'";
+			$statement = $connect->prepare("UPDATE `nhomquyen` SET `tenNQ` = ? WHERE `maNQ` = ?");
+			$statement->bind_param('si', $tenNQ, $maNQ);
 		}
 
 		$this->setLog($_nhomquyen);
-
-		$this->dbsql->query($sql);
-
-		return ($this->dbsql->insert_id() == 0) ? $_nhomquyen->get("maNQ") : $this->dbsql->insert_id();
+		$statement->execute();
+		$insertId = $statement->insert_id;
+		$statement->close();
+		return ($insertId == 0) ? $maNQ : $insertId;
 	}
 
 	function update($_nhomquyen)
 	{
-		$sql = "UPDATE `nhomquyen` SET `quyen` = '" . $_nhomquyen->get("quyen") . "'
-				WHERE `maNQ` = '" . $_nhomquyen->get("maNQ") . "'";
+		global $connect;
+		$maNQ = (int) $_nhomquyen->get("maNQ");
+		$quyen = $_nhomquyen->get("quyen");
 
 		$this->setLog($_nhomquyen, "Đổi quyền");
-		$this->dbsql->query($sql);
-
-		return ($this->dbsql->insert_id() == 0) ? $_nhomquyen->get("maNQ") : $this->dbsql->insert_id();
+		$statement = $connect->prepare("UPDATE `nhomquyen` SET `quyen` = ? WHERE `maNQ` = ?");
+		$statement->bind_param('si', $quyen, $maNQ);
+		$statement->execute();
+		$statement->close();
+		return $maNQ;
 	}
 
 	// hiển thị danh sách từ form tìm kiếm
 	function getListNQ($tenNQ = "")
 	{
-		$sSQL = " SELECT * FROM nhomquyen ";//WHERE loaikhachhangname LIKE '%vietkhoi%'";		
-
+		global $connect;
 		if ($tenNQ != "") {
-			$sSQL = $sSQL . " WHERE ";
-			$sSQL .= " UPPER(`tenNQ`) LIKE UPPER('%" . $tenNQ . "%') ";
+			$pattern = '%' . $tenNQ . '%';
+			$statement = $connect->prepare(
+				"SELECT * FROM nhomquyen WHERE UPPER(`tenNQ`) LIKE UPPER(?) ORDER BY `tenNQ` ASC"
+			);
+			$statement->bind_param('s', $pattern);
+		} else {
+			$statement = $connect->prepare("SELECT * FROM nhomquyen ORDER BY `tenNQ` ASC");
 		}
 
-		$sSQL .= " ORDER BY `tenNQ` ASC";
-
-		$result = $this->dbsql->query($sSQL);
+		$statement->execute();
+		$result = $statement->get_result();
 		$arrList = [];
 		$i = 0;
-		while ($row = $this->dbsql->fetch_Array($result)) {
+		while ($row = $result->fetch_array(MYSQLI_BOTH)) {
 			$arrList[$i] = $this->setNhomQuyen($row);
 			$i++;
 		}
+		$statement->close();
 		return $arrList;
 	}
 
 	function delete($maNQ)
 	{
+		global $connect;
+		$maNQ = (int) $maNQ;
 		$nhomquyen = new NhomQuyen;
 		$nhomquyen->set("maNQ", $maNQ);
 		$this->setLog($nhomquyen, "Xóa nhóm quyền");
 
-		$sSQL = "DELETE FROM nhomquyen WHERE maNQ='" . $maNQ . "'";
-		$this->dbsql->query($sSQL);
+		$statement = $connect->prepare("DELETE FROM nhomquyen WHERE maNQ = ?");
+		$statement->bind_param('i', $maNQ);
+		$statement->execute();
+		$statement->close();
 	}
 }
 ?>

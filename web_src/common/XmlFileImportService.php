@@ -17,6 +17,7 @@ class XmlFileImportService
         $this->bhytLookupCallback = $bhytLookupCallback;
     }
 
+    // Entry point cho watcher: đọc file từ ổ đĩa rồi chuyển sang luồng import chung.
     public function importPath($path, $storedPath = null)
     {
         if (!is_file($path) || !is_readable($path)) {
@@ -42,6 +43,7 @@ class XmlFileImportService
         );
     }
 
+    // Luồng import chính: decode, validate, tra cứu BHYT và insert/update hồ sơ.
     public function importContent($fileName, $content, $size, $filePath, $decodedResult = null)
     {
         $fileName = $this->normalizeFileName($fileName);
@@ -137,6 +139,10 @@ class XmlFileImportService
             'validation' => $validationResult
         );
     }
+
+    // ---------------------------------------------------------------------
+    // Helper nội bộ cho validation, dữ liệu BHYT và chuẩn hóa tên file
+    // ---------------------------------------------------------------------
 
     private function hasValidationErrors($validationResult)
     {

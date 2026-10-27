@@ -17,7 +17,7 @@
                 ruleCosts[key] = (ruleCosts[key] || 0) + (Number(row.total_amount) || 0);
             }
         });
-        var items = Object.keys(grouped).sort(function (a, b) { return grouped[b] - grouped[a]; }).slice(0, 10);
+        var items = Object.keys(grouped).sort(function (a, b) { return grouped[b] - grouped[a]; });
         var totalCount = Object.keys(grouped).reduce(function (sum, key) { return sum + grouped[key]; }, 0);
         if (reportChart) reportChart.destroy();
         $('#report-chart-empty').toggle(items.length === 0).text(items.length ? '' : 'Không có lỗi hoặc cảnh báo trong thời gian đã chọn.');

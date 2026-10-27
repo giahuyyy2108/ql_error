@@ -7,8 +7,13 @@ class RevalidationQueueBusyException extends RuntimeException
 class FilePeer
 {
     const MAX_DEADLOCK_RETRIES = 3;
+    const REVALIDATION_LEASE_SECONDS = 900;
     private $dbsql;
     private $connection;
+
+    // ---------------------------------------------------------------------
+    // Cache danh sách và trạng thái hàng đợi upload
+    // ---------------------------------------------------------------------
 
     private function fileListCachePath($date, $userKhoa)
     {
@@ -23,7 +28,7 @@ class FilePeer
         foreach (glob($dir . '/file-list-*.json') ?: array() as $path) @unlink($path);
     }
 
-    public function getCurrentUserKhoa($username)
+    public function findUserKhoa($username)
     {
         $statement = $this->connection->prepare(
             'SELECT id_khoa FROM `user` WHERE username = ? LIMIT 1'
@@ -33,7 +38,72 @@ class FilePeer
         $statement->execute();
         $row = $statement->get_result()->fetch_assoc();
         $statement->close();
-        return ($row && $row['id_khoa'] !== null) ? (int) $row['id_khoa'] : null;
+        return array(
+            'found' => (bool) $row,
+            'id_khoa' => ($row && $row['id_khoa'] !== null) ? (int) $row['id_khoa'] : null
+        );
+    }
+
+    public function getCurrentUserKhoa($username)
+    {
+        $user = $this->findUserKhoa($username);
+        return $user['found'] ? $user['id_khoa'] : null;
+    }
+
+    public function getKhoaOptions()
+    {
+        $result = $this->connection->query('SELECT id, ten FROM `khoa` ORDER BY ten ASC');
+        if (!$result) {
+            throw new RuntimeException('Không thể tải danh sách khoa.');
+        }
+        $rows = array();
+        while ($row = $result->fetch_assoc()) {
+            $rows[] = array(
+                'id' => (int) $row['id'],
+                'ten' => (string) $row['ten']
+            );
+        }
+        $result->free();
+        return $rows;
+    }
+
+    public function upsertUploadQueue($fileName, $idKhoa, $username)
+    {
+        $statement = $this->connection->prepare(
+            'INSERT INTO `xml_upload_queue` (file_name, id_khoa, username) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE id_khoa = VALUES(id_khoa), username = VALUES(username)'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị thông tin hàng đợi upload.');
+        }
+        $fileName = basename((string) $fileName);
+        $queueKhoa = $idKhoa === null ? null : (string) (int) $idKhoa;
+        $username = (string) $username;
+        $statement->bind_param('sss', $fileName, $queueKhoa, $username);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể lưu thông tin hàng đợi upload.');
+        }
+        $statement->close();
+        return true;
+    }
+
+    public function removeUploadQueue($fileName)
+    {
+        $statement = $this->connection->prepare(
+            'DELETE FROM `xml_upload_queue` WHERE file_name = ?'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể chuẩn bị xóa hàng đợi upload.');
+        }
+        $fileName = basename((string) $fileName);
+        $statement->bind_param('s', $fileName);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể xóa thông tin hàng đợi upload.');
+        }
+        $statement->close();
+        return true;
     }
 
     public function countQueuedUploadFiles(array $fileNames)
@@ -148,6 +218,10 @@ class FilePeer
         $this->connection = $connect;
     }
 
+    // ---------------------------------------------------------------------
+    // Danh sách file và dữ liệu báo cáo
+    // ---------------------------------------------------------------------
+
     public function getList($date)
     {
         $isAdmin = isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1;
@@ -256,6 +330,7 @@ class FilePeer
         );
         foreach ($validation as $item) {
             if (!is_array($item)) continue;
+            $fileType = isset($item['file_type']) ? trim((string) $item['file_type']) : '';
             $summary['error_count'] += isset($item['error_count'])
                 ? (int) $item['error_count']
                 : (isset($item['errors']) && is_array($item['errors']) ? count($item['errors']) : 0);
@@ -268,8 +343,12 @@ class FilePeer
                     $fieldName = isset($field['field_name']) ? $field['field_name'] : '';
                     $isWarning = isset($field['severity']) && strtolower((string) $field['severity']) === 'warning';
                     if ($collectionName === 'errors' && !$isWarning && $fieldName !== '') {
+                        $errorFieldName = $fieldName;
+                        if ($fileType !== '' && stripos($fieldName, $fileType . '.') !== 0) {
+                            $errorFieldName = $fileType . '.' . $fieldName;
+                        }
                         $existing = $summary['error_fields'] === '' ? array() : explode(', ', $summary['error_fields']);
-                        if (!in_array($fieldName, $existing, true)) $existing[] = $fieldName;
+                        if (!in_array($errorFieldName, $existing, true)) $existing[] = $errorFieldName;
                         $summary['error_fields'] = implode(', ', $existing);
                     }
                     if (!isset($fieldMap[$fieldName])) continue;
@@ -536,23 +615,50 @@ class FilePeer
         if ($thongTinBn !== null && $jsonThongTinBn === false) {
             throw new RuntimeException('Không thể chuyển thông tin bệnh nhân sang JSON.');
         }
-        $statement = $this->connection->prepare(
-            'UPDATE `file`
-             SET ten = ?, ma_bn = ?, ho_ten = ?, thongtin_bn = ?, ngay_lap = ?, kichthuoc = ?, file_path = ?, processing_status = ?, validation_result = ?
-             WHERE id = ?'
+
+        $queuedFileName = basename($filePath);
+        $idKhoa = null;
+        $queueStatement = $this->connection->prepare(
+            'SELECT id_khoa FROM `xml_upload_queue` WHERE file_name = ? LIMIT 1'
         );
+        if ($queueStatement) {
+            $queueStatement->bind_param('s', $queuedFileName);
+            $queueStatement->execute();
+            $queueRow = $queueStatement->get_result()->fetch_assoc();
+            if ($queueRow && $queueRow['id_khoa'] !== null) {
+                $idKhoa = (int) $queueRow['id_khoa'];
+            }
+            $queueStatement->close();
+        }
+
+        if ($idKhoa !== null) {
+            $statement = $this->connection->prepare(
+                'UPDATE `file`
+                 SET ten = ?, ma_bn = ?, ho_ten = ?, thongtin_bn = ?, ngay_lap = ?, kichthuoc = ?, file_path = ?, processing_status = ?, validation_result = ?, id_khoa = ?
+                 WHERE id = ?'
+            );
+        } else {
+            $statement = $this->connection->prepare(
+                'UPDATE `file`
+                 SET ten = ?, ma_bn = ?, ho_ten = ?, thongtin_bn = ?, ngay_lap = ?, kichthuoc = ?, file_path = ?, processing_status = ?, validation_result = ?
+                 WHERE id = ?'
+            );
+        }
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị dữ liệu import lại.');
         }
         $size = (string) $size;
-        $statement->bind_param('sssssssssi', $name, $maBn, $hoTen, $jsonThongTinBn, $ngayLap, $size, $filePath, $status, $jsonValidation, $id);
+        if ($idKhoa !== null) {
+            $statement->bind_param('sssssssssii', $name, $maBn, $hoTen, $jsonThongTinBn, $ngayLap, $size, $filePath, $status, $jsonValidation, $idKhoa, $id);
+        } else {
+            $statement->bind_param('sssssssssi', $name, $maBn, $hoTen, $jsonThongTinBn, $ngayLap, $size, $filePath, $status, $jsonValidation, $id);
+        }
         if (!$statement->execute()) {
             $statement->close();
             throw new RuntimeException('Không thể cập nhật file đã tồn tại.');
         }
         $statement->close();
 
-        $queuedFileName = basename($filePath);
         $deleteQueue = $this->connection->prepare(
             'DELETE FROM `xml_upload_queue` WHERE file_name = ?'
         );
@@ -564,6 +670,10 @@ class FilePeer
         $this->clearFileListCache();
         return true;
     }
+
+    // ---------------------------------------------------------------------
+    // Lưu/cập nhật hồ sơ XML và lịch sử thay thế
+    // ---------------------------------------------------------------------
 
     public function saveFileHistory($existing, $archivePath)
     {
@@ -606,13 +716,18 @@ class FilePeer
         $query->close();
     }
 
+    // ---------------------------------------------------------------------
+    // Nhật ký truy vết và dữ liệu đẩy cổng
+    // ---------------------------------------------------------------------
+
     public function saveAuditLog($fileId, $maLk, $fileName, $action, $oldPath, $newPath, $errorDetail = null)
     {
         $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : null;
         if (($username === null || $username === '') && $fileName !== '') {
             $queue = $this->connection->prepare('SELECT username FROM `xml_upload_queue` WHERE file_name = ? LIMIT 1');
             if ($queue) {
-                $queue->bind_param('s', $fileName); $queue->execute();
+                $queue->bind_param('s', $fileName);
+                $queue->execute();
                 $queueRow = $queue->get_result()->fetch_assoc();
                 $username = $queueRow && $queueRow['username'] !== null ? (string) $queueRow['username'] : null;
                 $queue->close();
@@ -632,10 +747,18 @@ class FilePeer
     public function getAuditLogs($maLk)
     {
         $query = $this->connection->prepare('SELECT created_at, action, username, khoa_name, file_name, file_path_old, file_path_new, error_detail FROM file_audit_logs WHERE ma_lk = ? ORDER BY created_at DESC, id DESC');
-        if (!$query) throw new RuntimeException('Không thể tải nhật ký truy vết.');
-        $query->bind_param('s', $maLk); $query->execute(); $result = $query->get_result();
-        $rows = array(); while ($row = $result->fetch_assoc()) $rows[] = $row;
-        $query->close(); return $rows;
+        if (!$query) {
+            throw new RuntimeException('Không thể tải nhật ký truy vết.');
+        }
+        $query->bind_param('s', $maLk);
+        $query->execute();
+        $result = $query->get_result();
+        $rows = array();
+        while ($row = $result->fetch_assoc()) {
+            $rows[] = $row;
+        }
+        $query->close();
+        return $rows;
     }
 
     public function getPortalFiles($date)
@@ -645,28 +768,45 @@ class FilePeer
             WHERE DATE(f.update_at)=? AND f.processing_status='processed' AND f.da_day_cong=0
               AND NOT EXISTS (SELECT 1 FROM cong_hoso c WHERE c.malk = f.ma_lk)
             ORDER BY f.id");
-        if (!$q) throw new RuntimeException('Không thể tải file đẩy cổng.');
-        $q->bind_param('s', $date); $q->execute(); $result = $q->get_result(); $rows = array();
-        while ($row = $result->fetch_assoc()) $rows[] = $row;
-        $q->close(); return $rows;
+        if (!$q) {
+            throw new RuntimeException('Không thể tải file đẩy cổng.');
+        }
+        $q->bind_param('s', $date);
+        $q->execute();
+        $result = $q->get_result();
+        $rows = array();
+        while ($row = $result->fetch_assoc()) {
+            $rows[] = $row;
+        }
+        $q->close();
+        return $rows;
     }
 
     public function getPortalFilesByIds(array $ids, $allowWarnings = false)
     {
-        $ids = array_values(array_filter(array_map('intval', $ids), function ($id) { return $id > 0; }));
-        if (!$ids) return array();
+        $ids = array_values(array_filter(array_map('intval', $ids), function ($id) {
+            return $id > 0;
+        }));
+        if (!$ids) {
+            return array();
+        }
         $idList = implode(',', $ids);
         $q = $this->connection->prepare("SELECT f.id, f.ten, f.ma_lk, f.file_path, f.validation_result
             FROM file f
             WHERE f.id IN ($idList) AND f.da_day_cong=0
               AND NOT EXISTS (SELECT 1 FROM cong_hoso c WHERE c.malk = f.ma_lk)");
-        $q->execute(); $result = $q->get_result(); $rows = array();
+        $q->execute();
+        $result = $q->get_result();
+        $rows = array();
         while ($row = $result->fetch_assoc()) {
             $validation = json_decode((string) $row['validation_result'], true);
             $hasErrors = false;
             $hasWarnings = false;
             foreach (is_array($validation) ? $validation : array() as $item) {
-                if ((int) ($item['error_count'] ?? 0) > 0) { $hasErrors = true; break; }
+                if ((int) ($item['error_count'] ?? 0) > 0) {
+                    $hasErrors = true;
+                    break;
+                }
                 $hasWarnings = $hasWarnings || (int) ($item['warning_count'] ?? 0) > 0;
             }
             if (!$hasErrors && ($allowWarnings || !$hasWarnings)) {
@@ -674,7 +814,8 @@ class FilePeer
                 $rows[] = $row;
             }
         }
-        $q->close(); return $rows;
+        $q->close();
+        return $rows;
     }
 
     public function getCongHosoData($date = null, $maLk = null, $limit = 1000)
@@ -684,7 +825,7 @@ class FilePeer
         $params = array();
         $types = '';
         if ($date !== null) {
-            $where[] = 'DATE(created_at) = ?';
+            $where[] = 'DATE(ngay_day) = ?';
             $params[] = $date;
             $types .= 's';
         }
@@ -693,7 +834,7 @@ class FilePeer
             $params[] = $maLk;
             $types .= 's';
         }
-        $sql = 'SELECT id, cccd, malk, ten_file, noidung, nguoi_day, id_khoa
+        $sql = 'SELECT id, cccd, malk, ten_file, nguoi_day, id_khoa, ngay_day
                 FROM cong_hoso';
         if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
         $sql .= ' ORDER BY id DESC LIMIT ' . $limit;
@@ -715,8 +856,13 @@ class FilePeer
     public function markPortalPushed($id)
     {
         $q = $this->connection->prepare('UPDATE file SET da_day_cong=1 WHERE id=?');
-        if (!$q) throw new RuntimeException('Không thể cập nhật trạng thái đẩy cổng.');
-        $q->bind_param('i', $id); $ok = $q->execute(); $q->close(); return $ok;
+        if (!$q) {
+            throw new RuntimeException('Không thể cập nhật trạng thái đẩy cổng.');
+        }
+        $q->bind_param('i', $id);
+        $ok = $q->execute();
+        $q->close();
+        return $ok;
     }
 
     public function getById($id)
@@ -768,7 +914,9 @@ class FilePeer
     public function updateStorageLocation($id, $filePath, $status)
     {
         $statement = $this->connection->prepare(
-            'UPDATE `file` SET file_path = ?, processing_status = ? WHERE id = ?'
+            'UPDATE `file`
+             SET file_path = ?, processing_status = ?, revalidation_claimed_at = NULL
+             WHERE id = ?'
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị đường dẫn lưu file.');
@@ -782,6 +930,10 @@ class FilePeer
         $this->clearFileListCache();
         return true;
     }
+
+    // ---------------------------------------------------------------------
+    // Hàng đợi quét lại: tạo queue, claim batch và đọc tiến độ
+    // ---------------------------------------------------------------------
 
     public function markAllForRevalidation($date, $idKhoa = null)
     {
@@ -818,7 +970,9 @@ class FilePeer
         }
         $statement = $this->connection->prepare(
             "UPDATE `file`
-             SET processing_status = 'pending_revalidation', update_at = update_at
+             SET processing_status = 'pending_revalidation',
+                 revalidation_claimed_at = NULL,
+                 update_at = update_at
              WHERE DATE(update_at) = ?
                AND processing_status NOT IN ('pending_revalidation', 'revalidating')"
              . ($idKhoa !== null ? ' AND id_khoa = ?' : '') . "
@@ -877,6 +1031,21 @@ class FilePeer
         $mutex->free();
         $this->connection->begin_transaction();
         try {
+            $leaseSeconds = self::REVALIDATION_LEASE_SECONDS;
+            if (!$this->connection->query(
+                "UPDATE `file`
+                 SET processing_status = 'pending_revalidation',
+                     revalidation_claimed_at = NULL,
+                     update_at = update_at
+                 WHERE processing_status = 'revalidating'
+                   AND (
+                       revalidation_claimed_at IS NULL
+                       OR revalidation_claimed_at < DATE_SUB(NOW(), INTERVAL " . $leaseSeconds . " SECOND)
+                   )"
+            )) {
+                throw new RuntimeException('Không thể phục hồi hàng đợi quét lại bị gián đoạn.');
+            }
+
             $sql = "SELECT id, ten, ma_lk, file_path, processing_status, validation_result
                     FROM `file`
                     WHERE processing_status = 'pending_revalidation'";
@@ -915,7 +1084,11 @@ class FilePeer
             if (!empty($ids)) {
                 $idList = implode(',', $ids);
                 if (!$this->connection->query(
-                    "UPDATE `file` SET processing_status = 'revalidating', update_at = update_at WHERE id IN (" . $idList . ")"
+                    "UPDATE `file`
+                     SET processing_status = 'revalidating',
+                         revalidation_claimed_at = NOW(),
+                         update_at = update_at
+                     WHERE id IN (" . $idList . ")"
                 )) {
                     throw new RuntimeException('Không thể cập nhật hàng đợi quét lại.');
                 }
@@ -926,9 +1099,6 @@ class FilePeer
             $this->connection->rollback();
             static $retryCount = 0;
             $errorCode = (int) $exception->getCode();
-            if ($errorCode === 0) {
-                $errorCode = (int) $this->connection->errno;
-            }
             if ($errorCode === 0) {
                 $errorCode = (int) $this->connection->errno;
             }
@@ -1038,6 +1208,10 @@ class FilePeer
         $result->free();
         return $files;
     }
+
+    // ---------------------------------------------------------------------
+    // Xóa dữ liệu file
+    // ---------------------------------------------------------------------
 
     public function delete($id)
     {

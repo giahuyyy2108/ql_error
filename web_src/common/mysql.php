@@ -91,12 +91,20 @@ class db_mysql
 
     function check_exist($fromtable, $checkname, $checkvalue)
     {
-        $sql_query = "SELECT * FROM $fromtable WHERE $checkname='" . $checkvalue . "'";
-        $this->query($sql_query);
-        if ($this->num_rows() > 0)
-            return 1;
+        global $connect;
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $fromtable)
+            || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $checkname)) {
+            throw new InvalidArgumentException('Invalid table or column name.');
+        }
 
-        return 0;
+        $sql = "SELECT 1 FROM `" . $fromtable . "` WHERE `" . $checkname . "` = ? LIMIT 1";
+        $statement = $connect->prepare($sql);
+        $statement->bind_param('s', $checkvalue);
+        $statement->execute();
+        $result = $statement->get_result();
+        $exists = $result && $result->num_rows > 0;
+        $statement->close();
+        return $exists ? 1 : 0;
     }
 
     function insert_id()

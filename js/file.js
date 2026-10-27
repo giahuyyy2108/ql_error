@@ -1,6 +1,10 @@
 (function ($) {
     'use strict';
 
+    // ------------------------------------------------------------------
+    // Trạng thái dùng chung và helper giao diện
+    // ------------------------------------------------------------------
+
     var baseUrl = $('#ULocal').val();
     var downloadBaseUrl = new URL(baseUrl, window.location.href).pathname;
     var csrfToken = $('#xml-file-csrf').val();
@@ -204,6 +208,8 @@
                         + ((!validationResult || (!validationResult.error_count && !validationResult.warning_count
                             && !validationResult.valid_count)) ? ' (Hợp lệ)' : ''),
                     type: file.LOAIHOSO || '',
+                    hosoIndex: hoSoIndex,
+                    fileIndex: fileIndex,
                     content: file.NOIDUNGFILE,
                     errors: errors,
                     validFields: validFields
@@ -396,6 +402,10 @@
         panel.toggle(willShow);
         $(this).toggleClass('active', willShow);
     });
+
+    // ------------------------------------------------------------------
+    // Xuất Excel từ dữ liệu XML đã decode
+    // ------------------------------------------------------------------
 
     function excelColumnName(index) {
         var name = '';
@@ -833,11 +843,48 @@
             });
         });
         var errors = [];
-        (decodedFiles || []).forEach(function (file) {
-            (file.errors || []).forEach(function (error) {
-                var severity = String(error.severity || error.level || error.muc_do || '').toLowerCase();
-                severity = '';
-                if (severity === 'warning' || severity.indexOf('warn') !== -1 || severity.indexOf('cảnh báo') !== -1 || severity.indexOf('canh bao') !== -1) return;
+        var validationItems = Array.isArray(currentValidationResults) ? currentValidationResults : [];
+        if (validationItems.length) {
+            validationItems.forEach(function (validationItem) {
+                var mappedFileIndex = -1;
+                (decodedFiles || []).some(function (file, index) {
+                    if (Number(file.hosoIndex) === Number(validationItem.hoso_index)
+                        && Number(file.fileIndex) === Number(validationItem.file_index)) {
+                        mappedFileIndex = index;
+                        return true;
+                    }
+                    return false;
+                });
+                if (mappedFileIndex < 0) {
+                    var validationType = String(validationItem.file_type || '').toUpperCase();
+                    (decodedFiles || []).some(function (file, index) {
+                        if (validationType && String(file.type || '').toUpperCase() === validationType) {
+                            mappedFileIndex = index;
+                            return true;
+                        }
+                        return false;
+                    });
+                }
+                (validationItem.errors || []).forEach(function (error) {
+                    var errorCopy = $.extend({}, error);
+                    var serviceName = errorCopy.service_name || errorCopy.TEN_DICH_VU || '';
+                    if (!serviceName && errorCopy.key_value != null) {
+                        serviceName = serviceNames[String(errorCopy.key_value).trim()] || '';
+                    }
+                    if (serviceName) {
+                        errorCopy.service_name = serviceName;
+                        errorCopy.message = String(errorCopy.message || '').replace(/\{TEN_DICH_VU\}/g, serviceName);
+                    }
+                    errors.push({
+                        error: errorCopy,
+                        xml: validationItem.file_type || (mappedFileIndex >= 0 ? decodedFiles[mappedFileIndex].type : ''),
+                        fileIndex: mappedFileIndex
+                    });
+                });
+            });
+        } else {
+            (decodedFiles || []).forEach(function (file) {
+                (file.errors || []).forEach(function (error) {
                 var errorCopy = $.extend({}, error);
                 var serviceName = errorCopy.service_name || errorCopy.TEN_DICH_VU || '';
                 if (!serviceName && errorCopy.key_value != null) {
@@ -848,8 +895,9 @@
                     errorCopy.message = String(errorCopy.message || '').replace(/\{TEN_DICH_VU\}/g, serviceName);
                 }
                 errors.push({ error: errorCopy, xml: file.type || '', fileIndex: decodedFiles.indexOf(file) });
+                });
             });
-        });
+        }
         var table = $('<table class="table table-striped table-bordered error-statistics-table">');
         table.append('<thead><tr><th>ID lỗi</th><th>Tên lỗi</th><th>Tên trường</th><th>Giá trị lỗi</th><th>XML</th><th>Nguyên nhân</th><th>Hướng xử lý</th></tr></thead>');
         var body = $('<tbody>').appendTo(table);
@@ -869,6 +917,7 @@
                     $('<td>').append(
                         $('<button type="button" class="error-field-link">')
                             .text(error.field_name || '')
+                            .prop('disabled', item.fileIndex < 0)
                             .attr({
                                 'data-file-index': item.fileIndex,
                                 'data-error-path': error.path || ''
@@ -881,7 +930,7 @@
                 ).appendTo(body);
             });
         }
-        container.append('<h4><i class="fa fa-bar-chart"></i> Thống kê các lỗi</h4>').append(table);
+        container.append('<h4><i class="fa fa-bar-chart"></i> Thống kê các lỗi (' + errors.length + ')</h4>').append(table);
     }
 
     $('#decoded-error-statistics').on('click', '.error-field-link', function () {
@@ -1239,7 +1288,8 @@
         $('#xml-source-navigation').toggle(sourceMode);
         $('.cost-reconciliation').toggle(sourceMode);
         $('.xml-view-layout').toggleClass('is-content-only', !sourceMode);
-        $('.xml-view-content').toggleClass('is-table-mode', xmlViewMode === 'table' || xmlViewMode === 'errors');
+        $('.xml-view-content').toggleClass('is-table-mode', xmlViewMode === 'table');
+        $('.xml-view-content').toggleClass('is-errors-mode', xmlViewMode === 'errors');
         $('[data-xml-view]').each(function () {
             var active = $(this).attr('data-xml-view') === xmlViewMode;
             $(this).toggleClass('btn-primary active', active).toggleClass('btn-default', !active);
@@ -1303,6 +1353,10 @@
         }, 180);
         window.setTimeout(function () { target.removeClass('is-target-line'); }, 2500);
     });
+
+    // ------------------------------------------------------------------
+    // Danh sách file, thống kê và bộ lọc theo ngày
+    // ------------------------------------------------------------------
 
     function localDateKey(date) {
         function twoDigits(value) { return value < 10 ? '0' + value : String(value); }
@@ -1581,6 +1635,7 @@
         refreshQueuedUploadProgress();
     });
 
+    // Điều phối refresh để tránh nhiều AJAX cùng lúc hoặc refresh khi modal đang mở.
     function dataReloadIsBlocked() {
         return getDataInProgress
             || uploadInProgress
@@ -1737,6 +1792,57 @@
         }, 'json').fail(function () { alert('Không thể đẩy cổng.'); button.prop('disabled', false); });
     });
 
+    // ------------------------------------------------------------------
+    // Đẩy cổng và lịch sử người dùng đã đẩy hồ sơ
+    // ------------------------------------------------------------------
+
+    function loadPortalHistory() {
+        var list = $('#portal-history-list').empty();
+        list.append('<tr><td colspan="6" class="text-center">Đang tải...</td></tr>');
+        $.getJSON(baseUrl + 'file/getCongHosoData/', {
+            date: $('#portal-history-date').val() || '',
+            malk: $.trim($('#portal-history-malk').val()),
+            limit: 1000
+        }, function (response) {
+            list.empty();
+            if (response.error) {
+                list.append($('<tr><td colspan="6" class="text-center text-danger"></td></tr>').find('td').text(response.error).end());
+                return;
+            }
+            if (!response.data || !response.data.length) {
+                list.append('<tr><td colspan="6" class="text-center">Chưa có hồ sơ đã đẩy cổng.</td></tr>');
+                return;
+            }
+            response.data.forEach(function (row) {
+                var tr = $('<tr>');
+                [row.ngay_day, row.nguoi_day, row.malk, row.ten_file, row.cccd, row.id_khoa].forEach(function (value) {
+                    tr.append($('<td>').text(value == null || value === '' ? '-' : value));
+                });
+                list.append(tr);
+            });
+        }).fail(function () {
+            list.empty().append('<tr><td colspan="6" class="text-center text-danger">Không thể tải lịch sử đẩy cổng.</td></tr>');
+        });
+    }
+
+    $('#btn-portal-history').on('click', function () {
+        var selectedDate = selectedFileDate();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(selectedDate || '')) {
+            $('#portal-history-date').val(selectedDate);
+        }
+        $('#modal-portal-history').modal('show');
+        loadPortalHistory();
+    });
+
+    $('#btn-search-portal-history').on('click', loadPortalHistory);
+    $('#btn-reset-portal-history').on('click', function () {
+        $('#portal-history-date, #portal-history-malk').val('');
+        loadPortalHistory();
+    });
+    $('#portal-history-malk').on('keydown', function (event) {
+        if (event.key === 'Enter') loadPortalHistory();
+    });
+
     $('#datatable-file').on('click', '.btn-push-warning', function () {
         warningPushFileId = Number($(this).attr('data-id'));
         $('#modal-push-warning').modal('show');
@@ -1817,6 +1923,10 @@
         $('#delete-file-name').text(fileIdsToDelete.length + ' file đã chọn');
         $('#modal-delete-xml').modal('show');
     });
+
+    // ------------------------------------------------------------------
+    // Quét lại hồ sơ và theo dõi tiến độ watcher
+    // ------------------------------------------------------------------
 
     $('#btn-revalidate-all').on('click', function () {
         if (revalidationInProgress) return;
@@ -1966,6 +2076,10 @@
 
     refreshQueuedUploadProgress();
 
+    // ------------------------------------------------------------------
+    // Upload XML: chỉ đưa file vào queue, watcher xử lý ở background
+    // ------------------------------------------------------------------
+
     $('#btn-open-upload').on('click', function () {
         $('#form-upload-xml')[0].reset();
         $('#xml-drop-file-name').hide().text('');
@@ -1976,8 +2090,10 @@
 
     function uploadSingleXmlFile(file) {
         var formData = new FormData();
+        var khoaField = $('#upload-id-khoa');
+        var uploadKhoa = khoaField.length ? khoaField.val() : $('#current-user-khoa').val();
         formData.append('xmlFile', file, file.name);
-        formData.append('id_khoa', $('#current-user-khoa').val() || '');
+        formData.append('id_khoa', uploadKhoa || '');
         formData.append('csrf_token', csrfToken);
         return $.ajax({
             url: baseUrl + 'file/upload/',
@@ -2304,6 +2420,10 @@
     $('#decoded-file-tabs').on('click', '.decoded-file-tab', function () {
         $('#decoded-file-select').val($(this).attr('data-file-index')).trigger('change');
     });
+
+    // ------------------------------------------------------------------
+    // Tương tác màn xem lỗi và thao tác xóa file
+    // ------------------------------------------------------------------
 
     function copyErrorValue(element) {
         var target = $(element);

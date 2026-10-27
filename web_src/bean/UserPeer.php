@@ -96,68 +96,86 @@ class UserPeer
 
 	function getUser($userID)
 	{
-		// tao cau truy van
-		//$user = new User;
-
-		$sql_select = "SELECT * FROM user WHERE username='" . $userID . "'";
-
-		$this->dbsql->query($sql_select);
-		// print_r($this->dbsql);
-		if ($this->dbsql->num_rows() > 0) {
-			$result = $this->dbsql->fetch_array();
+		global $connect;
+		$statement = $connect->prepare('SELECT * FROM user WHERE username = ? LIMIT 1');
+		$statement->bind_param('s', $userID);
+		$statement->execute();
+		$queryResult = $statement->get_result();
+		if ($queryResult && $queryResult->num_rows > 0) {
+			$result = $queryResult->fetch_array(MYSQLI_BOTH);
+			$statement->close();
 			return $this->setUser($result, 1);
 		}
+		$statement->close();
 		return false;
 	}
 
 	function getUsers($searchString, $arrUser)
 	{
-		$sSQL = " SELECT * FROM user ";
-		$sSQL .= " WHERE (UPPER(`username`) LIKE UPPER('%" . $searchString . "%') OR UPPER(`hoTen`) LIKE UPPER('%" . $searchString . "%'))";
-		if ($arrUser != "")
-			$sSQL .= " AND `id` not in (" . $arrUser . ")";
+		global $connect;
+		$excludedIds = [];
+		foreach (preg_split('/\s*,\s*/', (string) $arrUser, -1, PREG_SPLIT_NO_EMPTY) as $id) {
+			$id = (int) $id;
+			if ($id > 0) {
+				$excludedIds[] = $id;
+			}
+		}
 
-		$sSQL .= " AND `id` != '11'";
-		$sSQL .= " ORDER BY `hoTen` ASC";
+		$sql = "SELECT * FROM user
+			WHERE (UPPER(`username`) LIKE UPPER(?) OR UPPER(`hoTen`) LIKE UPPER(?))";
+		if (!empty($excludedIds)) {
+			$sql .= " AND `id` NOT IN (" . implode(',', $excludedIds) . ")";
+		}
+		$sql .= " AND `id` != 11 ORDER BY `hoTen` ASC";
 
-		$result = $this->dbsql->query($sSQL);
+		$searchPattern = '%' . $searchString . '%';
+		$statement = $connect->prepare($sql);
+		$statement->bind_param('ss', $searchPattern, $searchPattern);
+		$statement->execute();
+		$result = $statement->get_result();
 		$arrList = [];
 		$i = 0;
-		while ($row = $this->dbsql->fetch_Array($result)) {
+		while ($row = $result->fetch_array(MYSQLI_BOTH)) {
 			$arrList[$i] = $this->setUser($row);
 			$i++;
 		}
+		$statement->close();
 		return $arrList;
 	}
 
 	function getUserID($userID)
 	{
-		// tao cau truy van
-		//$user = new User;
-
-		$sql_select = "SELECT * FROM user WHERE id='" . $userID . "'";
-
-		$this->dbsql->query($sql_select);
-
-		if ($this->dbsql->num_rows() > 0) {
-			$result = $this->dbsql->fetch_array();
+		global $connect;
+		$userID = (int) $userID;
+		$statement = $connect->prepare('SELECT * FROM user WHERE id = ? LIMIT 1');
+		$statement->bind_param('i', $userID);
+		$statement->execute();
+		$queryResult = $statement->get_result();
+		if ($queryResult && $queryResult->num_rows > 0) {
+			$result = $queryResult->fetch_array(MYSQLI_BOTH);
+			$statement->close();
 			return $this->setUser($result);
 		}
+		$statement->close();
 		return false;
 	}
 
 	function getUserLogin($username, $pass)
 	{
-		$sql_select = "SELECT * FROM user WHERE username='" . $username . "' AND nd_block = '0'";
-
-		$this->dbsql->query($sql_select);
-		if ($this->dbsql->num_rows() > 0) {
-			$result = $this->dbsql->fetch_array();
+		global $connect;
+		$statement = $connect->prepare('SELECT * FROM user WHERE username = ? AND nd_block = 0 LIMIT 1');
+		$statement->bind_param('s', $username);
+		$statement->execute();
+		$queryResult = $statement->get_result();
+		if ($queryResult && $queryResult->num_rows > 0) {
+			$result = $queryResult->fetch_array(MYSQLI_BOTH);
+			$statement->close();
 			if (md5($pass) == $result["password"]) {
 				return $this->setUser($result);
 			}
+			return false;
 		}
-
+		$statement->close();
 		return false;
 	}
 
@@ -172,104 +190,180 @@ class UserPeer
 
 	function getIP()
 	{
+		global $connect;
 		$ip = $_SERVER["REMOTE_ADDR"];
-		$sql_select = "SELECT COUNT(*) FROM `ip` WHERE `address` LIKE '$ip' AND `timestamp` > (now() - interval 10 minute)";
-
-		$this->dbsql->query($sql_select);
-		if ($this->dbsql->num_rows() > 0) {
-			$result = $this->dbsql->fetch_array();
-			return $result[0];
-		}
-
-		return 0;
+		$statement = $connect->prepare(
+			"SELECT COUNT(*) FROM `ip` WHERE `address` = ? AND `timestamp` > (NOW() - INTERVAL 10 MINUTE)"
+		);
+		$statement->bind_param('s', $ip);
+		$statement->execute();
+		$statement->bind_result($count);
+		$statement->fetch();
+		$statement->close();
+		return (int) $count;
 	}
 
 	function saveIP()
 	{
+		global $connect;
 		$ip = $_SERVER["REMOTE_ADDR"];
-		$sql = "INSERT INTO `ip` (`address` ,`timestamp`)VALUES ('$ip',CURRENT_TIMESTAMP)";
-		$this->dbsql->query($sql);
-
-		return $this->dbsql->insert_id();
+		$statement = $connect->prepare("INSERT INTO `ip` (`address`, `timestamp`) VALUES (?, CURRENT_TIMESTAMP)");
+		$statement->bind_param('s', $ip);
+		$statement->execute();
+		$id = $statement->insert_id;
+		$statement->close();
+		return $id;
 	}
 
 	function save($user, $pass = 0)
 	{
-		if ($user->getUser("id") == "" || $user->getUser("id") == 0) {
-			$sql = "INSERT INTO `user`(`username`, `password`,`hoTen`,`diaChi`,`email`,`dienThoai`,`quyen`,`maNQ`,`id_khoa`) 
-					VALUES ('" . $user->getUser("username") . "','" . md5($user->getUser("password")) . "','" . $user->getUser("hoTen") . "',
-					'" . $user->getUser("diaChi") . "','" . $user->getUser("email") . "','" . $user->getUser("dienThoai") . "','" . $user->getUser("quyen") . "','" . $user->getUser("maNQ") . "','" . $user->getUser("id_khoa") . "')";
-		} else {
-			if ($pass == 0) {
-				if ($user->getUser("password") == "") { // sua user khong doi pass
-					$sql = "UPDATE `user` SET 
-								  `diaChi`='" . $user->getUser("diaChi") . "',
-								  `hoTen` ='" . $user->getUser("hoTen") . "',
-								  `email` ='" . $user->getUser("email") . "',
-								  `dienThoai`='" . $user->getUser("dienThoai") . "',
-								  `quyen` = '" . $user->getUser("quyen") . "',
-								  `maNQ` = '" . $user->getUser("maNQ") . "'
-								  ,`id_khoa` = '" . $user->getUser("id_khoa") . "'
-							WHERE `id` =  '" . $user->getUser("id") . "' ";
-				} else { // sua user co doi pass
-					$sql = "UPDATE `user` SET 
-								  `password` = '" . md5($user->getUser("password")) . "',
-								  `diaChi` = '" . $user->getUser("diaChi") . "',
-								  `hoTen` = '" . $user->getUser("hoTen") . "',
-								  `email` = '" . $user->getUser("email") . "',
-								  `dienThoai` = '" . $user->getUser("dienThoai") . "',
-								  `quyen` = '" . $user->getUser("quyen") . "',
-								  `maNQ` = '" . $user->getUser("maNQ") . "'
-								  ,`id_khoa` = '" . $user->getUser("id_khoa") . "'
-							WHERE `id` =  '" . $user->getUser("id") . "' ";
-				}
-			} else { // doi pass
-				$sql = "UPDATE `user` SET `password` = '" . md5($user->getUser("password")) . "'	WHERE `id` =  '" . $user->getUser("id") . "' ";
-			}
-		}
-		//echo ($sql);
+		global $connect;
 		$this->setLog($user);
 
-		if ($this->checkUsername($user->getUser("id"), $user->getUser("username"))) {
-			$this->dbsql->query($sql);
-			return ($this->dbsql->insert_id() == 0) ? $user->getUser("id") : $this->dbsql->insert_id();
+		if (!$this->checkUsername($user->getUser("id"), $user->getUser("username"))) {
+			return false;
 		}
 
-		return false;
+		if ($user->getUser("id") == "" || $user->getUser("id") == 0) {
+			$statement = $connect->prepare(
+				"INSERT INTO `user`
+				(`username`, `password`, `hoTen`, `diaChi`, `email`, `dienThoai`, `quyen`, `maNQ`, `id_khoa`)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+			);
+			$username = $user->getUser("username");
+			$passwordHash = md5($user->getUser("password"));
+			$hoTen = $user->getUser("hoTen");
+			$diaChi = $user->getUser("diaChi");
+			$email = $user->getUser("email");
+			$dienThoai = $user->getUser("dienThoai");
+			$quyen = $user->getUser("quyen");
+			$maNQ = $user->getUser("maNQ");
+			$idKhoa = $user->getUser("id_khoa");
+			$statement->bind_param(
+				'sssssssss',
+				$username,
+				$passwordHash,
+				$hoTen,
+				$diaChi,
+				$email,
+				$dienThoai,
+				$quyen,
+				$maNQ,
+				$idKhoa
+			);
+		} else {
+			$userId = (int) $user->getUser("id");
+			if ($pass == 0) {
+				$diaChi = $user->getUser("diaChi");
+				$hoTen = $user->getUser("hoTen");
+				$email = $user->getUser("email");
+				$dienThoai = $user->getUser("dienThoai");
+				$quyen = $user->getUser("quyen");
+				$maNQ = $user->getUser("maNQ");
+				$idKhoa = $user->getUser("id_khoa");
+
+				if ($user->getUser("password") == "") {
+					$statement = $connect->prepare(
+						"UPDATE `user` SET
+							`diaChi` = ?, `hoTen` = ?, `email` = ?, `dienThoai` = ?,
+							`quyen` = ?, `maNQ` = ?, `id_khoa` = ?
+						WHERE `id` = ?"
+					);
+					$statement->bind_param(
+						'sssssssi',
+						$diaChi,
+						$hoTen,
+						$email,
+						$dienThoai,
+						$quyen,
+						$maNQ,
+						$idKhoa,
+						$userId
+					);
+				} else {
+					$passwordHash = md5($user->getUser("password"));
+					$statement = $connect->prepare(
+						"UPDATE `user` SET
+							`password` = ?, `diaChi` = ?, `hoTen` = ?, `email` = ?,
+							`dienThoai` = ?, `quyen` = ?, `maNQ` = ?, `id_khoa` = ?
+						WHERE `id` = ?"
+					);
+					$statement->bind_param(
+						'ssssssssi',
+						$passwordHash,
+						$diaChi,
+						$hoTen,
+						$email,
+						$dienThoai,
+						$quyen,
+						$maNQ,
+						$idKhoa,
+						$userId
+					);
+				}
+			} else {
+				$passwordHash = md5($user->getUser("password"));
+				$statement = $connect->prepare("UPDATE `user` SET `password` = ? WHERE `id` = ?");
+				$statement->bind_param('si', $passwordHash, $userId);
+			}
+		}
+
+		$statement->execute();
+		$insertId = $statement->insert_id;
+		$statement->close();
+		return ($insertId == 0) ? $user->getUser("id") : $insertId;
 	}
 
 	function updateLock($userId, $nd_block = 0)
 	{
-		$sql = "UPDATE `user` SET `nd_block` = '" . $nd_block . "' WHERE `id` =  '" . $userId . "' ";
+		global $connect;
+		$userId = (int) $userId;
+		$nd_block = (int) $nd_block;
 		$user = $this->getUserID($userId);
 		$user->set('nd_block', $nd_block);
 		$this->setLog($user, "Khóa người dùng");
-		$this->dbsql->query($sql);
+		$statement = $connect->prepare("UPDATE `user` SET `nd_block` = ? WHERE `id` = ?");
+		$statement->bind_param('ii', $nd_block, $userId);
+		$statement->execute();
+		$statement->close();
 	}
 
 	function setToken($userId, $token)
 	{
-		$sql = "UPDATE `user` SET `token` = '" . $token . "' WHERE `id` =  '" . $userId . "' ";
-		$this->dbsql->query($sql);
+		global $connect;
+		$userId = (int) $userId;
+		$statement = $connect->prepare("UPDATE `user` SET `token` = ? WHERE `id` = ?");
+		$statement->bind_param('si', $token, $userId);
+		$statement->execute();
+		$statement->close();
 	}
 
 	function getToken($userId)
 	{
-		$sql = "SELECT `token` FROM user WHERE `id` =  '" . $userId . "' ";
-		$this->dbsql->query($sql);
-
-		if ($this->dbsql->num_rows() > 0) {
-			$result = $this->dbsql->fetch_array();
-			return $result['token'];
+		global $connect;
+		$userId = (int) $userId;
+		$statement = $connect->prepare("SELECT `token` FROM user WHERE `id` = ? LIMIT 1");
+		$statement->bind_param('i', $userId);
+		$statement->execute();
+		$result = $statement->get_result();
+		if ($result && $result->num_rows > 0) {
+			$row = $result->fetch_assoc();
+			$statement->close();
+			return $row['token'];
 		}
+		$statement->close();
 		return "";
 	}
 
 	function updateQuyen($user)
 	{
-		$sql = "UPDATE `user` SET `quyen` = '" . $user->getUser("quyen") . "' WHERE `id` =  '" . $user->getUser("id") . "' ";
-
-		$this->dbsql->query($sql);
+		global $connect;
+		$userId = (int) $user->getUser("id");
+		$quyen = $user->getUser("quyen");
+		$statement = $connect->prepare("UPDATE `user` SET `quyen` = ? WHERE `id` = ?");
+		$statement->bind_param('si', $quyen, $userId);
+		$statement->execute();
+		$statement->close();
 	}
 
 	function getListUser()
@@ -308,13 +402,15 @@ class UserPeer
 
 	function deleteUser($maUser)
 	{
+		global $connect;
+		$maUser = (int) $maUser;
 		$user = new User;
 		$user->set("id", $maUser);
 		$this->setLog($user, "Xóa user");
-
-		$sSQL = "DELETE FROM user WHERE id='" . $maUser . "'";
-
-		$this->dbsql->query($sSQL);
+		$statement = $connect->prepare("DELETE FROM user WHERE id = ?");
+		$statement->bind_param('i', $maUser);
+		$statement->execute();
+		$statement->close();
 	}
 }
 ?>

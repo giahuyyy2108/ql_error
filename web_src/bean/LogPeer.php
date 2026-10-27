@@ -136,46 +136,56 @@ class LogPeer
 
 	function deleteLog($logID)
 	{
-		$sSQL = "DELETE FROM log WHERE logID='" . $logID . "'";
-		$this->dbsql->query($sSQL);
+		global $connect;
+		$logID = (int) $logID;
+		$statement = $connect->prepare("DELETE FROM log WHERE logID = ?");
+		$statement->bind_param('i', $logID);
+		$statement->execute();
+		$statement->close();
 	}
 
 	function getListLog($_username, $_chucnang, $to = 0, $from = 0)
 	{
-		$sSQL = " SELECT * FROM log ";
-		//$sSQL.= " WHERE ten LIKE '%" . $_username . "%' AND UPPER(chucnang) LIKE '%" . mb_strtoupper($_chucnang, 'UTF-8') . "%'";
-		$sSQL .= " WHERE UPPER(`ten`) LIKE UPPER('%" . $_username . "%') AND UPPER(chucnang) LIKE UPPER('%" . $_chucnang . "%')";
-		//$sSQL.= " AND ten != 'vietkhoi' ";	
-		$sSQL .= " ORDER BY `logID` DESC";
-
-		if ($to > -1 && $from > 0) {
-			$sSQL .= " LIMIT  $to, $from";
+		global $connect;
+		$to = max(0, (int) $to);
+		$from = max(0, (int) $from);
+		$sql = "SELECT * FROM log
+			WHERE UPPER(`ten`) LIKE UPPER(?) AND UPPER(chucnang) LIKE UPPER(?)
+			ORDER BY `logID` DESC";
+		if ($from > 0) {
+			$sql .= " LIMIT " . $to . ", " . $from;
 		}
-
-		$result = $this->dbsql->query($sSQL);
+		$usernamePattern = '%' . $_username . '%';
+		$chucnangPattern = '%' . $_chucnang . '%';
+		$statement = $connect->prepare($sql);
+		$statement->bind_param('ss', $usernamePattern, $chucnangPattern);
+		$statement->execute();
+		$result = $statement->get_result();
 		$arrList = [];
 		$i = 0;
-		while ($row = $this->dbsql->fetch_Array($result)) {
+		while ($row = $result->fetch_array(MYSQLI_BOTH)) {
 			$arrList[$i] = $this->setLog($row);
 			$i++;
 		}
+		$statement->close();
 		return $arrList;
 	}
 
 	function getCount($username, $chucnang)
 	{
-		$sSQL = " SELECT count( * ) FROM `log`";
-		//$sSQL.= " WHERE ten LIKE '%" . $username . "%' AND UPPER(chucnang) LIKE '%" . mb_strtoupper($chucnang, 'UTF-8') . "%'";
-		$sSQL .= " WHERE UPPER(`ten`) LIKE UPPER('%" . $username . "%') AND UPPER(chucnang) LIKE UPPER('%" . $chucnang . "%')";
-		//$sSQL.= " AND ten != 'vietkhoi' ";
-		$result = $this->dbsql->query($sSQL);
-		$count = 0;
-
-		if ($row = $this->dbsql->fetch_Array($result)) {
-			$count = $row[0];
-		}
-
-		return $count;
+		global $connect;
+		$usernamePattern = '%' . $username . '%';
+		$chucnangPattern = '%' . $chucnang . '%';
+		$statement = $connect->prepare(
+			"SELECT COUNT(*) FROM `log`
+			WHERE UPPER(`ten`) LIKE UPPER(?) AND UPPER(chucnang) LIKE UPPER(?)"
+		);
+		$statement->bind_param('ss', $usernamePattern, $chucnangPattern);
+		$statement->execute();
+		$statement->bind_result($count);
+		$statement->fetch();
+		$statement->close();
+		return (int) $count;
 	}
 }
 ?>

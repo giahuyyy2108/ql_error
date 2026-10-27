@@ -16,6 +16,9 @@
                 <button type="button" id="btn-push-portal" class="btn btn-warning"><i class="fa fa-upload"></i> Đẩy cổng</button>
             </li>
             <li>
+                <button type="button" id="btn-portal-history" class="btn btn-info"><i class="fa fa-history"></i> Lịch sử đẩy cổng</button>
+            </li>
+            <li>
                 <button type="button" id="btn-delete-selected" class="btn btn-danger" disabled>
                     <i class="fa fa-trash"></i> Xóa đã chọn
                 </button>
@@ -95,6 +98,51 @@
             </table>
         </div>
         <div id="file-table-controls" class="file-table-controls"></div>
+    </div>
+</div>
+
+<div class="modal fade" id="modal-portal-history" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Lịch sử đẩy cổng</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <div class="row" style="margin-bottom:15px">
+                    <div class="col-md-4">
+                        <label for="portal-history-date">Ngày đẩy</label>
+                        <input type="date" id="portal-history-date" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="portal-history-malk">Mã liên kết</label>
+                        <input type="text" id="portal-history-malk" class="form-control" placeholder="Nhập MALK">
+                    </div>
+                    <div class="col-md-4" style="padding-top:25px">
+                        <button type="button" id="btn-search-portal-history" class="btn btn-primary"><i class="fa fa-search"></i> Tìm</button>
+                        <button type="button" id="btn-reset-portal-history" class="btn btn-default"><i class="fa fa-refresh"></i> Làm mới</button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped table-bordered table-condensed">
+                        <thead>
+                            <tr>
+                                <th>Thời gian</th>
+                                <th>Người đẩy</th>
+                                <th>MALK</th>
+                                <th>Tên file</th>
+                                <th>Mã BN</th>
+                                <th>Khoa</th>
+                            </tr>
+                        </thead>
+                        <tbody id="portal-history-list"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
+            </div>
+        </div>
     </div>
 </div>
 

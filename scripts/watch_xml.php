@@ -1,5 +1,9 @@
 <?php
 
+// -----------------------------------------------------------------------------
+// Khởi động worker, đọc cấu hình CLI và chuẩn bị thư mục runtime
+// -----------------------------------------------------------------------------
+
 if (PHP_SAPI !== 'cli') {
     fwrite(STDERR, "Script này chỉ được chạy từ dòng lệnh.\n");
     exit(1);
@@ -112,9 +116,14 @@ require $projectRoot . '/web_src/common/ApiValidationService.php';
 require $projectRoot . '/web_src/common/TableLookupService.php';
 require $projectRoot . '/web_src/common/BhytLookupService.php';
 require $projectRoot . '/web_src/common/XmlErrorArchiveOrganizer.php';
+require $projectRoot . '/web_src/common/FileStorageService.php';
 
 $filePeer = null;
 $validationCallback = null;
+$fileStorage = new FileStorageService($projectRoot, $inboxDir);
+
+// Tạo lại toàn bộ service phụ thuộc database. Closure này cũng được dùng khi
+// kết nối DB lỗi để worker có thể tự nối lại ở vòng xử lý kế tiếp.
 $buildImportService = function () use (&$filePeer, &$validationCallback) {
     $filePeer = new FilePeer();
     $rulePeer = new XmlValidationRulePeer();
@@ -155,6 +164,11 @@ $observed = array();
 
 $workerLogPath = $runtimeLogDir . DIRECTORY_SEPARATOR . 'watcher.log';
 $workerErrorLogPath = $runtimeLogDir . DIRECTORY_SEPARATOR . 'watcher.error.log';
+
+// -----------------------------------------------------------------------------
+// Ghi log và cập nhật tiến độ dùng chung giữa các worker
+// -----------------------------------------------------------------------------
+
 $log = function ($message, $level = 'INFO') use ($workerLogPath, $workerErrorLogPath, $options) {
     $level = strtoupper((string) $level);
     $line = '[' . date('Y-m-d H:i:s') . '] [' . $level . '] [WORKER:'
@@ -290,6 +304,10 @@ $claimTurn = function ($path) use ($processingDir) {
     return @rename($path, $destination);
 };
 
+// -----------------------------------------------------------------------------
+// Helper cho claim file, log validation, dọn dữ liệu cũ và lưu trữ file
+// -----------------------------------------------------------------------------
+
 $logValidationErrors = function ($fileName, array $validation) use ($log) {
     $groups = array();
     foreach ($validation as $validationItem) {
@@ -389,16 +407,8 @@ $xmlFiles = function ($directory) {
     return $files;
 };
 
-$uniqueDestination = function ($directory, $fileName) {
-    $destination = $directory . DIRECTORY_SEPARATOR . $fileName;
-    if (!file_exists($destination)) {
-        return $destination;
-    }
-    $base = pathinfo($fileName, PATHINFO_FILENAME);
-    $extension = pathinfo($fileName, PATHINFO_EXTENSION);
-    $suffix = date('Ymd_His') . '_' . substr(uniqid('', true), -6);
-    return $directory . DIRECTORY_SEPARATOR . $base . '_' . $suffix
-        . ($extension !== '' ? '.' . $extension : '');
+$uniqueDestination = function ($directory, $fileName) use ($fileStorage) {
+    return $fileStorage->uniqueDestination($directory, $fileName);
 };
 
 $archive = function ($source, $directory) use ($uniqueDestination) {
@@ -409,12 +419,8 @@ $archive = function ($source, $directory) use ($uniqueDestination) {
     return $destination;
 };
 
-$datedDirectory = function ($baseDirectory) {
-    $directory = rtrim($baseDirectory, '\\/') . DIRECTORY_SEPARATOR . date('Ymd');
-    if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
-        throw new RuntimeException('Không thể tạo thư mục lưu theo ngày: ' . $directory);
-    }
-    return $directory;
+$datedDirectory = function ($baseDirectory) use ($fileStorage) {
+    return $fileStorage->datedDirectory($baseDirectory);
 };
 
 $resetDatabase = function () use (&$importService, $buildImportService) {
@@ -429,6 +435,10 @@ $resetDatabase = function () use (&$importService, $buildImportService) {
     $importService = $buildImportService();
 };
 
+// -----------------------------------------------------------------------------
+// Import file mới: decode -> validate -> lưu DB -> chuyển processed/failed
+// -----------------------------------------------------------------------------
+
 $process = function ($path) use (
     &$importService,
     &$filePeer,
@@ -440,6 +450,7 @@ $process = function ($path) use (
     $uniqueDestination,
     $archive,
     $datedDirectory,
+    $fileStorage,
     $log,
     $logValidationErrors,
     $resetDatabase
@@ -448,11 +459,7 @@ $process = function ($path) use (
     $datedProcessedDir = $datedDirectory($processedDir);
     $datedFailedDir = $datedDirectory($failedDir);
     $processedPath = $uniqueDestination($datedProcessedDir, basename($path));
-    $normalizedRoot = str_replace('\\', '/', rtrim($projectRoot, '\\/')) . '/';
-    $normalizedProcessedPath = str_replace('\\', '/', $processedPath);
-    $storedPath = strpos($normalizedProcessedPath, $normalizedRoot) === 0
-        ? substr($normalizedProcessedPath, strlen($normalizedRoot))
-        : $normalizedProcessedPath;
+    $storedPath = $fileStorage->relativeToProject($processedPath);
     try {
         $result = $importService->importPath($path, $storedPath);
     } catch (Throwable $exception) {
@@ -483,10 +490,7 @@ $process = function ($path) use (
             throw new RuntimeException('Không thể chuyển file sang thư mục kết quả.');
         }
         if ($isImport) {
-            $normalizedFinalPath = str_replace('\\', '/', $finalPath);
-            $finalStoredPath = strpos($normalizedFinalPath, $normalizedRoot) === 0
-                ? substr($normalizedFinalPath, strlen($normalizedRoot))
-                : $normalizedFinalPath;
+            $finalStoredPath = $fileStorage->relativeToProject($finalPath);
             $filePeer->updateStorageLocation(
                 $result['id'],
                 $finalStoredPath,
@@ -565,9 +569,7 @@ $process = function ($path) use (
                 $result['name']
             );
             if (!empty($organizedPaths)) {
-                $normalizedOrganizedPath = str_replace('\\', '/', $organizedPaths[0]);
-                $organizedStoredPath = strpos($normalizedOrganizedPath, $normalizedRoot) === 0
-                    ? substr($normalizedOrganizedPath, strlen($normalizedRoot)) : $normalizedOrganizedPath;
+                $organizedStoredPath = $fileStorage->relativeToProject($organizedPaths[0]);
                 $filePeer->updateStorageLocation($result['id'], $organizedStoredPath, 'failed');
             }
             $log('File không đạt validation (' . $errorCount . ' lỗi): ' . $result['name']
@@ -593,6 +595,10 @@ $process = function ($path) use (
     }
 };
 
+// -----------------------------------------------------------------------------
+// Quét lại hồ sơ đã có trong DB khi người dùng tạo hàng đợi revalidation
+// -----------------------------------------------------------------------------
+
 $revalidatePending = function () use (
     &$filePeer,
     &$validationCallback,
@@ -603,6 +609,7 @@ $revalidatePending = function () use (
     $failedDir,
     $uniqueDestination,
     $datedDirectory,
+    $fileStorage,
     $log,
     $logValidationErrors,
     $resetDatabase
@@ -610,7 +617,7 @@ $revalidatePending = function () use (
     try {
         // Revalidation is shared by every watcher and the web UI. If another
         // process owns the queue mutex, skip this cycle and try again later.
-        $pendingFiles = $filePeer->claimPendingRevalidation(20, null, null, 0);
+        $pendingFiles = $filePeer->claimPendingRevalidation(1, null, null, 0);
     } catch (RevalidationQueueBusyException $exception) {
         return;
     } catch (Throwable $exception) {
@@ -688,10 +695,7 @@ $revalidatePending = function () use (
                 if ($newErrorPath !== $oldErrorPath && is_file($newErrorPath)) @unlink($newErrorPath);
             }
 
-            $normalizedRoot = str_replace('\\', '/', rtrim($projectRoot, '\\/')) . '/';
-            $normalizedFinalPath = str_replace('\\', '/', $finalPath);
-            $finalStoredPath = strpos($normalizedFinalPath, $normalizedRoot) === 0
-                ? substr($normalizedFinalPath, strlen($normalizedRoot)) : $normalizedFinalPath;
+            $finalStoredPath = $fileStorage->relativeToProject($finalPath);
             $filePeer->updateValidationResult($file['id'], $validation);
             $filePeer->updateStorageLocation($file['id'], $finalStoredPath, $newStatus);
             $log('Đã quét lại ' . $file['ten'] . ': ' . $newStatus . ' (' . $errorCount . ' lỗi).');
@@ -713,6 +717,10 @@ $revalidatePending = function () use (
         }
     }
 };
+
+// -----------------------------------------------------------------------------
+// Vòng lặp chính của worker
+// -----------------------------------------------------------------------------
 
 $log('Worker ' . $options['worker_id'] . ' bắt đầu theo dõi ' . $inboxDir . '.');
 

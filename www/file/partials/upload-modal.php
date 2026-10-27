@@ -7,6 +7,22 @@
                     <button type="button" class="close" data-dismiss="modal" aria-label="Đóng"><span aria-hidden="true">&times;</span></button>
                 </div>
                 <div class="modal-body">
+                    <?php if ($request->getAttribute('canChooseUploadKhoa')): ?>
+                        <?php $uploadKhoaOptions = $request->getAttribute('uploadKhoaOptions'); ?>
+                        <?php $currentUploadKhoa = (string) $request->getAttribute('currentUserKhoa'); ?>
+                        <div class="form-group">
+                            <label for="upload-id-khoa">Khoa nhập hồ sơ <span class="text-danger">*</span></label>
+                            <select id="upload-id-khoa" class="form-control" required>
+                                <option value="">-- Chọn khoa --</option>
+                                <?php foreach (is_array($uploadKhoaOptions) ? $uploadKhoaOptions : array() as $khoa): ?>
+                                    <option value="<?=htmlspecialchars((string) $khoa['id'], ENT_QUOTES, 'UTF-8')?>"
+                                        <?=((string) $khoa['id'] === $currentUploadKhoa) ? ' selected' : ''?>>
+                                        <?=htmlspecialchars($khoa['ten'], ENT_QUOTES, 'UTF-8')?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    <?php endif; ?>
                     <div class="form-group">
                         <label for="xmlFile">Chọn file <span class="text-danger">*</span></label>
                         <div id="xml-drop-zone" class="xml-drop-zone" role="button" tabindex="0"

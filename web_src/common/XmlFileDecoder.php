@@ -2,6 +2,10 @@
 
 class XmlFileDecoder
 {
+    // ---------------------------------------------------------------------
+    // Decode XML hồ sơ thành cấu trúc chuẩn mà validator/import service dùng
+    // ---------------------------------------------------------------------
+
     /** Decode a file incrementally; output matches decodeDanhSachHoSoWithMetadata(). */
     public static function decodeDanhSachHoSoPathWithMetadata($path)
     {
@@ -174,6 +178,10 @@ class XmlFileDecoder
         return $values[0];
     }
 
+    // ---------------------------------------------------------------------
+    // Helper lấy metadata/trường dữ liệu từ nội dung XML đã decode
+    // ---------------------------------------------------------------------
+
     public static function extractNgayLap($xmlContent)
     {
         $document = self::loadXml($xmlContent, 'XML hồ sơ không hợp lệ');
@@ -242,6 +250,10 @@ class XmlFileDecoder
             }
         }
     }
+
+    // ---------------------------------------------------------------------
+    // Helper parser XMLReader/SimpleXML
+    // ---------------------------------------------------------------------
 
     private static function decodeFileFromReader(XMLReader $reader, $hoSoNumber, $fileNumber)
     {

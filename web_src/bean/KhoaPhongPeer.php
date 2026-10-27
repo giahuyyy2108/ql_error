@@ -51,62 +51,81 @@ class KhoaPhongPeer
     }
     function getKhoaPhongID($khoaPhongID)
     {
-        $sql_select = "SELECT * FROM khoaphong WHERE MaKhoaPhong='" . $khoaPhongID . "'";
-
-        $this->dbsql->query($sql_select);
-
-        if ($this->dbsql->num_rows() > 0) {
-            $result = $this->dbsql->fetch_array();
+        global $connect;
+        $khoaPhongID = (int) $khoaPhongID;
+        $statement = $connect->prepare("SELECT * FROM khoaphong WHERE MaKhoaPhong = ? LIMIT 1");
+        $statement->bind_param('i', $khoaPhongID);
+        $statement->execute();
+        $queryResult = $statement->get_result();
+        if ($queryResult && $queryResult->num_rows > 0) {
+            $result = $queryResult->fetch_array(MYSQLI_BOTH);
+            $statement->close();
             return $this->setKhoaPhong($result);
         }
+        $statement->close();
         return false;
     }
 
     function getListKhoaPhong($MaKhoaPhong = "")
     {
-        $sSQL = "SELECT * FROM khoaphong ORDER BY MaKhoaPhong DESC";
-
+        global $connect;
         if (!empty($MaKhoaPhong)) {
-            $sSQL .= " AND MaKhoaPhong = '" . $MaKhoaPhong . "'";
+            $MaKhoaPhong = (int) $MaKhoaPhong;
+            $statement = $connect->prepare(
+                "SELECT * FROM khoaphong WHERE MaKhoaPhong = ? ORDER BY MaKhoaPhong DESC"
+            );
+            $statement->bind_param('i', $MaKhoaPhong);
+        } else {
+            $statement = $connect->prepare("SELECT * FROM khoaphong ORDER BY MaKhoaPhong DESC");
         }
 
-
-        $result = $this->dbsql->query($sSQL);
+        $statement->execute();
+        $result = $statement->get_result();
         $arrList = [];
         $i = 0;
-        while ($row = $this->dbsql->fetch_Array($result)) {
+        while ($row = $result->fetch_array(MYSQLI_BOTH)) {
             $arrList[$i] = $this->setKhoaPhong($row);
             $i++;
         }
+        $statement->close();
         return $arrList;
-
     }
 
     function save($_khoaphong, $pass = 0)
     {
+        global $connect;
+        $tenKhoaPhong = $_khoaphong->get("TenKhoaPhong");
         if ($_khoaphong->get("MaKhoaPhong") == 0 || $_khoaphong->get("MaKhoaPhong") == "") {
-            $sql = "INSERT INTO `khoaphong` (`TenKhoaPhong`) 
-					VALUES (
-                        '" . $_khoaphong->get("TenKhoaPhong") . "')";
+            $statement = $connect->prepare("INSERT INTO `khoaphong` (`TenKhoaPhong`) VALUES (?)");
+            $statement->bind_param('s', $tenKhoaPhong);
         } else {
-            $sql = "UPDATE `khoaphong` 
-            SET 
-            `TenKhoaPhong` = '" . $_khoaphong->get("TenKhoaPhong") . "'
-			WHERE `MaKhoaPhong` = '" . $_khoaphong->get("MaKhoaPhong") . "'";
+            $maKhoaPhong = (int) $_khoaphong->get("MaKhoaPhong");
+            $statement = $connect->prepare(
+                "UPDATE `khoaphong` SET `TenKhoaPhong` = ? WHERE `MaKhoaPhong` = ?"
+            );
+            $statement->bind_param('si', $tenKhoaPhong, $maKhoaPhong);
         }
+
         $this->setlog($_khoaphong);
-        $this->dbsql->query($sql);
-        return ($this->dbsql->insert_id() == 0) ? $_khoaphong->get("MaKhoaPhong") : $this->dbsql->insert_id();
+        $statement->execute();
+        $insertId = $statement->insert_id;
+        $statement->close();
+        return ($insertId == 0) ? $_khoaphong->get("MaKhoaPhong") : $insertId;
     }
 
     function deleteKhoaPhong($MaKhoaPhong)
     {
+        global $connect;
+        $MaKhoaPhong = (int) $MaKhoaPhong;
         $this->kp->set("MaKhoaPhong", $MaKhoaPhong);
         $this->setLog($this->kp, "Xóa khoa phòng");
-        $sSQL = "DELETE FROM khoaphong WHERE MaKhoaPhong='" . $MaKhoaPhong . "'";
-        $this->dbsql->query($sSQL);
+        $statement = $connect->prepare("DELETE FROM khoaphong WHERE MaKhoaPhong = ?");
+        $statement->bind_param('i', $MaKhoaPhong);
+        $statement->execute();
+        $statement->close();
         return true;
     }
+
     function getListTenPhongKhoa()
     {
         $sSql = "SELECT TenKhoaPhong FROM khoaphong";

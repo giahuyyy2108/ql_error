@@ -11,41 +11,41 @@ require_once __DIR__ . '/../common/ApiValidationService.php';
 require_once __DIR__ . '/../common/TableLookupService.php';
 require_once __DIR__ . '/../common/BhytLookupService.php';
 require_once __DIR__ . '/../common/XmlErrorArchiveOrganizer.php';
+require_once __DIR__ . '/../common/FileStorageService.php';
+require_once __DIR__ . '/../common/UploadQueueService.php';
+require_once __DIR__ . '/../common/PortalService.php';
 require_once __DIR__ . '/../bean/HeThongPeer.php';
-require_once __DIR__ . '/../bean/LogPeer.php';
 
 class fileAction
 {
     protected $request;
     protected $filePeer;
+    private $fileStorage;
+    private $uploadQueue;
     private $maxFileSize = 5242880; // 5 MB
+
+    // ---------------------------------------------------------------------
+    // Khởi tạo trang và ngữ cảnh dùng chung
+    // ---------------------------------------------------------------------
 
     public function __construct()
     {
         $this->request = new Request();
         $this->filePeer = new FilePeer();
+        $this->fileStorage = new FileStorageService();
+        $this->uploadQueue = new UploadQueueService($this->filePeer, $this->fileStorage);
     }
 
     public function index()
     {
-        $currentKhoa = null;
-        if (!empty($_SESSION['sUserName'])) {
-            global $connect;
-            $db = new db_mysql();
-            $db->connect();
-            $db->selectdb();
-            $statement = $connect->prepare(
-                'SELECT id_khoa FROM `user` WHERE username = ? LIMIT 1'
-            );
-            $username = $_SESSION['sUserName'];
-            $statement->bind_param('s', $username);
-            $statement->execute();
-            if ($row = $statement->get_result()->fetch_assoc()) {
-                $currentKhoa = $row['id_khoa'];
-            }
-            $statement->close();
-        }
-        $this->request->setAttribute('currentUserKhoa', $currentKhoa);
+        $currentUserKhoa = $this->currentUserKhoa();
+        $isAdmin = isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1;
+        $this->request->setAttribute('currentUserKhoa', $currentUserKhoa);
+        $this->request->setAttribute('canChooseUploadKhoa', $isAdmin);
+        $this->request->setAttribute(
+            'uploadKhoaOptions',
+            $isAdmin ? $this->filePeer->getKhoaOptions() : array()
+        );
         if (empty($_SESSION['xml_file_csrf'])) {
             $_SESSION['xml_file_csrf'] = bin2hex(random_bytes(32));
         }
@@ -64,6 +64,10 @@ class fileAction
         $this->request->setModel('www/file/index.php');
         return true;
     }
+
+    // ---------------------------------------------------------------------
+    // Danh sách file, tải lên và xem nội dung XML
+    // ---------------------------------------------------------------------
 
     public function getData()
     {
@@ -101,11 +105,18 @@ class fileAction
             return $this->json(array('success' => false, 'message' => 'Tên file không hợp lệ hoặc file không có đuôi .xml.'));
         }
 
+        $requestedKhoa = $this->request->getParameter('id_khoa');
+        $isAdmin = isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1;
+        if (!$isAdmin) {
+            $requestedKhoa = $this->currentUserKhoa();
+        }
+
         try {
-            $queuedName = $this->queueUploadedXml(
+            $queuedName = $this->uploadQueue->enqueue(
                 $upload['tmp_name'],
                 $fileName,
-                $this->request->getParameter('id_khoa')
+                $requestedKhoa,
+                $this->currentUploadUsername()
             );
         } catch (Throwable $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
@@ -179,75 +190,51 @@ class fileAction
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Đẩy cổng và lịch sử đẩy hồ sơ
+    // ---------------------------------------------------------------------
+
     public function pushPortal()
     {
         $ids = json_decode((string) $this->request->getParameter('ids', false), true);
         $confirmedWarning = $this->request->getParameter('confirm_warning', false) === '1';
-        if (!is_array($ids) || !$ids) return $this->json(array('success' => false, 'message' => 'Vui lòng chọn file cần đẩy cổng.'));
-        $done = 0; $skipped = 0;
+        if (!is_array($ids) || !$ids) {
+            return $this->json(array('success' => false, 'message' => 'Vui lòng chọn file cần đẩy cổng.'));
+        }
+
         try {
-            $root = dirname(__DIR__, 2);
-            // Keep the original XML and file_path. The portal copy is only
-            // an archive/audit copy and must not remove file information.
-            $archiveDate = date('Ymd');
-            $archiveDirectory = $root . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
-                . 'xml' . DIRECTORY_SEPARATOR . 'portal' . DIRECTORY_SEPARATOR . $archiveDate;
-            if (!is_dir($archiveDirectory) && !mkdir($archiveDirectory, 0775, true) && !is_dir($archiveDirectory)) {
-                throw new RuntimeException('Không thể tạo thư mục lưu file đã đẩy cổng.');
-            }
-            foreach ($this->filePeer->getPortalFilesByIds($ids, $confirmedWarning) as $file) {
-                $path = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $file['file_path']);
-                if (!is_file($path)) { $skipped++; continue; }
-                $content = file_get_contents($path); $decoded = XmlFileDecoder::decodeDanhSachHoSo($content);
-                $decodedContent = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                if ($decodedContent === false) { $skipped++; continue; }
-                $values = XmlFileDecoder::extractValuesFromFileType($decoded, 'XML1', array('CCCD','MA_BN','HO_TEN','NGAY_SINH','MA_THE_BHYT'));
-                $cccd = trim((string) ($values['MA_BN'] ?? ''));
-                if ($cccd === '') { $skipped++; continue; }
-                global $connect; $connect->begin_transaction();
-                $q = $connect->prepare('INSERT IGNORE INTO cong_benhnhan (cccd, hoten, namsinh, ma_the_bhyt) VALUES (?, ?, ?, ?)');
-                $name = (string) ($values['HO_TEN'] ?? ''); $birth = (string) ($values['NGAY_SINH'] ?? ''); $card = (string) ($values['MA_THE_BHYT'] ?? '');
-                $q->bind_param('ssss', $cccd, $name, $birth, $card); $q->execute(); $q->close();
-                $q = $connect->prepare('INSERT IGNORE INTO cong_hoso (cccd, malk, ten_file, noidung, nguoi_day, id_khoa) VALUES (?, ?, ?, ?, ?, ?)');
-                $user = isset($_SESSION['sUserName']) ? $_SESSION['sUserName'] : ''; $khoa = isset($_SESSION['id_khoa']) ? $_SESSION['id_khoa'] : null;
-                $q->bind_param('ssssss', $cccd, $file['ma_lk'], $file['ten'], $decodedContent, $user, $khoa); $q->execute(); $inserted = $q->affected_rows; $q->close();
-                if ($inserted > 0) {
-                    $archiveName = basename($path);
-                    $archivePath = $archiveDirectory . DIRECTORY_SEPARATOR . $archiveName;
-                    if (is_file($archivePath)) {
-                        $archiveName = pathinfo($archiveName, PATHINFO_FILENAME) . '_' . $file['id'] . '.' . pathinfo($archiveName, PATHINFO_EXTENSION);
-                        $archivePath = $archiveDirectory . DIRECTORY_SEPARATOR . $archiveName;
-                    }
-                    if (!copy($path, $archivePath)) {
-                        throw new RuntimeException('Không thể chuyển file vào thư mục lưu theo ngày.');
-                    }
-                    $relativePath = 'storage/xml/portal/' . $archiveDate . '/' . $archiveName;
-                    $this->filePeer->markPortalPushed($file['id']);
-                    $log = new Log();
-                    $log->set('chucnang', 'Đẩy cổng');
-                    $log->set(
-                        'noidung',
-                        'File: ' . $file['ten'] . ' | MALK: ' . $file['ma_lk']
-                        . ' | Đường dẫn mới: ' . $relativePath
-                        . ($confirmedWarning ? ' | Người dùng đã đồng ý đẩy hồ sơ có cảnh báo' : '')
-                    );
-                    $log->set('noidungcu', 'Đường dẫn cũ: ' . $file['file_path']);
-                    (new LogPeer())->ghiLog($log);
-                    $done++;
-                } else $skipped++;
-                $connect->commit();
-            }
-            return $this->json(array('success' => true, 'done' => $done, 'skipped' => $skipped));
-        } catch (Throwable $e) { if (isset($connect) && $connect instanceof mysqli) @$connect->rollback(); return $this->json(array('success'=>false,'message'=>$e->getMessage())); }
+            $result = (new PortalService($this->filePeer, $this->fileStorage))->push(
+                $ids,
+                $confirmedWarning,
+                $this->currentUsername(),
+                $this->currentUserKhoa(true)
+            );
+            return $this->json(array(
+                'success' => true,
+                'done' => $result['done'],
+                'skipped' => $result['skipped']
+            ));
+        } catch (Throwable $e) {
+            return $this->json(array('success' => false, 'message' => $e->getMessage()));
+        }
     }
 
     public function getAuditLogs()
     {
         $maLk = trim((string) $this->request->getParameter('ma_lk', false));
-        if ($maLk === '') return $this->json(array('success' => false, 'message' => 'Thiếu MALK.'));
-        try { return $this->json(array('success' => true, 'data' => $this->filePeer->getAuditLogs($maLk))); }
-        catch (Throwable $exception) { return $this->json(array('success' => false, 'message' => $exception->getMessage())); }
+        if ($maLk === '') {
+            return $this->json(array('success' => false, 'message' => 'Thiếu MALK.'));
+        }
+        try {
+            return $this->json(array('success' => true, 'data' => $this->filePeer->getAuditLogs($maLk)));
+        } catch (Throwable $exception) {
+            return $this->json(array('success' => false, 'message' => $exception->getMessage()));
+        }
     }
+
+    // ---------------------------------------------------------------------
+    // Báo cáo, xóa file và hàng đợi quét lại
+    // ---------------------------------------------------------------------
 
     public function download()
     {
@@ -419,7 +406,7 @@ class fileAction
             if (!isset($_SESSION['AdminType']) || (int) $_SESSION['AdminType'] !== 1) {
                 $idKhoa = $this->filePeer->getCurrentUserKhoa((string) ($_SESSION['sUserName'] ?? ''));
             }
-            $files = $this->filePeer->claimPendingRevalidation(2, $date, $idKhoa);
+            $files = $this->filePeer->claimPendingRevalidation(1, $date, $idKhoa);
             $errors = array();
             foreach ($files as $file) {
                 try {
@@ -537,10 +524,7 @@ class fileAction
         $validation = call_user_func($this->createValidationCallback(), $decodedContent);
         $newStatus = $this->validationHasErrors($validation) ? 'failed' : 'processed';
 
-        $projectRoot = dirname(__DIR__, 2);
-        $targetDirectory = $projectRoot . DIRECTORY_SEPARATOR . 'storage'
-            . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . $newStatus
-            . DIRECTORY_SEPARATOR . date('Ymd');
+        $targetDirectory = $this->fileStorage->statusDirectory($newStatus);
         $currentDirectory = realpath(dirname($storedPath));
         $resolvedTarget = realpath($targetDirectory);
         $newPath = $file['file_path'];
@@ -548,7 +532,7 @@ class fileAction
             || strcasecmp($currentDirectory, $resolvedTarget) !== 0) {
             $newPath = $this->moveValidatedFile($storedPath, $newStatus, $validation);
         } else {
-            $newPath = str_replace('\\', '/', substr($storedPath, strlen($projectRoot) + 1));
+            $newPath = $this->fileStorage->relativeToProject($storedPath);
             $errorPath = $storedPath . '.error.txt';
             if ($newStatus === 'failed') {
                 $errorCount = 0;
@@ -572,7 +556,7 @@ class fileAction
                 $file['ten']
             );
             if (!empty($organized)) {
-                $newPath = str_replace('\\', '/', substr($organized[0], strlen(dirname(__DIR__, 2)) + 1));
+                $newPath = $this->fileStorage->relativeToProject($organized[0]);
             }
         }
         $this->filePeer->updateStorageLocation($file['id'], $newPath, $newStatus);
@@ -589,7 +573,7 @@ class fileAction
                 }
                 try {
                     $source = $this->resolveStoredFilePath($file['file_path']);
-                    $move = $this->moveFileToDeleted($source);
+                    $move = $this->fileStorage->moveToDeleted($source);
                     $moves[] = $move;
                 } catch (RuntimeException $ignored) {
                     // A missing physical file must not prevent removal of a stale DB row.
@@ -610,41 +594,6 @@ class fileAction
         }
     }
 
-    private function moveFileToDeleted($source)
-    {
-        $directory = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage'
-            . DIRECTORY_SEPARATOR . 'xml' . DIRECTORY_SEPARATOR . 'deleted';
-        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
-            throw new RuntimeException('Không thể tạo thư mục lưu file đã xóa.');
-        }
-        $destination = $directory . DIRECTORY_SEPARATOR . basename($source);
-        if (file_exists($destination)) {
-            $destination = $directory . DIRECTORY_SEPARATOR . pathinfo($source, PATHINFO_FILENAME)
-                . '_' . date('Ymd_His') . '_' . substr(uniqid('', true), -6) . '.xml';
-        }
-        if (!rename($source, $destination)) {
-            throw new RuntimeException('Không thể di chuyển file vào thư mục deleted.');
-        }
-        touch($destination);
-
-        $errorSource = $source . '.error.txt';
-        $errorDestination = null;
-        if (is_file($errorSource)) {
-            $errorDestination = $destination . '.error.txt';
-            if (!rename($errorSource, $errorDestination)) {
-                @rename($destination, $source);
-                throw new RuntimeException('Không thể di chuyển thông tin lỗi của file.');
-            }
-            touch($errorDestination);
-        }
-        return array(
-            'source' => $source,
-            'destination' => $destination,
-            'error_source' => $errorSource,
-            'error_destination' => $errorDestination
-        );
-    }
-
     private function safeFileName($fileName)
     {
         $fileName = trim((string) $fileName);
@@ -655,72 +604,6 @@ class fileAction
             return false;
         }
         return $fileName;
-    }
-
-    private function queueUploadedXml($temporaryUploadPath, $fileName, $postedKhoa = null)
-    {
-        global $connect;
-        $directory = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml';
-        if (!is_dir($directory) || !is_writable($directory)) {
-            throw new RuntimeException('Thư mục hàng đợi XML không thể ghi dữ liệu.');
-        }
-        $destination = $directory . DIRECTORY_SEPARATOR . $fileName;
-        $uploadLockPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage'
-            . DIRECTORY_SEPARATOR . 'watcher' . DIRECTORY_SEPARATOR . 'upload_' . sha1($fileName) . '.lock';
-        $uploadLock = fopen($uploadLockPath, 'c');
-        if ($uploadLock === false || !flock($uploadLock, LOCK_EX)) {
-            if ($uploadLock !== false) fclose($uploadLock);
-            throw new RuntimeException('Không thể khóa tên file để tải lên.');
-        }
-        $deadline = microtime(true) + 30;
-        while (file_exists($destination) && microtime(true) < $deadline) usleep(100000);
-        if (file_exists($destination)) {
-            flock($uploadLock, LOCK_UN);
-            fclose($uploadLock);
-            throw new RuntimeException('File cùng tên đang được xử lý, vui lòng thử lại sau.');
-        }
-        $stagingPath = $destination . '.uploading.' . substr(uniqid('', true), -8);
-        if (!move_uploaded_file($temporaryUploadPath, $stagingPath)) {
-            flock($uploadLock, LOCK_UN);
-            fclose($uploadLock);
-            throw new RuntimeException('Không thể ghi file tải lên vào hàng đợi.');
-        }
-        if (!rename($stagingPath, $destination)) {
-            @unlink($stagingPath);
-            flock($uploadLock, LOCK_UN);
-            fclose($uploadLock);
-            throw new RuntimeException('Không thể hoàn tất việc đưa file vào hàng đợi.');
-        }
-        flock($uploadLock, LOCK_UN);
-        fclose($uploadLock);
-
-        $userKhoa = ($postedKhoa !== null && $postedKhoa !== '')
-            ? (int) $postedKhoa : null;
-        $currentUsername = !empty($_SESSION['sUserName'])
-            ? $_SESSION['sUserName']
-            : (isset($_SESSION['username']) ? $_SESSION['username'] : '');
-        if ($currentUsername !== '') {
-            $db = new db_mysql();
-            $db->connect();
-            $result = $db->query(
-                "SELECT id_khoa FROM `user` WHERE username='"
-                . addslashes($currentUsername) . "' LIMIT 1"
-            );
-            if ($row = $db->fetch_Array($result)) {
-                $userKhoa = $row['id_khoa'];
-            }
-        }
-        $queueStatement = $connect->prepare(
-            'INSERT INTO `xml_upload_queue` (file_name, id_khoa, username) VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE id_khoa = VALUES(id_khoa), username = VALUES(username)'
-        );
-        $queuedFileName = basename($destination);
-        $queueKhoa = $userKhoa === null ? null : (string) $userKhoa;
-        $queueStatement->bind_param('sss', $queuedFileName, $queueKhoa, $currentUsername);
-        $queueStatement->execute();
-        $queueStatement->close();
-
-        return basename($destination);
     }
 
     private function createValidationCallback()
@@ -750,63 +633,41 @@ class fileAction
 
     private function moveValidatedFile($source, $status, array $validation)
     {
-        $projectRoot = dirname(__DIR__, 2);
-        $directory = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
-            . 'xml' . DIRECTORY_SEPARATOR . $status . DIRECTORY_SEPARATOR . date('Ymd');
-        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
-            throw new RuntimeException('Không thể tạo thư mục trạng thái file XML.');
-        }
-
-        $destination = $directory . DIRECTORY_SEPARATOR . basename($source);
-        if (file_exists($destination)) {
-            $destination = $directory . DIRECTORY_SEPARATOR . pathinfo($source, PATHINFO_FILENAME)
-                . '_' . date('Ymd_His') . '_' . substr(uniqid('', true), -6) . '.xml';
-        }
-        if (!rename($source, $destination)) {
-            throw new RuntimeException('Không thể chuyển file sang trạng thái ' . $status . '.');
-        }
-
-        $oldErrorPath = $source . '.error.txt';
-        if ($status === 'failed') {
-            $errorCount = 0;
-            foreach ($validation as $result) {
-                $errorCount += isset($result['error_count']) ? (int) $result['error_count'] : 0;
-            }
-            if (is_file($oldErrorPath)) {
-                @unlink($oldErrorPath);
-            }
-            file_put_contents(
-                $destination . '.error.txt',
-                'Validation failed with ' . $errorCount . ' error(s).' . PHP_EOL,
-                LOCK_EX
-            );
-        } elseif (is_file($oldErrorPath)) {
-            @unlink($oldErrorPath);
-        }
-
-        return str_replace('\\', '/', substr($destination, strlen($projectRoot) + 1));
+        return $this->fileStorage->moveValidatedFile($source, $status, $validation);
     }
 
     private function resolveStoredFilePath($filePath)
     {
-        $projectRoot = dirname(__DIR__, 2);
-        $storageRoot = realpath($projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml');
-        if ($storageRoot === false || !is_string($filePath) || trim($filePath) === '') {
-            throw new RuntimeException('Đường dẫn file XML không hợp lệ.');
+        return $this->fileStorage->resolveStoredFilePath($filePath);
+    }
+
+    // ---------------------------------------------------------------------
+    // Helper dùng chung cho session, request và response
+    // ---------------------------------------------------------------------
+
+    private function currentUsername()
+    {
+        return !empty($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : '';
+    }
+
+    private function currentUploadUsername()
+    {
+        $username = $this->currentUsername();
+        return $username !== ''
+            ? $username
+            : (isset($_SESSION['username']) ? (string) $_SESSION['username'] : '');
+    }
+
+    private function currentUserKhoa($fromSession = false)
+    {
+        if ($fromSession) {
+            return isset($_SESSION['id_khoa']) && $_SESSION['id_khoa'] !== ''
+                ? (int) $_SESSION['id_khoa']
+                : null;
         }
 
-        $isAbsolute = preg_match('/^[A-Za-z]:[\\\\\/]/', $filePath) === 1
-            || substr($filePath, 0, 1) === '/';
-        $candidate = $isAbsolute
-            ? $filePath
-            : $projectRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $filePath);
-        $resolved = realpath($candidate);
-        $storagePrefix = rtrim($storageRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
-        if ($resolved === false || strncasecmp($resolved, $storagePrefix, strlen($storagePrefix)) !== 0
-            || !is_file($resolved)) {
-            throw new RuntimeException('Không tìm thấy file XML trong thư mục lưu trữ.');
-        }
-        return $resolved;
+        $username = $this->currentUsername();
+        return $username === '' ? null : $this->filePeer->getCurrentUserKhoa($username);
     }
 
     private function validCsrf()
