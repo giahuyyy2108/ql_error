@@ -1,0 +1,25 @@
+CREATE TABLE IF NOT EXISTS `trang_thiet_bi` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `stt` INT UNSIGNED NULL,
+    `ten_tb` VARCHAR(255) NOT NULL,
+    `ky_hieu` VARCHAR(255) NULL,
+    `congty_sx` VARCHAR(255) NULL,
+    `nuoc_sx` VARCHAR(100) NULL,
+    `nam_sx` SMALLINT UNSIGNED NULL,
+    `nam_sd` SMALLINT UNSIGNED NULL,
+    `ma_may` VARCHAR(100) NULL,
+    `so_luu_hanh` VARCHAR(100) NULL,
+    `hd_tu` DATE NULL,
+    `hd_den` DATE NULL,
+    `tu_ngay` DATE NULL,
+    `den_ngay` DATE NULL,
+    `source_id` BIGINT UNSIGNED NOT NULL,
+    `source_file` VARCHAR(255) NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_trang_thiet_bi_source_id` (`source_id`),
+    KEY `idx_trang_thiet_bi_ma_may` (`ma_may`),
+    KEY `idx_trang_thiet_bi_so_luu_hanh` (`so_luu_hanh`),
+    KEY `idx_trang_thiet_bi_ky_hieu` (`ky_hieu`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
