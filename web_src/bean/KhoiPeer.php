@@ -1,6 +1,7 @@
 <?php
 class KhoiPeer
 {
+    /** @var mysqli */
     private $connection;
 
     function __construct()
@@ -11,6 +12,9 @@ class KhoiPeer
         $db->connect();
         $db->selectdb();
 
+        if (!($connect instanceof mysqli)) {
+            throw new RuntimeException('Không thể kết nối cơ sở dữ liệu.');
+        }
         $this->connection = $connect;
         $this->connection->set_charset('utf8mb4');
     }

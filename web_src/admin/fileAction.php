@@ -617,11 +617,19 @@ class fileAction
     {
         $moves = array();
         try {
+            $files = array();
             foreach ($ids as $id) {
                 $file = $this->filePeer->getById((int) $id);
                 if ($file === false) {
                     continue;
                 }
+                if (!empty($file['da_day_cong'])) {
+                    throw new RuntimeException('File đã đẩy cổng chỉ được xem, không thể xóa.');
+                }
+                $files[] = $file;
+            }
+
+            foreach ($files as $file) {
                 try {
                     $source = $this->resolveStoredFilePath($file['file_path']);
                     $deleteOutputPath = !empty($file['id_khoa'])

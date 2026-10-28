@@ -1530,6 +1530,15 @@
             data: function (request) {
                 request.date = selectedFileDate();
             },
+            dataSrc: function (response) {
+                var rows = response && Array.isArray(response.data) ? response.data : [];
+                rows.forEach(function (row) {
+                    if (row.da_day_cong) {
+                        delete selectedFileIds[String(row.id)];
+                    }
+                });
+                return rows;
+            },
             beforeSend: function () {
                 getDataInProgress = true;
             },
@@ -1546,6 +1555,7 @@
         lengthMenu: [[50, 100, 250, 500], [50, 100, 250, 500]],
         scrollX: false,
         deferRender: true,
+        orderFixed: [[0, 'asc']],
         order: [],
         responsive: false,
         autoWidth: false,
@@ -1557,8 +1567,12 @@
                 searchable: false,
                 className: 'text-center',
                 width: '3%',
-                render: function (data, type) {
+                render: function (data, type, row) {
+                    if (type === 'sort') return row.da_day_cong ? 1 : 0;
                     if (type !== 'display') return data;
+                    if (row.da_day_cong) {
+                        return '<span class="text-success" title="Đã đẩy cổng - chỉ được xem"><i class="fa fa-lock"></i></span>';
+                    }
                     return '<input type="checkbox" class="file-select" value="' + Number(data) + '"'
                         + (selectedFileIds[data] ? ' checked' : '') + '>';
                 }
@@ -1631,11 +1645,16 @@
                 render: function (data, type, row) {
                     var name = escapeHtml(row.name);
                     var malk = escapeHtml(row.ma_lk);
+                    var viewButton = '<button type="button" class="btn btn-sm btn-info btn-file-action btn-view-file" data-id="' + row.id + '" data-malk="' + malk + '" title="Xem file" aria-label="Xem file">' +
+                        '<i class="fa fa-eye"></i></button>';
+                    if (row.da_day_cong) {
+                        return viewButton +
+                            '<span class="label label-success" style="margin-left:4px">Đã đẩy cổng</span>';
+                    }
                     var pushWarning = Number(row.warning_count) > 0 && Number(row.error_count) === 0 && !row.da_day_cong
                         ? '<button type="button" class="btn btn-sm btn-warning btn-file-action btn-push-warning" data-id="' + row.id + '" title="Đẩy cổng hồ sơ cảnh báo" aria-label="Đẩy cổng hồ sơ cảnh báo"><i class="fa fa-send"></i></button>'
                         : '';
-                    return '<button type="button" class="btn btn-sm btn-info btn-file-action btn-view-file" data-id="' + row.id + '" data-malk="' + malk + '" title="Xem file" aria-label="Xem file">' +
-                        '<i class="fa fa-eye"></i></button>' +
+                    return viewButton +
                         pushWarning +
                         '<button type="button" class="btn btn-sm btn-danger btn-file-action btn-delete-file" data-id="' + row.id + '" data-name="' + name + '" title="Xóa file" aria-label="Xóa file">' +
                         '<i class="fa fa-trash"></i></button>';
@@ -1953,6 +1972,7 @@
     $('#select-all-files').on('change', function () {
         var checked = this.checked;
         table.rows({ page: 'current', search: 'applied' }).data().each(function (row) {
+            if (row.da_day_cong) return;
             var id = String(row.id);
             if (checked) selectedFileIds[id] = true;
             else delete selectedFileIds[id];

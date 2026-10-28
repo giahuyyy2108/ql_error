@@ -376,6 +376,7 @@ class XmlRulesValidator
                     if (!empty($when['field'])) {
                         self::addRequiredField($required, $targetType, $when['field']);
                     }
+                    self::addRequiredField($required, $targetType, 'TEN_DICH_VU');
                 } elseif ($ruleType === 'SUBSTRING' && !empty($config['when']['field'])) {
                     $targetType = !empty($config['when']['file_type'])
                         ? strtoupper($config['when']['file_type']) : $fileType;

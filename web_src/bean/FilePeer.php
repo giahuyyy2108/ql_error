@@ -9,6 +9,8 @@ class FilePeer
     const MAX_DEADLOCK_RETRIES = 3;
     const REVALIDATION_LEASE_SECONDS = 900;
     private $dbsql;
+
+    /** @var mysqli */
     private $connection;
 
     // ---------------------------------------------------------------------
@@ -289,6 +291,11 @@ class FilePeer
         $this->dbsql = new db_mysql();
         $this->dbsql->connect();
         $this->dbsql->selectdb();
+
+        if (!($connect instanceof mysqli)) {
+            throw new RuntimeException('Không thể kết nối cơ sở dữ liệu.');
+        }
+
         $this->connection = $connect;
     }
 
@@ -326,9 +333,8 @@ class FilePeer
                        validation_result, update_at, create_at
                 FROM `file`
                 WHERE update_at >= ? AND update_at < ?'
-                . ' AND da_day_cong = 0'
                 . ($filterByKhoa ? ' AND id_khoa = ?' : '') . '
-                ORDER BY update_at DESC, id DESC';
+                ORDER BY da_day_cong ASC, update_at DESC, id DESC';
         $statement = $this->connection->prepare($sql);
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị danh sách file.');
@@ -884,6 +890,9 @@ class FilePeer
         $q->bind_param('i', $id);
         $ok = $q->execute();
         $q->close();
+        if ($ok) {
+            $this->clearFileListCache();
+        }
         return $ok;
     }
 
@@ -891,7 +900,7 @@ class FilePeer
     {
         $statement = $this->connection->prepare(
             'SELECT id, ten, ma_lk, kichthuoc, file_path, processing_status,
-                    validation_result, id_khoa, update_at, create_at
+                    validation_result, id_khoa, da_day_cong, update_at, create_at
              FROM `file` WHERE id = ? LIMIT 1'
         );
         if (!$statement) {
@@ -1237,7 +1246,7 @@ class FilePeer
 
     public function delete($id)
     {
-        $statement = $this->connection->prepare('DELETE FROM `file` WHERE id = ?');
+        $statement = $this->connection->prepare('DELETE FROM `file` WHERE id = ? AND da_day_cong = 0');
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị thao tác xóa file.');
         }
@@ -1260,7 +1269,9 @@ class FilePeer
         }
 
         $idList = implode(',', $ids);
-        $result = $this->connection->query('DELETE FROM `file` WHERE id IN (' . $idList . ')');
+        $result = $this->connection->query(
+            'DELETE FROM `file` WHERE id IN (' . $idList . ') AND da_day_cong = 0'
+        );
         if ($result === false) {
             throw new RuntimeException('Không thể xóa các file đã chọn.');
         }

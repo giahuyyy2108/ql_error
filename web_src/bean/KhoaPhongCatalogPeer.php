@@ -1,8 +1,20 @@
 <?php
 class KhoaPhongCatalogPeer
 {
+    /** @var mysqli */
     private $connection;
-    function __construct() { global $connect; $db=new db_mysql(); $db->connect(); $db->selectdb(); $this->connection=$connect; $this->connection->set_charset('utf8mb4'); }
+    function __construct()
+    {
+        global $connect;
+        $db = new db_mysql();
+        $db->connect();
+        $db->selectdb();
+        if (!($connect instanceof mysqli)) {
+            throw new RuntimeException('Không thể kết nối cơ sở dữ liệu.');
+        }
+        $this->connection = $connect;
+        $this->connection->set_charset('utf8mb4');
+    }
     function getPage($search='')
     {
         $search=trim((string)$search); $where=''; $params=array();

@@ -2,6 +2,7 @@
 
 class Icd10Peer
 {
+    /** @var mysqli */
     private $connection;
 
     public function __construct()
@@ -10,6 +11,9 @@ class Icd10Peer
         $db = new db_mysql();
         $db->connect();
         $db->selectdb();
+        if (!($connect instanceof mysqli)) {
+            throw new RuntimeException('Không thể kết nối cơ sở dữ liệu.');
+        }
         $this->connection = $connect;
     }
 

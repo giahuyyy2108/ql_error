@@ -2,6 +2,7 @@
 
 class DoiTuongKcbPeer
 {
+    /** @var mysqli */
     private $connection;
 
     public function __construct()
@@ -10,6 +11,9 @@ class DoiTuongKcbPeer
         $db = new db_mysql();
         $db->connect();
         $db->selectdb();
+        if (!($connect instanceof mysqli)) {
+            throw new RuntimeException('Không thể kết nối cơ sở dữ liệu.');
+        }
         $this->connection = $connect;
         $this->connection->set_charset('utf8mb4');
     }

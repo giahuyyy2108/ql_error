@@ -9,11 +9,11 @@ CREATE TABLE IF NOT EXISTS `cong_benhnhan` (
 CREATE TABLE IF NOT EXISTS `cong_hoso` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `cccd` varchar(20) NOT NULL,
-  `malk` varchar(255) NOT NULL,
+  `malk` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `ten_file` varchar(255) NOT NULL,
   `noidung` longtext NOT NULL,
   `nguoi_day` varchar(255) NULL,
-  `id_khoa` varchar(50) NULL,
+  `id_khoa` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
   `ngay_day` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_cong_hoso_malk` (`malk`),
