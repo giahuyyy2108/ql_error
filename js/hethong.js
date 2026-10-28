@@ -7,6 +7,12 @@
     var pathInput = $('#xml-watcher-storage-path');
     var pathButton = $('#save-xml-watcher-path');
     var pathMessage = $('#xml-watcher-path-message');
+    var portalPathInput = $('#portal-storage-path');
+    var portalPathButton = $('#save-portal-storage-path');
+    var portalPathMessage = $('#portal-storage-path-message');
+    var khoaOutputContainer = $('#khoa-output-settings');
+    var khoaOutputButton = $('#save-khoa-output-paths');
+    var khoaOutputMessage = $('#khoa-output-message');
 
     function escapeHtml(value) {
         return $('<div>').text(value == null ? '' : value).html();
@@ -119,6 +125,121 @@
         });
     }
 
+    function showPortalPathMessage(message, isError) {
+        portalPathMessage
+            .removeClass('is-success is-error')
+            .addClass(isError ? 'is-error' : 'is-success')
+            .text(message || '');
+    }
+
+    function loadPortalPath() {
+        portalPathInput.prop('disabled', true);
+        portalPathButton.prop('disabled', true);
+
+        $.ajax({
+            url: baseUrl + 'hethong/getPortalPath/',
+            type: 'POST',
+            dataType: 'json'
+        }).done(function (response) {
+            if (!response.success) {
+                showPortalPathMessage(response.message || 'Không thể tải đường dẫn Đẩy cổng.', true);
+                return;
+            }
+            portalPathInput.val(response.data && response.data.path ? response.data.path : '');
+            showPortalPathMessage('', false);
+        }).fail(function () {
+            showPortalPathMessage('Không thể tải đường dẫn Đẩy cổng.', true);
+        }).always(function () {
+            portalPathInput.prop('disabled', false);
+            portalPathButton.prop('disabled', false);
+        });
+    }
+
+    function savePortalPath() {
+        var path = $.trim(portalPathInput.val());
+        if (!path) {
+            showPortalPathMessage('Đường dẫn Đẩy cổng không được để trống.', true);
+            portalPathInput.focus();
+            return;
+        }
+
+        portalPathInput.prop('disabled', true);
+        portalPathButton.prop('disabled', true);
+        showPortalPathMessage('Đang lưu...', false);
+
+        $.ajax({
+            url: baseUrl + 'hethong/updatePortalPath/',
+            type: 'POST',
+            dataType: 'json',
+            data: {
+                path: path,
+                csrf_token: csrfToken
+            }
+        }).done(function (response) {
+            if (!response.success) {
+                showPortalPathMessage(response.message || 'Không thể lưu đường dẫn Đẩy cổng.', true);
+                return;
+            }
+            portalPathInput.val(response.path || path);
+            showPortalPathMessage(response.message || 'Đã lưu đường dẫn Đẩy cổng.', false);
+        }).fail(function () {
+            showPortalPathMessage('Có lỗi xảy ra khi lưu đường dẫn Đẩy cổng.', true);
+        }).always(function () {
+            portalPathInput.prop('disabled', false);
+            portalPathButton.prop('disabled', false);
+        });
+    }
+
+    function showKhoaOutputMessage(message, isError) {
+        khoaOutputMessage
+            .removeClass('is-success is-error')
+            .addClass(isError ? 'is-error' : 'is-success')
+            .text(message || '');
+    }
+
+    function renderKhoaOutputSettings(items) {
+        khoaOutputContainer.empty();
+        if (!items || !items.length) {
+            khoaOutputContainer.html('<div class="hethong-empty text-muted">Chưa có khoa gốc để cấu hình.</div>');
+            return;
+        }
+
+        items.forEach(function (item) {
+            var row = $('<div>').addClass('khoa-output-row').attr('data-ma-khoa', item.ma || '');
+            row.append(
+                $('<div>').addClass('khoa-output-name')
+                    .append($('<strong>').text(item.ma || ''))
+                    .append(document.createTextNode(' ' + (item.ten || '')))
+            );
+            row.append(
+                $('<input>').attr({
+                    type: 'text',
+                    maxlength: 500,
+                    autocomplete: 'off',
+                    placeholder: 'Ví dụ: D:\\Khoa'
+                }).addClass('form-control khoa-output-path').val(item.output_path || '')
+            );
+            khoaOutputContainer.append(row);
+        });
+    }
+
+    function loadKhoaOutputSettings() {
+        $.ajax({
+            url: baseUrl + 'hethong/getKhoaOutputPaths/',
+            type: 'POST',
+            dataType: 'json'
+        }).done(function (response) {
+            if (!response.success) {
+                showKhoaOutputMessage(response.message || 'Không thể tải cấu hình đầu ra theo khoa.', true);
+                return;
+            }
+            renderKhoaOutputSettings(response.data || []);
+            showKhoaOutputMessage('', false);
+        }).fail(function () {
+            showKhoaOutputMessage('Không thể tải cấu hình đầu ra theo khoa.', true);
+        });
+    }
+
     container.on('change', '.system-status-switch', function () {
         var toggle = $(this);
         var enabled = toggle.is(':checked');
@@ -163,6 +284,72 @@
         }
     });
 
+    portalPathButton.on('click', savePortalPath);
+    portalPathInput.on('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            savePortalPath();
+        }
+    });
+
+    khoaOutputButton.on('click', function () {
+        var rows = khoaOutputContainer.find('.khoa-output-row').toArray();
+        var index = 0;
+        var saved = 0;
+
+        if (!rows.length) {
+            showKhoaOutputMessage('Không có khoa gốc để lưu cấu hình.', true);
+            return;
+        }
+
+        khoaOutputButton.prop('disabled', true);
+        khoaOutputContainer.find('.khoa-output-path').prop('disabled', true);
+        showKhoaOutputMessage('Đang lưu cấu hình đầu ra...', false);
+
+        function finish(message, isError) {
+            khoaOutputButton.prop('disabled', false);
+            khoaOutputContainer.find('.khoa-output-path').prop('disabled', false);
+            showKhoaOutputMessage(message, isError);
+        }
+
+        function saveNext() {
+            if (index >= rows.length) {
+                finish('Đã lưu cấu hình đầu ra cho ' + saved + ' khoa.', false);
+                return;
+            }
+
+            var row = $(rows[index]);
+            var input = row.find('.khoa-output-path');
+            var maKhoa = row.attr('data-ma-khoa') || '';
+
+            $.ajax({
+                url: baseUrl + 'hethong/updateKhoaOutputPath/',
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    ma_khoa: maKhoa,
+                    output_path: $.trim(input.val()),
+                    csrf_token: csrfToken
+                }
+            }).done(function (response) {
+                if (!response.success) {
+                    finish(maKhoa + ': ' + (response.message || 'Không thể lưu đường dẫn đầu ra.'), true);
+                    return;
+                }
+                input.val(response.output_path || '');
+                saved += 1;
+                index += 1;
+                saveNext();
+            }).fail(function () {
+                finish(maKhoa + ': Có lỗi khi lưu đường dẫn đầu ra.', true);
+            });
+        }
+
+        saveNext();
+    });
+
     loadSettings();
     loadInputPath();
+    loadPortalPath();
+    loadKhoaOutputSettings();
 })(jQuery);

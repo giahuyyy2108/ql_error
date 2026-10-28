@@ -32,6 +32,48 @@
             </div>
             <div id="xml-watcher-path-message" class="hethong-path-message" aria-live="polite"></div>
         </div>
+
+        <div class="hethong-path-section">
+            <div class="hethong-path-title">Đường dẫn Đẩy cổng</div>
+            <div class="hethong-path-note">
+                Thư mục gốc dùng để lưu bản sao XML khi Đẩy cổng. File được lưu theo dạng
+                <code>&lt;đường dẫn Đẩy cổng&gt;\YYYYMMDD\file.xml</code>.
+            </div>
+            <div class="hethong-path-card">
+                <div class="hethong-path-field">
+                    <label for="portal-storage-path">Đường dẫn Đẩy cổng</label>
+                    <input type="text"
+                           id="portal-storage-path"
+                           class="form-control"
+                           maxlength="255"
+                           autocomplete="off"
+                           placeholder="Ví dụ: D:\Cong">
+                </div>
+                <button type="button" id="save-portal-storage-path" class="btn btn-success">
+                    <i class="fa fa-save"></i> Lưu đường dẫn
+                </button>
+            </div>
+            <div id="portal-storage-path-message" class="hethong-path-message" aria-live="polite"></div>
+        </div>
+
+        <div class="hethong-path-section">
+            <div class="hethong-path-title">Đường dẫn đầu ra XML theo khoa</div>
+            <div class="hethong-path-note">
+                Cấu hình tập trung cho từng khoa gốc. Các mã khoa con dùng chung cấu hình của khoa gốc.
+                Hệ thống tự thêm <code>&lt;mã khoa gốc&gt;</code> vào đường dẫn đã chọn, ví dụ
+                <code>D:\Khoa\K22\processed|failed\YYYYMMDD</code>.
+                Để trống sẽ dùng đường dẫn XML chung.
+            </div>
+            <div id="khoa-output-settings" class="khoa-output-settings">
+                <div class="hethong-loading text-muted">Đang tải cấu hình đầu ra...</div>
+            </div>
+            <div class="khoa-output-actions">
+                <button type="button" id="save-khoa-output-paths" class="btn btn-success">
+                    <i class="fa fa-save"></i> Lưu cấu hình đầu ra
+                </button>
+            </div>
+            <div id="khoa-output-message" class="hethong-path-message" aria-live="polite"></div>
+        </div>
     </div>
 </div>
 
@@ -166,6 +208,31 @@
     }
     .hethong-path-message.is-success { color: #26b99a; }
     .hethong-path-message.is-error { color: #a94442; }
+    .khoa-output-settings {
+        border: 1px solid #e6e9ed;
+        border-radius: 6px;
+        background: #fff;
+        max-height: 520px;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+    .khoa-output-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(320px, 2fr);
+        gap: 12px;
+        align-items: center;
+        padding: 10px 12px;
+        border-bottom: 1px solid #eef0f2;
+    }
+    .khoa-output-row:last-child { border-bottom: 0; }
+    .khoa-output-name { min-width: 0; color: #34495e; }
+    .khoa-output-name strong { display: inline-block; min-width: 44px; }
+    .khoa-output-row .form-control { height: 32px; font-size: 12px; }
+    .khoa-output-actions {
+        margin-top: 12px;
+        text-align: right;
+    }
+    .khoa-output-actions .btn { margin: 0; }
     @media (max-width: 767px) {
         .hethong-setting-item { padding: 15px; gap: 12px; }
         .hethong-setting-name { font-size: 14px; }
@@ -177,5 +244,9 @@
             width: 100%;
             margin-top: 10px;
         }
+        .khoa-output-row {
+            grid-template-columns: 1fr;
+        }
+        .khoa-output-actions .btn { width: 100%; }
     }
 </style>

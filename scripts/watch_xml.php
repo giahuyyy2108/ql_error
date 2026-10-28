@@ -155,7 +155,7 @@ require $projectRoot . '/web_src/common/FileStorageService.php';
 
 $filePeer = null;
 $validationCallback = null;
-$fileStorage = new FileStorageService($projectRoot, $inboxDir);
+$fileStorage = null;
 
 // Tạo lại toàn bộ service phụ thuộc database. Closure này cũng được dùng khi
 // kết nối DB lỗi để worker có thể tự nối lại ở vòng xử lý kế tiếp.
@@ -195,6 +195,14 @@ $buildImportService = function () use (&$filePeer, &$validationCallback) {
     );
 };
 $importService = $buildImportService();
+$fileStorage = new FileStorageService(
+    $projectRoot,
+    $inboxDir,
+    $filePeer->getConfiguredKhoaOutputPaths()
+);
+$refreshStorageRoots = function () use (&$filePeer, $fileStorage) {
+    $fileStorage->addStorageRoots($filePeer->getConfiguredKhoaOutputPaths());
+};
 $observed = array();
 
 $workerLogPath = $runtimeLogDir . DIRECTORY_SEPARATOR . 'watcher.log';
@@ -478,6 +486,7 @@ $process = function ($path) use (
     &$importService,
     &$filePeer,
     $projectRoot,
+    $inboxDir,
     $processedDir,
     $failedDir,
     $deletedDir,
@@ -491,16 +500,55 @@ $process = function ($path) use (
     $resetDatabase
 ) {
     $processStartedAt = microtime(true);
-    $datedProcessedDir = $datedDirectory($processedDir);
     $datedFailedDir = $datedDirectory($failedDir);
-    $processedPath = $uniqueDestination($datedProcessedDir, basename($path));
-    $storedPath = $fileStorage->relativeToProject($processedPath);
+    // Chỉ cần một đường dẫn tạm có đúng basename để import lấy metadata hàng đợi.
+    // Đường dẫn chính thức được xác định sau import từ id_khoa đã lưu trong DB.
+    $storedPath = $fileStorage->relativeToProject($path);
     try {
         $result = $importService->importPath($path, $storedPath);
     } catch (Throwable $exception) {
         try {
-            $failedPath = $archive($path, $datedFailedDir);
-            file_put_contents($failedPath . '.error.txt', $exception->getMessage() . PHP_EOL, LOCK_EX);
+            $failureKhoa = 'KHONG_XAC_DINH';
+            $failureOutputPath = null;
+            try {
+                $failureDecoded = XmlFileDecoder::decodeDanhSachHoSoPathWithMetadata($path);
+                $failureXml1 = XmlFileDecoder::extractValuesFromFileType(
+                    $failureDecoded['content'],
+                    'XML1',
+                    array('MA_KHOA')
+                );
+                $resolvedFailureKhoa = $filePeer->resolveRootKhoaCode($failureXml1['MA_KHOA']);
+                if ($resolvedFailureKhoa !== null && $resolvedFailureKhoa !== '') {
+                    $failureKhoa = $resolvedFailureKhoa;
+                    $failureOutputPath = $filePeer->getKhoaOutputPath($failureKhoa);
+                }
+            } catch (Throwable $ignored) {
+            }
+            $failureDirectory = $fileStorage->khoaStatusDateDirectory(
+                $failureKhoa,
+                'failed',
+                null,
+                $failureOutputPath
+            );
+            $failedPath = $archive($path, $failureDirectory);
+            $failureValidation = array(array(
+                'file_type' => 'XML',
+                'error_count' => 1,
+                'errors' => array(array(
+                    'severity' => 'error',
+                    'message' => $exception->getMessage()
+                ))
+            ));
+            $organizedFailure = XmlErrorArchiveOrganizer::organize(
+                $failedPath,
+                $failureDirectory,
+                $failureValidation,
+                true,
+                basename($path)
+            );
+            if (empty($organizedFailure)) {
+                file_put_contents($failedPath . '.error.txt', $exception->getMessage() . PHP_EOL, LOCK_EX);
+            }
         } catch (Throwable $archiveException) {
             $log('Không thể lưu file lỗi ' . basename($path) . ': ' . $archiveException->getMessage(), 'ERROR');
         }
@@ -518,9 +566,17 @@ $process = function ($path) use (
         $isImport = in_array($result['status'], array('imported', 'reimported'), true);
         $validationFailed = $isImport
             && isset($result['processing_status']) && $result['processing_status'] === 'failed';
-        $finalPath = $validationFailed
-            ? $uniqueDestination($datedFailedDir, basename($path))
-            : $processedPath;
+        $storedFile = $isImport ? $filePeer->getById($result['id']) : false;
+        $idKhoa = $storedFile && !empty($storedFile['id_khoa'])
+            ? (string) $storedFile['id_khoa'] : 'KHONG_XAC_DINH';
+        $khoaOutputPath = $filePeer->getKhoaOutputPath($idKhoa);
+        $datedKhoaDir = $fileStorage->khoaStatusDateDirectory(
+            $idKhoa,
+            $validationFailed ? 'failed' : 'processed',
+            null,
+            $khoaOutputPath
+        );
+        $finalPath = $uniqueDestination($datedKhoaDir, basename($path));
         if (!rename($path, $finalPath)) {
             throw new RuntimeException('Không thể chuyển file sang thư mục kết quả.');
         }
@@ -598,7 +654,7 @@ $process = function ($path) use (
             );
             $organizedPaths = XmlErrorArchiveOrganizer::organize(
                 $finalPath,
-                $datedFailedDir,
+                $datedKhoaDir,
                 $result['validation'],
                 true,
                 $result['name']
@@ -667,18 +723,7 @@ $revalidatePending = function () use (
         $currentStoredPath = $file['file_path'];
         $workingPath = null;
         try {
-            $candidate = preg_match('/^[A-Za-z]:[\\\\\/]/', $currentStoredPath) === 1
-                ? $currentStoredPath
-                : $projectRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $currentStoredPath);
-            $source = realpath($candidate);
-            $storageRoot = realpath($inboxDir);
-            $storagePrefix = $storageRoot !== false
-                ? rtrim($storageRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR : '';
-            if ($source === false || $storagePrefix === ''
-                || strncasecmp($source, $storagePrefix, strlen($storagePrefix)) !== 0
-                || !is_file($source)) {
-                throw new RuntimeException('Không tìm thấy file XML để quét lại.');
-            }
+            $source = $fileStorage->resolveStoredFilePath($currentStoredPath);
 
             $workingPath = $uniqueDestination($processingDir, basename($source));
             if (!function_exists('link') || !@link($source, $workingPath)) {
@@ -697,7 +742,15 @@ $revalidatePending = function () use (
                     ? (int) $validationItem['error_count'] : 0;
             }
             $newStatus = $errorCount > 0 ? 'failed' : 'processed';
-            $targetDirectory = $datedDirectory($newStatus === 'failed' ? $failedDir : $processedDir);
+            $revalidateKhoa = !empty($file['id_khoa'])
+                ? (string) $file['id_khoa'] : 'KHONG_XAC_DINH';
+            $revalidateOutputPath = $filePeer->getKhoaOutputPath($revalidateKhoa);
+            $targetDirectory = $fileStorage->khoaStatusDateDirectory(
+                $revalidateKhoa,
+                $newStatus,
+                null,
+                $revalidateOutputPath
+            );
             $finalPath = $source;
             if (strcasecmp(dirname($source), $targetDirectory) !== 0) {
                 $finalPath = $uniqueDestination($targetDirectory, basename($source));
@@ -760,6 +813,13 @@ $revalidatePending = function () use (
 $log('Worker ' . $options['worker_id'] . ' bắt đầu theo dõi ' . $inboxDir . '.');
 
 do {
+    try {
+        // Khoa output paths can be changed from the web UI while this long-running
+        // worker is active. Add newly configured roots without requiring a restart.
+        $refreshStorageRoots();
+    } catch (Throwable $exception) {
+        $log('Khong the cap nhat cau hinh dau ra khoa: ' . $exception->getMessage(), 'ERROR');
+    }
     $cleanupDeleted();
     // Recover files claimed before an earlier worker was interrupted.
     $recoveryPaths = $xmlFiles($processingDir);

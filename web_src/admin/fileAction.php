@@ -22,6 +22,7 @@ class fileAction
     protected $filePeer;
     private $fileStorage;
     private $uploadQueue;
+    private $portalPath;
     private $maxFileSize = 5242880; // 5 MB
 
     // ---------------------------------------------------------------------
@@ -33,8 +34,12 @@ class fileAction
         $this->request = new Request();
         $this->filePeer = new FilePeer();
         $storageRoot = null;
+        $this->portalPath = null;
+        $additionalStorageRoots = array();
+        $heThongPeer = null;
         try {
-            $pathConfig = (new HeThongPeer())->getInputPath();
+            $heThongPeer = new HeThongPeer();
+            $pathConfig = $heThongPeer->getInputPath();
             if (is_array($pathConfig) && isset($pathConfig['path'])
                 && trim((string) $pathConfig['path']) !== ''
             ) {
@@ -43,7 +48,29 @@ class fileAction
         } catch (Throwable $ignored) {
             $storageRoot = null;
         }
-        $this->fileStorage = new FileStorageService(dirname(__DIR__, 2), $storageRoot);
+        try {
+            if ($heThongPeer === null) {
+                $heThongPeer = new HeThongPeer();
+            }
+            $portalPathConfig = $heThongPeer->getPortalPath();
+            if (is_array($portalPathConfig) && isset($portalPathConfig['path'])
+                && trim((string) $portalPathConfig['path']) !== ''
+            ) {
+                $this->portalPath = $portalPathConfig['path'];
+            }
+        } catch (Throwable $ignored) {
+            $this->portalPath = null;
+        }
+        try {
+            $additionalStorageRoots = $this->filePeer->getConfiguredKhoaOutputPaths();
+        } catch (Throwable $ignored) {
+            $additionalStorageRoots = array();
+        }
+        $this->fileStorage = new FileStorageService(
+            dirname(__DIR__, 2),
+            $storageRoot,
+            $additionalStorageRoots
+        );
         $this->uploadQueue = new UploadQueueService($this->filePeer, $this->fileStorage);
     }
 
@@ -214,7 +241,7 @@ class fileAction
         }
 
         try {
-            $result = (new PortalService($this->filePeer, $this->fileStorage))->push(
+            $result = (new PortalService($this->filePeer, $this->fileStorage, $this->portalPath))->push(
                 $ids,
                 $confirmedWarning,
                 $this->currentUsername(),
@@ -535,13 +562,26 @@ class fileAction
         $validation = call_user_func($this->createValidationCallback(), $decodedContent);
         $newStatus = $this->validationHasErrors($validation) ? 'failed' : 'processed';
 
-        $targetDirectory = $this->fileStorage->statusDirectory($newStatus);
+        $idKhoa = !empty($file['id_khoa']) ? (string) $file['id_khoa'] : 'KHONG_XAC_DINH';
+        $khoaOutputPath = $this->filePeer->getKhoaOutputPath($idKhoa);
+        $targetDirectory = $this->fileStorage->khoaStatusDateDirectory(
+            $idKhoa,
+            $newStatus,
+            null,
+            $khoaOutputPath
+        );
         $currentDirectory = realpath(dirname($storedPath));
         $resolvedTarget = realpath($targetDirectory);
         $newPath = $file['file_path'];
         if ($currentDirectory === false || $resolvedTarget === false
             || strcasecmp($currentDirectory, $resolvedTarget) !== 0) {
-            $newPath = $this->moveValidatedFile($storedPath, $newStatus, $validation);
+            $newPath = $this->moveValidatedFile(
+                $storedPath,
+                $newStatus,
+                $validation,
+                isset($file['id_khoa']) ? $file['id_khoa'] : null,
+                $khoaOutputPath
+            );
         } else {
             $newPath = $this->fileStorage->relativeToProject($storedPath);
             $errorPath = $storedPath . '.error.txt';
@@ -584,7 +624,10 @@ class fileAction
                 }
                 try {
                     $source = $this->resolveStoredFilePath($file['file_path']);
-                    $move = $this->fileStorage->moveToDeleted($source);
+                    $deleteOutputPath = !empty($file['id_khoa'])
+                        ? $this->filePeer->getKhoaOutputPath($file['id_khoa'])
+                        : null;
+                    $move = $this->fileStorage->moveToDeleted($source, $deleteOutputPath);
                     $moves[] = $move;
                 } catch (RuntimeException $ignored) {
                     // A missing physical file must not prevent removal of a stale DB row.
@@ -642,9 +685,21 @@ class fileAction
         return false;
     }
 
-    private function moveValidatedFile($source, $status, array $validation)
+    private function moveValidatedFile(
+        $source,
+        $status,
+        array $validation,
+        $idKhoa = null,
+        $configuredOutputPath = null
+    )
     {
-        return $this->fileStorage->moveValidatedFile($source, $status, $validation);
+        return $this->fileStorage->moveValidatedFile(
+            $source,
+            $status,
+            $validation,
+            $idKhoa,
+            $configuredOutputPath
+        );
     }
 
     private function resolveStoredFilePath($filePath)
@@ -673,7 +728,7 @@ class fileAction
     {
         if ($fromSession) {
             return isset($_SESSION['id_khoa']) && $_SESSION['id_khoa'] !== ''
-                ? (int) $_SESSION['id_khoa']
+                ? (string) $_SESSION['id_khoa']
                 : null;
         }
 

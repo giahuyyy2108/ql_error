@@ -61,7 +61,7 @@ class UploadQueueService
             }
 
             $resolvedKhoa = ($postedKhoa !== null && $postedKhoa !== '')
-                ? (int) $postedKhoa : null;
+                ? (string) $postedKhoa : null;
             $username = trim((string) $username);
             if ($resolvedKhoa === null && $username !== '') {
                 // Chỉ dùng khoa của tài khoản làm giá trị dự phòng khi request

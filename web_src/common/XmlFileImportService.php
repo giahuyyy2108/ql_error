@@ -66,10 +66,13 @@ class XmlFileImportService
         $xml1Patient = XmlFileDecoder::extractValuesFromFileType(
             $decodedContent,
             'XML1',
-            array('MA_BN', 'MA_THE_BHYT', 'HO_TEN', 'NGAY_SINH')
+            array('MA_BN', 'MA_THE_BHYT', 'HO_TEN', 'NGAY_SINH', 'MA_KHOA')
         );
         $maBn = $xml1Patient['MA_BN'];
         $hoTen = $xml1Patient['HO_TEN'];
+        $idKhoa = method_exists($this->filePeer, 'resolveRootKhoaCode')
+            ? $this->filePeer->resolveRootKhoaCode($xml1Patient['MA_KHOA'])
+            : $xml1Patient['MA_KHOA'];
         $ngayLap = $decodedResult['ngay_lap'];
         // The original XML string is no longer needed after decoding. Release
         // it before validation/BHYT lookup, which may keep the decoded tree.
@@ -105,7 +108,8 @@ class XmlFileImportService
                 $ngayLap,
                 $maBn,
                 $hoTen,
-                $thongTinBn
+                $thongTinBn,
+                $idKhoa
             );
             return array(
                 'status' => 'reimported',
@@ -128,7 +132,8 @@ class XmlFileImportService
             $ngayLap,
             $maBn,
             $hoTen,
-            $thongTinBn
+            $thongTinBn,
+            $idKhoa
         );
         return array(
             'status' => 'imported',

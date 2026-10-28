@@ -9,8 +9,9 @@ class FileStorageService
 {
     private $projectRoot;
     private $storageRoot;
+    private $additionalStorageRoots = array();
 
-    public function __construct($projectRoot = null, $storageRoot = null)
+    public function __construct($projectRoot = null, $storageRoot = null, array $additionalStorageRoots = array())
     {
         $this->projectRoot = $projectRoot !== null
             ? rtrim($projectRoot, '\\/')
@@ -19,31 +20,32 @@ class FileStorageService
         if ($configuredStorageRoot === '') {
             $this->storageRoot = $this->projectRoot
                 . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'xml';
-            return;
-        }
-
-        $isUnc = substr($configuredStorageRoot, 0, 2) === '\\\\'
-            || substr($configuredStorageRoot, 0, 2) === '//';
-        $isAbsolute = $isUnc
-            || preg_match('/^[A-Za-z]:[\\\\\/]/', $configuredStorageRoot) === 1
-            || substr($configuredStorageRoot, 0, 1) === '/';
-
-        if (DIRECTORY_SEPARATOR === '\\') {
-            $configuredStorageRoot = str_replace('/', '\\', $configuredStorageRoot);
         } else {
-            $configuredStorageRoot = str_replace('\\', '/', $configuredStorageRoot);
+            $this->storageRoot = $this->normalizeRoot($configuredStorageRoot);
         }
 
-        if (!$isAbsolute) {
-            $configuredStorageRoot = $this->projectRoot . DIRECTORY_SEPARATOR
-                . trim($configuredStorageRoot, '\\/');
-        }
+        $this->addStorageRoots($additionalStorageRoots);
+    }
 
-        if (preg_match('/^[A-Za-z]:[\\\\\/]*$/', $configuredStorageRoot) === 1) {
-            $this->storageRoot = strtoupper(substr($configuredStorageRoot, 0, 1))
-                . ':' . DIRECTORY_SEPARATOR;
-        } else {
-            $this->storageRoot = rtrim($configuredStorageRoot, '\\/');
+    public function addStorageRoots(array $roots)
+    {
+        foreach ($roots as $root) {
+            $root = trim((string) $root);
+            if ($root === '') continue;
+
+            $normalized = $this->normalizeRoot($root);
+            if (strcasecmp($normalized, $this->storageRoot) === 0) continue;
+
+            $exists = false;
+            foreach ($this->additionalStorageRoots as $configuredRoot) {
+                if (strcasecmp($normalized, $configuredRoot) === 0) {
+                    $exists = true;
+                    break;
+                }
+            }
+            if (!$exists) {
+                $this->additionalStorageRoots[] = $normalized;
+            }
         }
     }
 
@@ -57,6 +59,20 @@ class FileStorageService
         $storageRoot = realpath($this->storageRoot);
         if ($storageRoot !== false) {
             $allowedRoots[] = $storageRoot;
+        }
+        foreach ($this->additionalStorageRoots as $additionalRoot) {
+            $resolvedAdditionalRoot = realpath($additionalRoot);
+            if ($resolvedAdditionalRoot === false) continue;
+            $alreadyAllowed = false;
+            foreach ($allowedRoots as $allowedRoot) {
+                if (strcasecmp($allowedRoot, $resolvedAdditionalRoot) === 0) {
+                    $alreadyAllowed = true;
+                    break;
+                }
+            }
+            if (!$alreadyAllowed) {
+                $allowedRoots[] = $resolvedAdditionalRoot;
+            }
         }
 
         // Tương thích các hồ sơ cũ được lưu trước khi chuyển storage sang UNC.
@@ -147,6 +163,40 @@ class FileStorageService
         return $this->datedDirectory($this->storageDirectory($status), $date);
     }
 
+    public function khoaDateDirectory($idKhoa, $date = null)
+    {
+        return $this->khoaStatusDateDirectory($idKhoa, 'processed', $date);
+    }
+
+    public function khoaStatusDateDirectory($idKhoa, $status, $date = null, $configuredOutputPath = null)
+    {
+        $idKhoa = trim((string) $idKhoa);
+        if ($idKhoa === '' || strpos($idKhoa, '/') !== false || strpos($idKhoa, '\\') !== false
+            || $idKhoa === '.' || $idKhoa === '..') {
+            throw new RuntimeException('Mã khoa gốc không hợp lệ để tạo thư mục lưu XML.');
+        }
+
+        $status = trim((string) $status);
+        if (!in_array($status, array('processed', 'failed'), true)) {
+            throw new RuntimeException('Invalid XML storage status.');
+        }
+
+        $configuredOutputPath = trim((string) $configuredOutputPath);
+        if ($configuredOutputPath !== '') {
+            $configuredRoot = $this->normalizeRoot($configuredOutputPath);
+            $normalizedConfiguredRoot = str_replace('\\', '/', rtrim($configuredRoot, '\\/'));
+            $segments = preg_split('#/+#', $normalizedConfiguredRoot);
+            $lastSegment = $segments ? (string) end($segments) : '';
+            $khoaRoot = strcasecmp($lastSegment, $idKhoa) === 0
+                ? $configuredRoot
+                : rtrim($configuredRoot, '\\/') . DIRECTORY_SEPARATOR . $idKhoa;
+        } else {
+            $khoaRoot = $this->storageDirectory($idKhoa);
+        }
+
+        return $this->datedDirectory($khoaRoot . DIRECTORY_SEPARATOR . $status, $date);
+    }
+
     public function uniqueDestination($directory, $fileName)
     {
         $destination = rtrim($directory, '\\/') . DIRECTORY_SEPARATOR . basename($fileName);
@@ -170,9 +220,20 @@ class FileStorageService
             : $normalizedPath;
     }
 
-    public function moveValidatedFile($source, $status, array $validation)
+    public function moveValidatedFile(
+        $source,
+        $status,
+        array $validation,
+        $idKhoa = null,
+        $configuredOutputPath = null
+    )
     {
-        $directory = $this->statusDirectory($status);
+        $directory = $this->khoaStatusDateDirectory(
+            trim((string) $idKhoa) !== '' ? $idKhoa : 'KHONG_XAC_DINH',
+            $status === 'failed' ? 'failed' : 'processed',
+            null,
+            $configuredOutputPath
+        );
         $destination = $this->uniqueDestination($directory, basename($source));
         if (!rename($source, $destination)) {
             throw new RuntimeException('Không thể chuyển file sang trạng thái ' . $status . '.');
@@ -199,9 +260,13 @@ class FileStorageService
         return $this->relativeToProject($destination);
     }
 
-    public function moveToDeleted($source)
+    public function moveToDeleted($source, $configuredOutputPath = null)
     {
-        $directory = $this->storageRoot . DIRECTORY_SEPARATOR . 'deleted';
+        $configuredOutputPath = trim((string) $configuredOutputPath);
+        $deleteRoot = $configuredOutputPath !== ''
+            ? $this->normalizeRoot($configuredOutputPath)
+            : $this->storageRoot;
+        $directory = $deleteRoot . DIRECTORY_SEPARATOR . 'deleted';
         $this->ensureDirectory($directory, 'Không thể tạo thư mục lưu file đã xóa.');
 
         $destination = $this->uniqueDestination($directory, basename($source));
@@ -229,11 +294,15 @@ class FileStorageService
         );
     }
 
-    public function copyToPortal($source, $fileId, $archiveDate = null)
+    public function copyToPortal($source, $fileId, $archiveDate = null, $portalRoot = null)
     {
         $archiveDate = $archiveDate !== null ? $archiveDate : date('Ymd');
+        $portalRoot = trim((string) $portalRoot);
+        $baseDirectory = $portalRoot !== ''
+            ? $this->normalizeRoot($portalRoot)
+            : $this->storageRoot . DIRECTORY_SEPARATOR . 'portal';
         $directory = $this->datedDirectory(
-            $this->storageRoot . DIRECTORY_SEPARATOR . 'portal',
+            $baseDirectory,
             $archiveDate
         );
 
@@ -261,5 +330,27 @@ class FileStorageService
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
             throw new RuntimeException($errorMessage);
         }
+    }
+
+    private function normalizeRoot($root)
+    {
+        $root = trim((string) $root);
+        $isUnc = substr($root, 0, 2) === '\\\\' || substr($root, 0, 2) === '//';
+        $isAbsolute = $isUnc
+            || preg_match('/^[A-Za-z]:[\\\\\/]/', $root) === 1
+            || substr($root, 0, 1) === '/';
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $root = str_replace('/', '\\', $root);
+        } else {
+            $root = str_replace('\\', '/', $root);
+        }
+        if (!$isAbsolute) {
+            $root = $this->projectRoot . DIRECTORY_SEPARATOR . trim($root, '\\/');
+        }
+        if (preg_match('/^[A-Za-z]:[\\\\\/]*$/', $root) === 1) {
+            return strtoupper(substr($root, 0, 1)) . ':' . DIRECTORY_SEPARATOR;
+        }
+        return rtrim($root, '\\/');
     }
 }

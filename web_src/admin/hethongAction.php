@@ -110,6 +110,95 @@ class hethongAction
         }
     }
 
+    public function getPortalPath()
+    {
+        try {
+            return $this->json(array(
+                'success' => true,
+                'data' => $this->peer->getPortalPath()
+            ));
+        } catch (RuntimeException $exception) {
+            return $this->json(array(
+                'success' => false,
+                'data' => null,
+                'message' => $exception->getMessage()
+            ));
+        }
+    }
+
+    public function updatePortalPath()
+    {
+        if (!$this->validCsrf()) {
+            return $this->json(array('success' => false, 'message' => 'Phiên làm việc không hợp lệ.'));
+        }
+
+        $path = trim((string) $this->request->getParameter('path', false));
+        if ($path === '') {
+            return $this->json(array('success' => false, 'message' => 'Đường dẫn Đẩy cổng không được để trống.'));
+        }
+        if (strlen($path) > 255 || strpos($path, "\0") !== false) {
+            return $this->json(array('success' => false, 'message' => 'Đường dẫn Đẩy cổng không hợp lệ hoặc vượt quá 255 ký tự.'));
+        }
+
+        try {
+            $this->peer->updatePortalPath($path);
+            return $this->json(array(
+                'success' => true,
+                'path' => $path,
+                'message' => 'Đã lưu đường dẫn Đẩy cổng.'
+            ));
+        } catch (RuntimeException $exception) {
+            return $this->json(array('success' => false, 'message' => $exception->getMessage()));
+        }
+    }
+
+    public function getKhoaOutputPaths()
+    {
+        try {
+            return $this->json(array(
+                'success' => true,
+                'data' => $this->peer->getKhoaOutputPaths()
+            ));
+        } catch (RuntimeException $exception) {
+            return $this->json(array(
+                'success' => false,
+                'data' => array(),
+                'message' => $exception->getMessage()
+            ));
+        }
+    }
+
+    public function updateKhoaOutputPath()
+    {
+        if (!$this->validCsrf()) {
+            return $this->json(array('success' => false, 'message' => 'Phiên làm việc không hợp lệ.'));
+        }
+
+        $maKhoa = trim((string) $this->request->getParameter('ma_khoa', false));
+        $outputPath = trim((string) $this->request->getParameter('output_path', false));
+        if ($maKhoa === '') {
+            return $this->json(array('success' => false, 'message' => 'Mã khoa không hợp lệ.'));
+        }
+        if (strlen($outputPath) > 500 || strpos($outputPath, "\0") !== false) {
+            return $this->json(array('success' => false, 'message' => 'Đường dẫn đầu ra không hợp lệ.'));
+        }
+
+        try {
+            if (!$this->peer->updateKhoaOutputPath($maKhoa, $outputPath)) {
+                return $this->json(array('success' => false, 'message' => 'Không tìm thấy khoa gốc.'));
+            }
+            return $this->json(array(
+                'success' => true,
+                'output_path' => $outputPath,
+                'message' => $outputPath === ''
+                    ? 'Đã dùng lại đường dẫn đầu ra chung.'
+                    : 'Đã lưu đường dẫn đầu ra của khoa.'
+            ));
+        } catch (RuntimeException $exception) {
+            return $this->json(array('success' => false, 'message' => $exception->getMessage()));
+        }
+    }
+
     private function validCsrf()
     {
         $token = $this->request->getParameter('csrf_token', false);

@@ -11,11 +11,13 @@ class PortalService
 {
     private $filePeer;
     private $storage;
+    private $portalRoot;
 
-    public function __construct(FilePeer $filePeer, FileStorageService $storage = null)
+    public function __construct(FilePeer $filePeer, FileStorageService $storage = null, $portalRoot = null)
     {
         $this->filePeer = $filePeer;
         $this->storage = $storage !== null ? $storage : new FileStorageService();
+        $this->portalRoot = trim((string) $portalRoot);
     }
 
     public function push(array $ids, $confirmedWarning, $username, $idKhoa)
@@ -68,7 +70,7 @@ class PortalService
                 );
 
                 if ($inserted > 0) {
-                    $archive = $this->storage->copyToPortal($path, $file['id']);
+                    $archive = $this->storage->copyToPortal($path, $file['id'], null, $this->portalRoot);
                     $this->filePeer->markPortalPushed($file['id']);
                     $this->writePortalLog($file, $archive['relative_path'], $confirmedWarning);
                     $done++;
@@ -143,4 +145,3 @@ class PortalService
         (new LogPeer())->ghiLog($log);
     }
 }
-

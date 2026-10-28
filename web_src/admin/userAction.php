@@ -26,7 +26,7 @@ class userAction
 		$this->request->setAttribute("listNQ", $arrNQ);
 		$db = new db_mysql();
 		$db->connect();
-		$result = $db->query("SELECT id, ten FROM khoa ORDER BY ten ASC");
+		$result = $db->query("SELECT ma AS id, ten FROM khoa_phong WHERE ma_khoa_goc IS NULL AND is_active = 1 ORDER BY ten ASC");
 		$listKhoa = array();
 		while ($row = $db->fetch_Array($result)) {
 			$listKhoa[] = $row;

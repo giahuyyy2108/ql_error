@@ -7,7 +7,7 @@ class baocaoAction extends fileAction
     {
         global $connect;
         $rows = array();
-        $result = $connect->query('SELECT id, ten FROM khoa ORDER BY ten');
+        $result = $connect->query("SELECT ma AS id, ten FROM khoa_phong WHERE ma_khoa_goc IS NULL AND is_active = 1 ORDER BY ten");
         if ($result) while ($row = $result->fetch_assoc()) $rows[] = $row;
         $this->request->setAttribute('reportKhoaList', $rows);
         $this->request->setModel('www/baocao/index.php');
