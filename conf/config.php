@@ -36,15 +36,15 @@ define('_DEFAULT_HANDLE_', 'dashboard');
 define('_CLASS_HANDLE_', 'Action');
 
 // URL hệ thống
-// $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-//     || (($_SERVER['SERVER_PORT'] ?? null) == 443)
-//     || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? null) === 'https');
+$isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || (($_SERVER['SERVER_PORT'] ?? null) == 443)
+    || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? null) === 'https');
 
-// $protocol = $isHttps ? 'https://' : 'http://';
-// $domain = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$protocol = $isHttps ? 'https://' : 'http://';
+$domain = $_SERVER['HTTP_HOST'] ?? 'localhost';
 
-// define('_DEFAULT_URL_', $protocol . $domain . '/ql_error/');
-define('_DEFAULT_URL_', 'http://192.168.31.8:80/ql_error/');
+define('_DEFAULT_URL_', $protocol . $domain . '/ql_error/');
+// define('_DEFAULT_URL_', 'http://192.168.31.8:80/ql_error/');
 
 define('_DEFAULT_VERSION_', 'v1.0');
 
