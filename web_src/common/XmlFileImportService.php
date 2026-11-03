@@ -66,7 +66,8 @@ class XmlFileImportService
         $xml1Patient = XmlFileDecoder::extractValuesFromFileType(
             $decodedContent,
             'XML1',
-            array('MA_BN', 'MA_THE_BHYT', 'HO_TEN', 'NGAY_SINH', 'MA_KHOA')
+            array('MA_BN', 'MA_THE_BHYT', 'HO_TEN', 'NGAY_SINH', 'GIOI_TINH',
+                'DIA_CHI', 'MA_DKBD', 'GT_THE_TU', 'GT_THE_DEN', 'MA_SO_BHXH', 'MA_KHOA')
         );
         $maBn = $xml1Patient['MA_BN'];
         $hoTen = $xml1Patient['HO_TEN'];
@@ -80,8 +81,29 @@ class XmlFileImportService
         $validationResult = $this->validationCallback === null
             ? null
             : call_user_func($this->validationCallback, $decodedContent);
-        $thongTinBn = null;
+        // Luôn giữ thông tin bệnh nhân từ XML1, kể cả khi tra cứu BHYT thất bại.
+        $xmlMaThe = $xml1Patient['MA_THE_BHYT'] === null
+            ? '' : trim((string) $xml1Patient['MA_THE_BHYT']);
+        $thongTinBn = array('maThe' => $xmlMaThe);
+        $xmlFieldMap = array(
+            'MA_BN' => 'maBn',
+            'HO_TEN' => 'hoTen',
+            'NGAY_SINH' => 'ngaySinh',
+            'GIOI_TINH' => 'gioiTinh',
+            'DIA_CHI' => 'diaChi',
+            'MA_DKBD' => 'maDKBD',
+            'GT_THE_TU' => 'gtTheTu',
+            'GT_THE_DEN' => 'gtTheDen',
+            'MA_SO_BHXH' => 'maSoBHXH'
+        );
+        foreach ($xmlFieldMap as $xmlField => $targetField) {
+            if ($xml1Patient[$xmlField] !== null && trim((string) $xml1Patient[$xmlField]) !== '') {
+                $thongTinBn[$targetField] = trim((string) $xml1Patient[$xmlField]);
+            }
+        }
+        $thongTinBn['bhytLookupStatus'] = 'not_checked';
         if (is_callable($this->bhytLookupCallback)) {
+            $thongTinBn['bhytLookupStatus'] = 'failed';
             try {
                 $response = call_user_func(
                     $this->bhytLookupCallback,
@@ -89,9 +111,31 @@ class XmlFileImportService
                     $xml1Patient['HO_TEN'],
                     $xml1Patient['NGAY_SINH']
                 );
-                $thongTinBn = is_array($response) ? $this->filterBhytResponse($response) : null;
+                if (is_array($response)) {
+                    // API lỗi nghiệp vụ không được xóa dữ liệu XML1 đang có.
+                    $maKetQua = $this->bhytResponseValue($response, 'maKetQua');
+                    if ($maKetQua !== null) {
+                        $thongTinBn['bhytMaKetQua'] = (string) $maKetQua;
+                    }
+                    if ($maKetQua === null || in_array((string) $maKetQua, array('000', '0'), true)) {
+                        $hasDetails = false;
+                        foreach ($this->filterBhytResponse($response) as $field => $value) {
+                            if ($value !== null && trim((string) $value) !== '') {
+                                $hasDetails = true;
+                                if ($field !== 'maThe') {
+                                    $thongTinBn[$field] = $value;
+                                }
+                            }
+                        }
+                        $thongTinBn['bhytLookupStatus'] = $hasDetails ? 'success' : 'empty';
+                    } else {
+                        $thongTinBn['bhytLookupStatus'] = 'rejected';
+                    }
+                } else {
+                    $thongTinBn['bhytLookupStatus'] = 'empty';
+                }
             } catch (Throwable $ignored) {
-                $thongTinBn = null;
+                // Import XML không phụ thuộc API BHYT; các trường XML1 đã được giữ lại.
             }
         }
         $status = $this->hasValidationErrors($validationResult) ? 'failed' : 'processed';

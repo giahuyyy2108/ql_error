@@ -283,6 +283,36 @@ js/<module>...                    AJAX và tương tác trình duyệt
 
 Các module đang có gồm quản lý file XML, rules, API validation, table lookup, BHYT, khoa/khối/khoa phòng, dân tộc, ICD-10, ICD-10 YHCT, nhân viên y tế, thuốc, đối tượng KCB, loại KCB, báo cáo và quản trị người dùng/phân quyền.
 
+### Module Hồ sơ theo khoa (`hoso`)
+
+Module `hoso` là màn hình tác nghiệp rút gọn cho người dùng khoa, tách biệt với màn hình quản trị file XML. Toàn bộ truy vấn và thao tác đều bị giới hạn theo khoa gán cho tài khoản đăng nhập; client không được tự truyền `id_khoa` để mở rộng phạm vi.
+
+Các file chính:
+
+| Thành phần | File |
+| --- | --- |
+| Action và kiểm soát phạm vi khoa | `web_src/admin/hosoAction.php` |
+| Truy vấn danh sách/chi tiết/thống kê lỗi | `web_src/bean/FilePeer.php` |
+| Giao diện | `www/hoso/index.php`, `css/hoso.css` |
+| Tương tác trình duyệt | `js/hoso.js` |
+| Tạo báo cáo Excel phía trình duyệt | `js/hoso-export.js` |
+| Khai báo menu phân quyền | `sql/add_hoso_menu.sql` |
+
+Chức năng gồm lọc hồ sơ theo ngày, tìm kiếm trong khoa, xem thông tin bệnh nhân và lỗi validation, tải XML, upload XML, xóa một hoặc xóa theo lô, và xuất Excel theo ngày/tháng. Hồ sơ đã đẩy cổng chỉ được xem và tải xuống, không được xóa từ màn hình này.
+
+Upload dùng chung `UploadQueueService` và worker XML. Trước khi đưa vào hàng đợi, action đọc `MA_KHOA` trong XML1, quy đổi về khoa gốc và từ chối file không thuộc khoa của tài khoản. Các thao tác ghi và yêu cầu xuất dữ liệu dùng token CSRF riêng `hoso_csrf`.
+
+Quyền truy cập là role `hoso`. Sau khi chạy `sql/add_hoso_menu.sql`, cần cấp quyền này cho nhóm người dùng phù hợp và bảo đảm từng tài khoản đã được gán khoa.
+
+Hồ sơ cũ có `file.thongtin_bn IS NULL` có thể được bổ sung từ XML1 bằng script sau. Mặc định script chỉ kiểm tra, không ghi dữ liệu:
+
+```powershell
+C:\xampp\php\php.exe scripts\backfill_thongtin_bn.php --limit=20
+C:\xampp\php\php.exe scripts\backfill_thongtin_bn.php --apply --limit=5000
+```
+
+Nên sao lưu cơ sở dữ liệu trước khi dùng `--apply`. Script chỉ cập nhật bản ghi còn `NULL`, không gọi API BHYT và giữ nguyên `update_at` để hồ sơ lịch sử không bị chuyển vào danh sách ngày hiện tại.
+
 ## 16. Database và migration
 
 Thư mục [`sql/`](sql/) chứa cả schema cũ và các migration bổ sung theo thời gian. Các file đáng chú ý cho luồng XML hiện tại:

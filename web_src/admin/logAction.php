@@ -23,14 +23,12 @@ class logAction
 		$arrUser = $this->userPeer->getListUser();
 
 		$page = ($this->request->getParameter("page", false) == "") ? 0 : $this->request->getParameter("page", false);
-		// print_r($page);
 		$username = $this->request->getParameter("select_user");
 		$chucnang = $this->request->getParameter("txtChucNang");
 
 		$arrLog = $this->logPeer->getListLog($username, $chucnang, $page, _ITEMS_PER_PAGE_ADMIN_);
 		$numLog = $this->logPeer->getCount($username, $chucnang);
 		$pageNav = new PageNav($numLog, _ITEMS_PER_PAGE_ADMIN_, $page, "page", "select_user=$username&txtChucNang=$chucnang");
-		// print_r($pageNav);
 		$sPage = $pageNav->renderNav();
 
 		$this->request->setAttribute("listNguoiDung", $arrUser);

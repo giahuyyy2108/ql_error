@@ -358,6 +358,62 @@ Bảng chính: `file`, `xml_upload_queue`, `file_history`, `file_audit_logs`, `c
 | `validCsrf()` | So sánh `csrf_token` với `xml_file_csrf` bằng `hash_equals()` |
 | `selectedDate()` | Chỉ nhận ngày đúng định dạng `Y-m-d` |
 
+## 5A. Hồ sơ theo khoa - `hosoAction`
+
+Role: `hoso`. Module này dành cho người dùng khoa và luôn xác định phạm vi từ khoa gán cho username trong session. Không endpoint nào tin cậy `id_khoa` do trình duyệt gửi lên.
+
+### `hoso/index`
+
+- Tạo CSRF token riêng cho module.
+- Hiển thị danh sách hồ sơ theo ngày, khu vực upload, xem chi tiết, tải XML, xóa và xuất Excel.
+- Nạp `js/hoso.js`, `js/hoso-export.js` và `css/hoso.css`.
+
+### `hoso/getData`
+
+- Không có từ khóa: trả hồ sơ đúng ngày đã chọn và đúng khoa.
+- Có từ khóa: tìm trong toàn bộ hồ sơ của khoa, không bị giới hạn bởi ô ngày.
+- Từ khóa được giới hạn độ dài; kết quả không chứa hồ sơ khoa khác.
+
+### `hoso/getExportData`
+
+- Yêu cầu CSRF và chỉ chấp nhận `period=day|month`.
+- Báo cáo ngày trả danh sách hồ sơ cùng chi tiết từng lỗi validation.
+- Báo cáo tháng trả dữ liệu tổng hợp lỗi và danh sách hồ sơ để tính số hồ sơ lỗi/chi phí từng ngày.
+- Server lọc theo khoa; `js/hoso-export.js` chỉ dựng và tải tệp `.xlsx` từ dữ liệu đã được phép.
+
+### `hoso/upload`
+
+- Nhận một file `.xml`, tối đa 5 MB, kiểm tra tên file và PHP upload status.
+- Decode trước để đọc `XML1.MA_KHOA`, quy đổi về khoa gốc rồi so sánh với khoa tài khoản.
+- File hợp lệ được đưa vào `UploadQueueService`; worker chung thực hiện import/validation.
+
+### `hoso/uploadProgress`
+
+- Nhận tối đa 100 tên file và trả số file của đúng khoa còn trong hàng đợi.
+- Yêu cầu CSRF.
+
+### `hoso/getContent`
+
+- Chỉ đọc hồ sơ thuộc khoa tài khoản.
+- Trả thông tin bệnh nhân đã lưu trong `thongtin_bn`, khoa quản lý và kết quả validation.
+- Không trả nội dung XML đầy đủ; có fallback từ dữ liệu validation cho hồ sơ cũ.
+
+### `hoso/download`
+
+- Kiểm tra hồ sơ thuộc khoa trước khi phân giải đường dẫn vật lý.
+- Trả file với `Content-Disposition` an toàn và `X-Content-Type-Options: nosniff`.
+
+### `hoso/delete` và `hoso/deleteAll`
+
+- Yêu cầu CSRF, đúng khoa và đúng ngày được chọn.
+- Không cho xóa hồ sơ đã đẩy cổng.
+- Chuyển file và file lỗi kèm theo vào vùng `deleted` trước khi xóa metadata; hoàn tác việc di chuyển nếu xóa DB thất bại.
+- `deleteAll` xử lý tối đa 100 hồ sơ/request để client có thể lặp đến khi hoàn tất.
+
+### Backfill thông tin bệnh nhân
+
+`scripts/backfill_thongtin_bn.php` bổ sung `file.thongtin_bn` từ XML1 cho hồ sơ cũ. Chế độ mặc định là dry-run; `--apply` mới ghi DB. Script chỉ cập nhật dòng còn `NULL`, không gọi BHYT, không đổi validation/trạng thái/đường dẫn và giữ nguyên `update_at`.
+
 ## 6. Báo cáo
 
 File: `web_src/admin/baocaoAction.php`.
@@ -670,23 +726,21 @@ Input chính là tham số `function`:
 
 - Gọi `BackupRestorePeer::backup()` để sinh SQL dump.
 - Trả file tải xuống có đuôi `.sql`.
-- Tên file dùng `$db_name` + timestamp.
+- Tên file dùng `_DATABASE_NAME_` + timestamp; response dùng MIME `application/sql` và không cache.
 
 #### `function=restore`
 
 - Input: `$_FILES['file']`.
 - Kiểm tra dung lượng theo `_BACKUP_SIZE_` và extension `.sql`.
-- Upload file vào `restore/`.
+- File được đổi sang tên ngẫu nhiên an toàn rồi lưu vào `restore/`.
 - Trước khi restore, hệ thống tự backup database hiện tại vào thư mục restore.
-- Sau đó gọi `BackupRestorePeer::restore()`.
+- Sau đó gọi `BackupRestorePeer::restore()`; peer kiểm tra đường dẫn nằm trong thư mục restore, giới hạn dung lượng và thực thi bằng `mysqli::multi_query()`.
 - Output: render lại trang với message.
 
 Lưu ý bảo trì:
 
-- đây là code legacy;
-- thông báo lỗi extension vẫn nhắc `.xls/.xlsx` dù code chỉ nhận `.sql`;
 - action không có CSRF riêng;
-- restore là thao tác ảnh hưởng toàn database nên khi sửa cần kiểm tra kỹ quyền truy cập, nguồn file và transaction/rollback.
+- restore là thao tác ảnh hưởng toàn database và DDL có thể tự commit, vì vậy chỉ dùng file SQL đáng tin cậy và luôn giữ bản backup an toàn được tạo trước khi phục hồi.
 
 ## 14. Dashboard
 
@@ -1010,7 +1064,7 @@ Queue revalidation sử dụng MySQL named lock `ql_error_revalidation_queue` đ
 4. `pushPortal()` đang có side effect nhưng chưa kiểm tra CSRF ngay trong action.
 5. Các action legacy như `user`, `nhomquyen`, `log`, `backup` chưa dùng CSRF đồng nhất như các module mới.
 6. Mật khẩu vẫn có phần tương thích MD5 legacy.
-7. Backup/restore là code cũ và có message extension không khớp implementation.
+7. Backup/restore có quyền tác động toàn database; cần bổ sung CSRF trước khi mở chức năng cho phạm vi người dùng rộng hơn.
 8. Với dynamic SQL lookup, phải giữ nguyên nguyên tắc allow-list identifier + prepared statement cho value.
 9. Không lưu API token/BHYT credential trực tiếp vào log hoặc commit source.
 10. Khi thêm chức năng mới, nên khai báo role rõ ràng, dùng CSRF cho thao tác ghi, validate input tại action và dùng prepared statement tại peer.

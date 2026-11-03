@@ -116,7 +116,6 @@ class nhomquyenAction
 
 		$quyen = explode(",", $nhomquyen->get("quyen"));
 		$listChucNang = $chucNangPeer->getChucNang();
-		//print_r($_SESSION["quyen"]);		
 		include ("www/admin/phanquyen/viewListPhanQuyen.htm");
 
 		return "";

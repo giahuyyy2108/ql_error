@@ -805,8 +805,22 @@
         applyXmlViewMode();
     }
 
-    function renderPatientInfo(data) {
-        function value(names) {
+    function renderPatientInfo(data, khoaDieuTri, patientInfo) {
+        patientInfo = patientInfo && typeof patientInfo === 'object' ? patientInfo : {};
+        var bhytStatus = {
+            success: 'BHYT: tra cứu thành công',
+            empty: 'BHYT: không trả thông tin',
+            failed: 'BHYT: tra cứu thất bại (dữ liệu XML1)',
+            rejected: 'BHYT: trả mã ' + String(patientInfo.bhytMaKetQua || 'không hợp lệ'),
+            not_checked: 'Dữ liệu XML1 (chưa tra cứu BHYT)'
+        };
+        var lookupStatus = patientInfo.bhytLookupStatus;
+        $('#patient-bhyt-lookup-status').text(bhytStatus[lookupStatus] || '');
+        function value(names, infoKey) {
+            if (infoKey && patientInfo[infoKey] !== null && patientInfo[infoKey] !== undefined
+                && typeof patientInfo[infoKey] !== 'object' && String(patientInfo[infoKey]).trim() !== '') {
+                return String(patientInfo[infoKey]).trim();
+            }
             for (var i = 0; i < names.length; i++) {
                 var found = firstFieldValue(data, names[i]);
                 if (found != null && String(found).trim() !== '') return String(found).trim();
@@ -818,14 +832,27 @@
             var match = /^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})/.exec(text);
             return match ? match[3] + '/' + match[2] + '/' + match[1] : (text || '-');
         }
-        $('#patient-info-name').text(value(['HO_TEN']));
-        var patientCode = value(['MA_BN']);
+        function formatPatientBirthDate(value) {
+            var text = String(value == null ? '' : value).trim();
+            if (!text || text === '-') return '-';
+            var match = /^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})(?:\d{4}(?:\d{2})?|[T\s].*)?$/.exec(text);
+            if (match) return match[3] + '/' + match[2] + '/' + match[1];
+            match = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/.exec(text);
+            return match ? ('0' + match[1]).slice(-2) + '/' + ('0' + match[2]).slice(-2) + '/' + match[3] : text;
+        }
+        $('#patient-info-name').text(value(['HO_TEN'], 'hoTen'));
+        var patientCode = value(['MA_BN'], 'maBn');
         $('#patient-info-code').text(patientCode).attr('data-copy-value', patientCode === '-' ? '' : patientCode);
-        $('#patient-info-insurance').text(value(['MA_THE_BHYT']));
-        $('#patient-info-birth').text(value(['NGAY_SINH']));
-        var gender = value(['GIOI_TINH']);
+        $('#patient-info-insurance').text(value(['MA_THE_BHYT'], 'maThe'));
+        $('#patient-info-birth').text(formatPatientBirthDate(value(['NGAY_SINH'], 'ngaySinh')));
+        var gender = value(['GIOI_TINH'], 'gioiTinh');
         $('#patient-info-gender').text(gender === '1' ? 'Nam' : (gender === '2' ? 'Nữ' : gender));
-        $('#patient-info-address').text(value(['DIA_CHI']));
+        $('#patient-info-address').text(value(['DIA_CHI'], 'diaChi'));
+        var khoaCode = khoaDieuTri && khoaDieuTri.ma ? String(khoaDieuTri.ma).trim() : value(['MA_KHOA']);
+        var khoaName = khoaDieuTri && khoaDieuTri.ten ? String(khoaDieuTri.ten).trim() : '';
+        $('#patient-info-khoa').text(
+            khoaName && khoaCode !== '-' ? khoaName + ' (' + khoaCode + ')' : (khoaName || khoaCode || '-')
+        );
         $('#patient-info-treatment').text(formatDate(value(['NGAY_VAO'])) + ' - ' + formatDate(value(['NGAY_RA'])));
     }
 
@@ -2372,6 +2399,8 @@
         currentValidationResults = [];
         currentViewFileName = '';
         $('#btn-export-view-excel').prop('disabled', true);
+        $('#patient-info').show();
+        renderPatientInfo(null, null, null);
         $('#decoded-file-tabs').empty();
         $('#view-file-name').text('Đang tải...');
         $('#btn-download-view-file').attr('href', downloadBaseUrl + 'file/download/?id=' + Number(id));
@@ -2406,7 +2435,7 @@
             );
             currentDecodedContent = response.decoded;
             currentValidationResults = response.validation || [];
-            renderPatientInfo(response.decoded);
+            renderPatientInfo(response.decoded, response.khoa_dieu_tri || null, response.thong_tin_bn || null);
             var patientName = firstFieldValue(response.decoded, 'HO_TEN');
             $('#view-file-name').text(
                 patientName == null || String(patientName).trim() === '' ? name : String(patientName).trim()
@@ -2458,7 +2487,7 @@
 
     $(document).on('click', '#modal-view-xml .xml-view-toolbar button:not(#btn-view-audit)', function () {
         $('#audit-panel').hide();
-        $('.xml-view-layout').show();
+        $('.xml-view-layout, #patient-info').show();
         applyXmlViewMode();
         $('#btn-view-audit').removeClass('active');
     });

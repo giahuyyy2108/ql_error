@@ -31,6 +31,29 @@ function UnCheckAll(field){
 		field[i].checked = false ;
 }
 
+// Shared checkbox selection for user and group permission dialogs.
+// Delegation is needed because the tree is loaded into the modal by AJAX.
+$(function () {
+    $(document).on('change', '#frmQuyen .permission-tree input[type="checkbox"]', function () {
+        var $item = $(this).closest('.permission-item');
+        var checked = $(this).prop('checked');
+
+        // Checking a branch applies to all descendants, including actions.
+        $item.children('.permission-children')
+            .find('input[type="checkbox"]').prop('checked', checked);
+
+        // Ancestors stay checked while any descendant is checked.
+        $item.parents('.permission-item').each(function () {
+            var $ancestor = $(this);
+            var anyChecked = $ancestor.children('.permission-children')
+                .find('input[type="checkbox"]:checked').length > 0;
+            $ancestor.children('.permission-row')
+                .find('input[type="checkbox"]').prop('checked', anyChecked);
+        });
+    });
+
+});
+
 function Delete(frm)
 {	
 	var testitem = false;

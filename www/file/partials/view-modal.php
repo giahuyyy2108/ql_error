@@ -25,7 +25,7 @@
             </div>
             <div class="modal-body">
                 <section id="patient-info" class="patient-info-panel" aria-label="Thông tin bệnh nhân">
-                    <h4><i class="fa fa-user"></i> Thông tin bệnh nhân</h4>
+                    <h4><i class="fa fa-user"></i> Thông tin bệnh nhân <small id="patient-bhyt-lookup-status" class="text-muted"></small></h4>
                     <div class="patient-info-grid">
                         <div><span>Họ tên</span><strong id="patient-info-name">-</strong></div>
                         <div><span>Mã bệnh nhân</span><strong id="patient-info-code" class="copy-error-value copy-error-trigger" role="button" tabindex="0" title="Bấm để sao chép">-</strong></div>
@@ -33,6 +33,7 @@
                         <div><span>Ngày sinh</span><strong id="patient-info-birth">-</strong></div>
                         <div><span>Giới tính</span><strong id="patient-info-gender">-</strong></div>
                         <div><span>Địa chỉ</span><strong id="patient-info-address">-</strong></div>
+                        <div><span>Khoa điều trị</span><strong id="patient-info-khoa">-</strong></div>
                         <div class="patient-info-treatment"><span>Thời gian điều trị</span><strong id="patient-info-treatment">-</strong></div>
                     </div>
                 </section>

@@ -25,6 +25,8 @@ Tài liệu này mô tả các file do ứng dụng quản lý trực tiếp. Kh
 | Decode XML | `web_src/common/XmlFileDecoder.php` | Base64/XMLReader/SimpleXML và trích trường dùng chung |
 | Validation | `web_src/common/XmlRulesValidator.php` | chạy rule theo XML type và trả errors/warnings |
 | Worker nền | `scripts/watch_xml.php` | claim file, import, archive, progress, revalidation, cleanup |
+| Hồ sơ theo khoa | `web_src/admin/hosoAction.php`, `www/hoso/index.php`, `js/hoso.js` | danh sách và thao tác hồ sơ trong đúng khoa của tài khoản |
+| Xuất Excel hồ sơ | `js/hoso-export.js` | tạo báo cáo ngày/tháng từ dữ liệu đã giới hạn theo khoa ở server |
 
 ## Thư mục lưu file
 
@@ -61,3 +63,14 @@ Runtime/log của watcher nằm trong `storage/watcher` (hoặc đường dẫn 
 - Khi thêm rule XML, ưu tiên cấu hình/rule hiện có trước khi thêm nhánh đặc thù vào `XmlRulesValidator`.
 - Không ghi dữ liệu nhạy cảm đầy đủ vào log; log watcher nên tập trung file, rule, trạng thái và lỗi cần vận hành.
 - Sau khi sửa PHP/JS, chạy `php -l`, `node --check js/file.js` và `git diff --check`.
+
+## Lưu ý riêng cho module `hoso`
+
+- Role của module là `hoso`; menu được bổ sung bằng `sql/add_hoso_menu.sql` và vẫn phải cấp cho từng nhóm quyền.
+- Không nhận `id_khoa` từ request. Phạm vi dữ liệu phải lấy từ khoa gán cho username trong session và áp dụng lại ở mọi truy vấn đọc, tải xuống, xóa, upload và xuất báo cáo.
+- Upload phải kiểm tra `MA_KHOA` của XML1 thuộc khoa tài khoản trước khi gọi `UploadQueueService`.
+- `getContent` chỉ trả thông tin bệnh nhân đã lưu và kết quả validation, không trả toàn bộ nội dung XML; tải XML đi qua action `download` có kiểm tra phạm vi khoa.
+- Hồ sơ đã đẩy cổng không được xóa. Xóa theo ngày chạy theo lô tối đa 100 bản ghi/request và chuyển file vật lý sang vùng `deleted` trước khi xóa metadata.
+- Báo cáo Excel được dựng ở trình duyệt, nhưng dữ liệu nguồn bắt buộc phải được lọc theo khoa ở server. Báo cáo ngày gồm hồ sơ và chi tiết lỗi; báo cáo tháng tổng hợp tần suất lỗi, số hồ sơ lỗi và chi phí theo ngày.
+- Với dữ liệu cũ thiếu `file.thongtin_bn`, chạy thử `scripts/backfill_thongtin_bn.php` không có `--apply` trước; khi ghi thật nên sao lưu DB và xử lý theo `--after-id` nếu dữ liệu lớn.
+- Khi sửa module, chạy thêm các test `Hoso*Test.php`, `HosoExcelExportTest.js` và `PatientBirthDateDisplayTest.js`.

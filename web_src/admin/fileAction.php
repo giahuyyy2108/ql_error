@@ -193,6 +193,47 @@ class fileAction
             $decodedContent = XmlFileDecoder::decodeDanhSachHoSo($content);
             $validation = json_decode((string) $file['validation_result'], true);
             if (!is_array($validation)) $validation = array();
+
+            $xml1Patient = XmlFileDecoder::extractValuesFromFileType(
+                $decodedContent,
+                'XML1',
+                array('MA_KHOA', 'MA_BN', 'MA_THE_BHYT', 'HO_TEN', 'NGAY_SINH',
+                    'GIOI_TINH', 'DIA_CHI', 'MA_DKBD', 'GT_THE_TU', 'GT_THE_DEN', 'MA_SO_BHXH')
+            );
+            // Cho phép xem thông tin bệnh nhân cả ở hồ sơ import cũ thiếu JSON BHYT.
+            $fieldMap = array(
+                'MA_BN' => 'maBn', 'MA_THE_BHYT' => 'maThe', 'HO_TEN' => 'hoTen',
+                'NGAY_SINH' => 'ngaySinh', 'GIOI_TINH' => 'gioiTinh',
+                'DIA_CHI' => 'diaChi', 'MA_DKBD' => 'maDKBD',
+                'GT_THE_TU' => 'gtTheTu', 'GT_THE_DEN' => 'gtTheDen',
+                'MA_SO_BHXH' => 'maSoBHXH'
+            );
+            $patientInfo = array();
+            foreach ($fieldMap as $xmlKey => $infoKey) {
+                if ($xml1Patient[$xmlKey] !== null && trim((string) $xml1Patient[$xmlKey]) !== '') {
+                    $patientInfo[$infoKey] = trim((string) $xml1Patient[$xmlKey]);
+                }
+            }
+            $storedPatient = json_decode((string) ($file['thongtin_bn'] ?? ''), true);
+            if (is_array($storedPatient)) {
+                foreach ($storedPatient as $key => $value) {
+                    if (is_scalar($value) && trim((string) $value) !== '') {
+                        $patientInfo[$key] = $value;
+                    }
+                }
+            }
+            // Mã BN, họ tên và mã thẻ trong XML1 là dữ liệu nguồn của hồ sơ này.
+            foreach (array('MA_BN' => 'maBn', 'HO_TEN' => 'hoTen', 'MA_THE_BHYT' => 'maThe') as $xmlKey => $infoKey) {
+                if ($xml1Patient[$xmlKey] !== null && trim((string) $xml1Patient[$xmlKey]) !== '') {
+                    $patientInfo[$infoKey] = trim((string) $xml1Patient[$xmlKey]);
+                }
+            }
+            $maKhoaDieuTri = isset($xml1Patient['MA_KHOA'])
+                ? trim((string) $xml1Patient['MA_KHOA'])
+                : '';
+            $khoaDieuTri = $maKhoaDieuTri !== ''
+                ? $this->filePeer->getKhoaByCode($maKhoaDieuTri)
+                : null;
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
@@ -202,6 +243,11 @@ class fileAction
             'name' => $file['ten'],
             'decoded' => $decodedContent,
             'validation' => $validation,
+            'thong_tin_bn' => $patientInfo,
+            'khoa_dieu_tri' => array(
+                'ma' => $maKhoaDieuTri,
+                'ten' => $khoaDieuTri !== null ? $khoaDieuTri['ten'] : ''
+            ),
             'display_settings' => (new HeThongPeer())->getXmlDisplaySettings()
         ));
     }

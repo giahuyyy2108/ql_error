@@ -1,0 +1,82 @@
+.hoso-page .hoso-filters { margin-bottom: 15px; }
+.hoso-page .hoso-export-toolbar { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; margin: 0 6px; }
+.hoso-page #hoso-export-period { width: 120px; }
+.hoso-page #hoso-export-month { width: 165px; }
+.hoso-page .hoso-export-note { margin-top: -5px; margin-bottom: 12px; }
+.hoso-page .hoso-drop-target { transition: background-color .15s ease, box-shadow .15s ease; }
+.hoso-page .hoso-drop-target.is-dragging {
+    background: #eaf5fd;
+    box-shadow: inset 0 0 0 3px #337ab7;
+}
+.hoso-upload-zone {
+    display: flex;
+    min-height: 175px;
+    padding: 24px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 7px;
+    color: #52606d;
+    background: #f8fbfe;
+    border: 2px dashed #8bb8db;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: center;
+}
+.hoso-upload-zone:hover,
+.hoso-upload-zone:focus,
+.hoso-upload-zone.is-dragging {
+    background: #eaf5fd;
+    color: #245580;
+    border-color: #337ab7;
+    outline: 0;
+}
+.hoso-upload-zone.is-uploading { cursor: wait; opacity: .65; }
+.hoso-upload-icon { font-size: 42px; color: #337ab7; }
+#hoso-xml-files {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+}
+#hoso-upload-message, #hoso-upload-progress { white-space: pre-line; overflow-wrap: anywhere; }
+.hoso-page .hoso-filters label { display: block; }
+.hoso-page .hoso-counts { margin: 10px 0 15px; }
+.hoso-page #hoso-table td { vertical-align: middle; }
+.hoso-page #hoso-table .hoso-error-fields { white-space: normal; overflow-wrap: anywhere; }
+.hoso-page #hoso-table .hoso-address { min-width: 180px; white-space: normal; overflow-wrap: anywhere; }
+.hoso-page #hoso-table .btn { margin: 1px 2px; }
+.hoso-page #hoso-table_wrapper > .dt-buttons { display: none; }
+.hoso-page #hoso-table_wrapper .dataTables_length { margin-bottom: 10px; }
+#hoso-view-modal .modal-dialog { width: min(96%, 1250px); }
+#hoso-view-modal .modal-body { max-height: calc(100vh - 175px); overflow-y: auto; }
+#hoso-view-modal .hoso-patient-panel {
+    margin-bottom: 14px;
+    padding: 12px 15px;
+    border: 1px solid #d9e2ec;
+    border-radius: 4px;
+    background: #f8fafc;
+}
+#hoso-view-modal .hoso-patient-panel h4 { margin: 0 0 10px; font-weight: 600; }
+#hoso-view-modal .hoso-patient-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px 18px; }
+#hoso-view-modal .hoso-patient-grid > div { min-width: 0; }
+#hoso-view-modal .hoso-patient-grid span { display: block; color: #6b7280; font-size: 12px; }
+#hoso-view-modal .hoso-patient-grid strong { display: block; font-weight: 600; overflow-wrap: anywhere; }
+#hoso-view-modal .hoso-patient-treatment { grid-column: span 2; }
+#hoso-view-modal .hoso-view-table-scroll { max-height: 52vh; overflow: auto; }
+#hoso-view-modal .hoso-view-table-scroll table { margin-bottom: 0; }
+#hoso-view-modal .hoso-view-table-scroll th { white-space: nowrap; background: #f5f8fa; position: sticky; top: 0; z-index: 1; }
+#hoso-view-modal .hoso-view-table-scroll td { vertical-align: top; }
+#hoso-view-modal .hoso-detail-index { width: 48px; white-space: nowrap; }
+#hoso-view-modal .hoso-detail-value { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 140px; max-width: 350px; }
+#hoso-view-modal .hoso-error-row { background-color: #fff3f2; }
+#hoso-view-modal .hoso-warning-row { background-color: #fff9e9; }
+@media (max-width: 767px) {
+    .hoso-page .x_title .pull-right { float: none !important; display: flex; flex-wrap: wrap; gap: 6px; }
+    .hoso-page .hoso-export-toolbar { margin: 0; flex-wrap: wrap; }
+    #hoso-view-modal .modal-dialog { width: auto; margin: 8px; }
+    #hoso-view-modal .modal-body { max-height: calc(100vh - 145px); }
+    #hoso-view-modal .hoso-patient-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #hoso-view-modal .hoso-patient-treatment { grid-column: span 2; }
+}

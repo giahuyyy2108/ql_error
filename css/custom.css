@@ -4495,24 +4495,73 @@ table select{
 	padding: 0px!important;
 }
 
-#table-quyen input[type=checkbox] {
-	margin-right: 7px!important;
+#table-quyen.permission-tree,
+#table-quyen.permission-tree ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
 }
 
-#table-quyen .level1 {
-	padding-left: 70px!important;
+#table-quyen.permission-tree .permission-item {
+    position: relative;
+    margin: 3px 0;
 }
 
-#table-quyen .level2 {
-	padding-left: 100px!important;
+#table-quyen.permission-tree .permission-children {
+    margin-left: 12px;
+    padding-left: 21px;
+    border-left: 1px solid #d7dee7;
 }
 
-#table-quyen .level3 {
-	padding-left: 130px!important;
+#table-quyen.permission-tree .permission-children > .permission-item:before {
+    content: '';
+    position: absolute;
+    top: 16px;
+    left: -21px;
+    width: 17px;
+    border-top: 1px solid #d7dee7;
 }
 
-#table-quyen.table>tbody>tr>td, .table>tbody>tr>th, #table-quyen.table>tfoot>tr>td, #table-quyen.table>tfoot>tr>th, #table-quyen.table>thead>tr>td, #table-quyen.table>thead>tr>th {
-    padding: 2px;   
+#table-quyen.permission-tree .permission-row {
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    border-radius: 4px;
+    padding: 3px 7px;
+}
+
+#table-quyen.permission-tree .permission-row:hover {
+    background: #f0f5fa;
+}
+
+#table-quyen.permission-tree .permission-level-0 > .permission-row {
+    background: #e8f0f8;
+    color: #243a52;
+    font-weight: bold;
+    margin-top: 8px;
+}
+
+#table-quyen.permission-tree .permission-level-1 > .permission-row {
+    font-weight: 600;
+}
+
+#table-quyen.permission-tree .permission-label {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    font-weight: inherit;
+    cursor: pointer;
+    min-width: 0;
+}
+
+#table-quyen.permission-tree input[type=checkbox] {
+    margin: 0 8px 0 0 !important;
+    flex-shrink: 0;
+}
+
+/* Retain the previous table-header spacing outside the permission dialog. */
+.table>tbody>tr>th {
+    padding: 2px;
 }
 
 .clsspanTrichYeu {

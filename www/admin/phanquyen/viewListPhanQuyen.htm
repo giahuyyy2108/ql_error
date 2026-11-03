@@ -1,104 +1,120 @@
+<?php
+// Build the permission tree in menu order. Each level is nested below the
+// closest preceding item of the previous level (0 > 1 > 2 > actions).
+$permissionNodes = array();
+$permissionRoots = array();
+$lastAtLevel = array();
+$nodeId = 0;
+$i = 0;
+
+if ($listChucNang != false) {
+    foreach ($listChucNang as $chucnang) {
+        $level = (int) $chucnang->get('level');
+        if ($level < 0 || $level > 2) {
+            continue;
+        }
+
+        $role = '';
+        if ($level === 0) {
+            $role = (string) $chucnang->get('parentQuyen');
+        } elseif ($level === 1) {
+            $role = (string) $chucnang->get('url');
+            if ($chucnang->get('parentQuyen') !== '') {
+                $role = (string) $chucnang->get('parentQuyen');
+            }
+        } else {
+            $role = (string) $chucnang->get('url');
+        }
+
+        $parentId = ($level > 0 && isset($lastAtLevel[$level - 1]))
+            ? $lastAtLevel[$level - 1] : null;
+
+        $permissionNodes[$nodeId] = array(
+            'level' => $level,
+            'title' => (string) $chucnang->get('tenChucNang'),
+            'role' => $role,
+            'group' => $i,
+            'checked' => $role !== '' && $this->request->checkRoleUser($role, $quyen),
+            'children' => array()
+        );
+
+        if ($parentId === null) {
+            $permissionRoots[] = $nodeId;
+        } else {
+            $permissionNodes[$parentId]['children'][] = $nodeId;
+        }
+
+        $currentId = $nodeId++;
+        $lastAtLevel[$level] = $currentId;
+        foreach (array_keys($lastAtLevel) as $previousLevel) {
+            if ($previousLevel > $level) {
+                unset($lastAtLevel[$previousLevel]);
+            }
+        }
+
+        // Each comma-separated action is a child of its menu item. Keep the
+        // original checkbox<i>[] names so both save endpoints still work.
+        if ($level > 0) {
+            $actionNames = explode(',', (string) $chucnang->get('tenChucNangCon'));
+            $actionRoles = explode(',', (string) $chucnang->get('urlChucNangCon'));
+            foreach ($actionNames as $key => $actionName) {
+                $actionName = trim($actionName);
+                $actionRole = isset($actionRoles[$key]) ? trim($actionRoles[$key]) : '';
+                if ($actionName === '' || $actionRole === '') {
+                    continue;
+                }
+
+                $permissionNodes[$nodeId] = array(
+                    'level' => $level + 1,
+                    'title' => $actionName,
+                    'role' => $actionRole,
+                    'group' => $i,
+                    'checked' => $this->request->checkRoleUser($actionRole, $quyen),
+                    'children' => array()
+                );
+                $permissionNodes[$currentId]['children'][] = $nodeId++;
+            }
+        }
+        $i++;
+    }
+}
+
+$escapePermission = function ($value) {
+    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+};
+
+$renderPermissionNode = function ($id) use (&$renderPermissionNode, &$permissionNodes, $escapePermission) {
+    $node = $permissionNodes[$id];
+    $hasChildren = count($node['children']) > 0;
+    $inputId = 'permission-checkbox-' . $id;
+
+    echo '<li class="permission-item permission-level-' . $node['level'] . '">';
+    echo '<div class="permission-row">';
+    echo '<label class="permission-label" for="' . $inputId . '">';
+    echo '<input type="checkbox" id="' . $inputId . '"';
+    if ($node['role'] !== '') {
+        echo ' name="checkbox' . $node['group'] . '[]" value="' . $escapePermission($node['role']) . '"';
+    }
+    if ($node['checked']) {
+        echo ' checked="checked"';
+    }
+    echo '> <span>' . $escapePermission($node['title']) . '</span></label>';
+    echo '</div>';
+
+    if ($hasChildren) {
+        echo '<ul class="permission-children">';
+        foreach ($node['children'] as $childId) {
+            $renderPermissionNode($childId);
+        }
+        echo '</ul>';
+    }
+    echo '</li>';
+};
+?>
 <form name="frmQuyen" id="frmQuyen" action="" method="post">
-	<table id="table-quyen" width="100%" class="table table-hover">
-<?			
-	if($listChucNang!=false){
-		$i = 0;
-		foreach($listChucNang as $chucnang){
-			if($chucnang->get("level") == '0' ){
-				$level0 = $chucnang->get("maChucNang");
-				$hasQuyen = "";
-				$hasQuyen = "";
-				$strQuyen = "";
-				if($chucnang->get("parentQuyen")!=""){
-					$hasQuyen = $this->request->checkRoleUser($chucnang->get("parentQuyen"),$quyen)?'checked="checked"':'';
-					$strQuyen = $chucnang->get("parentQuyen");
-				}
-?>      
-		<tr>
-			<td class="level0" style="border-top: 0px;">
-				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$strQuyen?>" <?=$hasQuyen?> level="<?=$level0?>">				
-				<strong>&nbsp;&nbsp;<?=$chucnang->get("tenChucNang")?> </strong>
-			</td>   
-		</tr>
-<?
-				$i++;
-			}
-			if($chucnang->get("level") == '1' ){
-				$id = $chucnang->get("maChucNang");
-				$hasQuyen = "";
-				$strQuyen = "";
-				if($chucnang->get("url")!="") {
-					$hasQuyen = $this->request->checkRoleUser($chucnang->get("url"),$quyen)?'checked="checked"':'';
-					$strQuyen = $chucnang->get("url");
-				}
-				if($chucnang->get("parentQuyen")!=""){
-					$hasQuyen = $this->request->checkRoleUser($chucnang->get("parentQuyen"),$quyen)?'checked="checked"':'';
-					$strQuyen = $chucnang->get("parentQuyen");
-				}
-?>      
-		<tr>      
-			<td class="level1">
-				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$strQuyen?>" <?=$hasQuyen?> onChange="Check(this,document.frmQuyen.checkbox<?=$i?>)" level="<?=$level0?>" data-chucnang="<?=$id?>">
-				<?=$chucnang->get("tenChucNang")?>  
-			</td>	
-		</tr>
-<?				$tenChucNangCon = array();
-				$urlChucNangCon = array();
-				$tenChucNangCon = explode(",", $chucnang->get("tenChucNangCon"));
-				$urlChucNangCon = explode(",", $chucnang->get("urlChucNangCon"));
-				if($tenChucNangCon!=false && $tenChucNangCon!=""){					
-					foreach($tenChucNangCon as $key => $tenchucnang){
-						
-						if($tenchucnang!=""){
-							$hasQuyen1 = $this->request->checkRoleUser($urlChucNangCon[$key],$quyen)?'checked="checked"':'';
-?>
-		<tr>       
-			<td class="level2">
-				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$urlChucNangCon[$key]?>" <?=$hasQuyen1?> onChange="CheckParen(this,document.frmQuyen.checkbox<?=$i?>)" level="<?=$level0?>" data-chucnang="<?=$id?>">
-				<?=$tenchucnang?> 
-			</td>
-		</tr>
-<?					
-						}
-					}
-				}
-				$i++;
-			}
-			if($chucnang->get("level") == '2' ){
-				$hasQuyen = $this->request->checkRoleUser($chucnang->get("url"),$quyen)?'checked="checked"':'';
-?>      
-		<tr>      
-			<td class="level2">
-				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$chucnang->get("url")?>" <?=$hasQuyen?> onChange="Check(this,document.frmQuyen.checkbox<?=$i?>)" level="<?=$level0?>" data-chucnang="<?=$id?>">
-				<?=$chucnang->get("tenChucNang")?>  
-			</td>	
-		</tr>
-<?				$tenChucNangCon = array();
-				$urlChucNangCon = array();
-				$tenChucNangCon = explode(",", $chucnang->get("tenChucNangCon"));
-				$urlChucNangCon = explode(",", $chucnang->get("urlChucNangCon"));
-				if($tenChucNangCon!=false && $tenChucNangCon!=""){					
-					foreach($tenChucNangCon as $key => $tenchucnang){
-						if($tenchucnang!=""){
-							$hasQuyen1 = $this->request->checkRoleUser($urlChucNangCon[$key],$quyen)?'checked="checked"':'';
-?>
-		<tr>       
-			<td class="level3">
-				<input type="checkbox" name="checkbox<?=$i?>[]" id="checkbox<?=$i?>" value="<?=$urlChucNangCon[$key]?>" <?=$hasQuyen1?> onChange="CheckParen(this,document.frmQuyen.checkbox<?=$i?>)" level="<?=$level0?>" data-chucnang="<?=$id?>">
-				<?=$tenchucnang?> 
-			</td>
-		</tr>
-<?					
-						}
-					}
-				}
-				$i++;
-			}
-			
-		}
-	}
-?>
-    </table>     
-		<input type="hidden" name="username" id="username" value="<?=$username?>">
-		<input type="hidden" name="numCheck" id="numCheck" value="<?=$i?>">
+    <ul id="table-quyen" class="permission-tree">
+        <?php foreach ($permissionRoots as $rootId) { $renderPermissionNode($rootId); } ?>
+    </ul>
+    <input type="hidden" name="username" id="username" value="<?= $escapePermission(isset($username) ? $username : '') ?>">
+    <input type="hidden" name="numCheck" id="numCheck" value="<?= $i ?>">
 </form>

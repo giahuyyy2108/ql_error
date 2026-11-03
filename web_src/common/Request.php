@@ -132,7 +132,6 @@ class Request
 
 	function getHiddenRole($listRole)
 	{
-		// print_r($listRole);
 		if ($listRole != "") {
 			$arrRole = explode(",", $listRole);
 			$c = count($arrRole);

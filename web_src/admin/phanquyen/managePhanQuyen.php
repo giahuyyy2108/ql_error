@@ -6,6 +6,5 @@ $userPeer = new UserPeer;
 $user = $userPeer->getUser($username);
 
 $quyen = explode(",", $user->get("quyen"));
-//print_r($_SESSION["quyen"]);
 $request->setAttribute("content","www/admin/phanquyen/viewListPhanQuyen.htm");
 ?>

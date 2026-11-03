@@ -69,6 +69,30 @@ class FilePeer
         return $rows;
     }
 
+    public function getKhoaByCode($maKhoa)
+    {
+        $maKhoa = trim((string) $maKhoa);
+        if ($maKhoa === '') {
+            return null;
+        }
+
+        $statement = $this->connection->prepare(
+            'SELECT ma, ten FROM `khoa_phong` WHERE ma = ? LIMIT 1'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể đọc thông tin khoa điều trị.');
+        }
+        $statement->bind_param('s', $maKhoa);
+        $statement->execute();
+        $row = $statement->get_result()->fetch_assoc();
+        $statement->close();
+
+        return $row ? array(
+            'ma' => (string) $row['ma'],
+            'ten' => (string) $row['ten']
+        ) : null;
+    }
+
     public function resolveRootKhoaCode($maKhoa)
     {
         $maKhoa = trim((string) $maKhoa);
@@ -199,6 +223,40 @@ class FilePeer
         if (!$result) throw new RuntimeException('Không thể đọc tiến độ import.');
         $row = $result->fetch_assoc();
         $result->free();
+        return (int) $row['total'];
+    }
+
+    /** Tiến độ upload trang Hồ sơ: giới hạn hàng đợi theo đúng khoa người dùng. */
+    public function countQueuedUploadFilesForKhoa(array $fileNames, $idKhoa)
+    {
+        if (trim((string) $idKhoa) === '' || count($fileNames) > 100) {
+            throw new RuntimeException('Thông tin hàng đợi không hợp lệ.');
+        }
+        $names = array();
+        foreach ($fileNames as $name) {
+            if (!is_string($name) || $name === '' || strlen($name) > 180 || basename($name) !== $name) {
+                throw new RuntimeException('Tên file trong hàng đợi không hợp lệ.');
+            }
+            $names[$name] = true;
+        }
+        $activeNames = $this->activeQueuedXmlNames();
+        $names = array_values(array_filter(array_keys($names), function ($name) use ($activeNames) {
+            return isset($activeNames[$name]);
+        }));
+        if (!$names) return 0;
+
+        $params = array_merge(array((string) $idKhoa), $names);
+        $placeholders = implode(',', array_fill(0, count($names), '?'));
+        $stmt = $this->connection->prepare(
+            'SELECT COUNT(*) AS total FROM xml_upload_queue WHERE id_khoa = ? AND file_name IN (' . $placeholders . ')'
+        );
+        if (!$stmt) throw new RuntimeException('Không thể đọc tiến độ tải file.');
+        $stmt->bind_param(str_repeat('s', count($params)), ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
+        $stmt->close();
+        if (!$row) throw new RuntimeException('Không thể đọc tiến độ tải file.');
         return (int) $row['total'];
     }
 
@@ -384,10 +442,251 @@ class FilePeer
         return $files;
     }
 
+    /**
+     * Trang HoSo: luôn lọc chính xác theo khoa của người đang đăng nhập,
+     * kể cả khi người dùng là quản trị viên. Không sử dụng cache của trang File.
+     */
+    public function getListByKhoa($date, $idKhoa, $search = '', $period = 'day')
+    {
+        if (trim((string) $idKhoa) === '') {
+            throw new RuntimeException('Tài khoản chưa được gán khoa.');
+        }
+        $search = trim((string) $search);
+        if ($search === '') {
+            list($from, $to) = self::khoaPeriodBounds($date, $period);
+        }
+        $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, thongtin_bn, kichthuoc,
+                       processing_status, da_day_cong, validation_result, update_at
+                FROM `file` WHERE id_khoa = ?';
+        if ($search !== '') {
+            // Có từ khóa: tìm trên TOÀN BỘ hồ sơ của khoa, không giới hạn ngày.
+            // Các dữ liệu BHYT, trường lỗi và số tiền nằm trong hai cột JSON.
+            $sql .= " AND (ma_bn LIKE ? ESCAPE '!'
+                       OR ma_lk LIKE ? ESCAPE '!'
+                       OR ho_ten LIKE ? ESCAPE '!'
+                       OR ten LIKE ? ESCAPE '!'
+                       OR thongtin_bn COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '!'
+                       OR validation_result COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '!')";
+        } else {
+            $sql .= ' AND update_at >= ? AND update_at < ?';
+        }
+        $sql .= ' ORDER BY da_day_cong ASC, update_at DESC, id DESC';
+        $statement = $this->connection->prepare($sql);
+        if (!$statement) throw new RuntimeException('Không thể tải danh sách hồ sơ.');
+        if ($search !== '') {
+            // ESCAPE '!' khiến % và _ trong từ khóa được xem là ký tự thường.
+            $term = '%' . str_replace(array('!', '%', '_'), array('!!', '!%', '!_'), $search) . '%';
+            $statement->bind_param('sssssss', $idKhoa, $term, $term, $term, $term, $term, $term);
+        } else {
+            $statement->bind_param('sss', $idKhoa, $from, $to);
+        }
+        $statement->execute();
+        $result = $statement->get_result();
+        $files = array();
+        while ($result && ($row = $result->fetch_assoc())) {
+            $summary = $this->fileSummaryFromValidation($row['validation_result'], $row['thongtin_bn']);
+            $timestamp = strtotime($row['update_at']);
+            $files[] = array(
+                'id' => (int) $row['id'],
+                'name' => $row['ten'],
+                'ma_lk' => $row['ma_lk'],
+                'ma_bn' => $row['ma_bn'] !== null ? $row['ma_bn'] : '',
+                'ho_ten' => $row['ho_ten'] !== null ? $row['ho_ten'] : '',
+                'ma_the_bhyt' => $summary['ma_the_bhyt'],
+                'ngay_sinh' => $summary['ngay_sinh'],
+                'gioi_tinh' => $summary['gioi_tinh'],
+                'ma_so_bhxh' => $summary['ma_so_bhxh'],
+                'dia_chi' => $summary['dia_chi'],
+                'ngay_vao' => $summary['ngay_vao'],
+                'ngay_ra' => $summary['ngay_ra'],
+                'error_count' => $summary['error_count'],
+                'warning_count' => $summary['warning_count'],
+                'error_fields' => $summary['error_fields'],
+                'total_amount' => $summary['total_amount'],
+                'status' => $row['processing_status'],
+                'da_day_cong' => (bool) $row['da_day_cong'],
+                'modified' => $timestamp ? date('d/m/Y H:i:s', $timestamp) : '',
+                'update_date' => substr((string) $row['update_at'], 0, 10)
+            );
+        }
+        if ($result) $result->free();
+        $statement->close();
+        return $files;
+    }
+
+    /** Khoảng [bắt đầu, kết thúc) theo update_at; không đổi cách lọc/xóa theo ngày hiện có. */
+    private static function khoaPeriodBounds($date, $period)
+    {
+        if ($period !== 'day' && $period !== 'month') {
+            throw new RuntimeException('Hình thức xuất Excel không hợp lệ.');
+        }
+        $format = $period === 'month' ? 'Y-m' : 'Y-m-d';
+        $value = is_string($date) ? trim($date) : '';
+        $start = DateTimeImmutable::createFromFormat('!' . $format, $value);
+        if (!$start || $start->format($format) !== $value) {
+            throw new RuntimeException($period === 'month' ? 'Tháng được chọn không hợp lệ.' : 'Ngày được chọn không hợp lệ.');
+        }
+        return array(
+            $start->format('Y-m-d 00:00:00'),
+            $start->modify($period === 'month' ? '+1 month' : '+1 day')->format('Y-m-d 00:00:00')
+        );
+    }
+
+    /** Lỗi validation theo ngày/tháng cập nhật, giới hạn trong khoa đăng nhập. */
+    public function getHosoExportErrorsByKhoa($date, $idKhoa, $period)
+    {
+        if (trim((string) $idKhoa) === '') {
+            throw new RuntimeException('Tài khoản chưa được gán khoa.');
+        }
+        list($from, $to) = self::khoaPeriodBounds($date, $period);
+        $statement = $this->connection->prepare(
+            'SELECT id, ma_lk, ma_bn, validation_result, update_at FROM `file`
+             WHERE id_khoa = ? AND update_at >= ? AND update_at < ?
+               AND validation_result IS NOT NULL AND validation_result <> \'\'
+             ORDER BY update_at DESC, id DESC'
+        );
+        if (!$statement) throw new RuntimeException('Không thể chuẩn bị dữ liệu lỗi của khoa.');
+        $statement->bind_param('sss', $idKhoa, $from, $to);
+        try {
+            if (!$statement->execute()) throw new RuntimeException('Không thể truy vấn dữ liệu lỗi của khoa.');
+            $result = $statement->get_result();
+            if (!$result) throw new RuntimeException('Không thể tải dữ liệu lỗi của khoa.');
+            $files = array();
+            while ($file = $result->fetch_assoc()) $files[] = $file;
+            $result->free();
+            return self::buildHosoExportErrors($files, $period);
+        } finally {
+            $statement->close();
+        }
+    }
+
+    /** Chỉ đếm lỗi thật (không đếm warning); nhóm theo XML + trường + nội dung + quy tắc. */
+    public static function buildHosoExportErrors(array $files, $period)
+    {
+        if ($period !== 'day' && $period !== 'month') {
+            throw new RuntimeException('Hình thức xuất Excel không hợp lệ.');
+        }
+        $rows = array();
+        $seen = array();
+        foreach ($files as $file) {
+            $validation = json_decode((string) ($file['validation_result'] ?? ''), true);
+            if (!is_array($validation)) continue;
+            $updateDate = substr((string) ($file['update_at'] ?? ''), 0, 10);
+            foreach ($validation as $group) {
+                if (!is_array($group)) continue;
+                $xml = (string) ($group['file_type'] ?? '');
+                $groupErrors = isset($group['errors']) && is_array($group['errors']) ? $group['errors'] : array();
+                foreach ($groupErrors as $error) {
+                    if (!is_array($error) || strtolower((string) ($error['severity'] ?? 'error')) === 'warning') continue;
+                    $field = (string) ($error['field_name'] ?? '');
+                    $label = (string) ($error['display_name'] ?? '');
+                    $message = (string) ($error['message'] ?? 'Lỗi validation');
+                    $rule = isset($error['rule_id']) && is_scalar($error['rule_id']) ? (string) $error['rule_id'] : '';
+                    if ($period === 'day') {
+                        $value = $error['value'] ?? '';
+                        $rows[] = array(
+                            'ma_lk' => (string) ($file['ma_lk'] ?? ''),
+                            'ma_bn' => (string) ($file['ma_bn'] ?? ''),
+                            'xml' => $xml, 'field' => $field, 'display_name' => $label,
+                            'value' => is_scalar($value) ? (string) $value : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                            'error' => $message, 'huongxuly' => (string) ($error['huongxuly'] ?? ''),
+                            'rule_id' => $rule, 'update_date' => $updateDate
+                        );
+                        continue;
+                    }
+                    $key = json_encode(array($xml, $field, $label, $message, $rule), JSON_UNESCAPED_UNICODE);
+                    if (!isset($rows[$key])) {
+                        $rows[$key] = array('xml' => $xml, 'field' => $field, 'display_name' => $label,
+                            'error' => $message, 'rule_id' => $rule, 'total' => 0, 'file_count' => 0, 'days' => array());
+                    }
+                    $fileKey = (string) ($file['id'] ?? '') . ':' . $key;
+                    if (!isset($seen[$fileKey])) {
+                        // Một loại lỗi chỉ được tính một lần cho mỗi hồ sơ, tại ngày hồ sơ được cập nhật.
+                        $rows[$key]['total']++;
+                        $rows[$key]['days'][$updateDate] = ($rows[$key]['days'][$updateDate] ?? 0) + 1;
+                        $rows[$key]['file_count']++;
+                        $seen[$fileKey] = true;
+                    }
+                }
+            }
+        }
+        if ($period === 'month') {
+            $rows = array_values($rows);
+            usort($rows, function ($a, $b) {
+                return $b['total'] <=> $a['total'] ?: strcmp($a['xml'] . $a['field'] . $a['error'], $b['xml'] . $b['field'] . $b['error']);
+            });
+        }
+        return $rows;
+    }
+
+    /** Trả về hồ sơ nếu ID thực sự thuộc khoa đã cho; không có quyền admin bỏ qua. */
+    public function getByIdForKhoa($id, $idKhoa)
+    {
+        $statement = $this->connection->prepare(
+            'SELECT id, ten, ma_lk, ma_bn, ho_ten, thongtin_bn, file_path, processing_status, validation_result,
+                    id_khoa, da_day_cong, update_at
+             FROM `file` WHERE id = ? AND id_khoa = ? LIMIT 1'
+        );
+        if (!$statement) throw new RuntimeException('Không thể đọc hồ sơ.');
+        $statement->bind_param('is', $id, $idKhoa);
+        $statement->execute();
+        $result = $statement->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
+        $statement->close();
+        return $row ?: false;
+    }
+
+    /** Các hồ sơ chưa đẩy cổng trong ngày, phục vụ xóa tất cả theo khoa. */
+    public function getDeletableByKhoaDate($date, $idKhoa, $limit = 100)
+    {
+        $limit = max(1, min(500, (int) $limit));
+        $from = $date . ' 00:00:00';
+        $to = date('Y-m-d 00:00:00', strtotime($date . ' +1 day'));
+        $statement = $this->connection->prepare(
+            'SELECT id FROM `file`
+             WHERE id_khoa = ? AND update_at >= ? AND update_at < ? AND da_day_cong = 0
+             ORDER BY id ASC LIMIT ' . $limit
+        );
+        if (!$statement) throw new RuntimeException('Không thể lấy danh sách hồ sơ cần xóa.');
+        $statement->bind_param('sss', $idKhoa, $from, $to);
+        $statement->execute();
+        $result = $statement->get_result();
+        $ids = array();
+        while ($result && ($row = $result->fetch_assoc())) $ids[] = (int) $row['id'];
+        if ($result) $result->free();
+        $statement->close();
+        return $ids;
+    }
+
+    /** Điều kiện khoa/ngày/đã đẩy cổng được kiểm tra lại ngay khi DELETE. */
+    public function deleteOneForKhoaDate($id, $date, $idKhoa)
+    {
+        $from = $date . ' 00:00:00';
+        $to = date('Y-m-d 00:00:00', strtotime($date . ' +1 day'));
+        $statement = $this->connection->prepare(
+            'DELETE FROM `file` WHERE id = ? AND id_khoa = ?
+             AND update_at >= ? AND update_at < ? AND da_day_cong = 0'
+        );
+        if (!$statement) throw new RuntimeException('Không thể xóa hồ sơ.');
+        $statement->bind_param('isss', $id, $idKhoa, $from, $to);
+        if (!$statement->execute()) {
+            $statement->close();
+            throw new RuntimeException('Không thể xóa hồ sơ.');
+        }
+        $deleted = $statement->affected_rows > 0;
+        $statement->close();
+        if ($deleted) $this->clearFileListCache();
+        return $deleted;
+    }
+
     private function fileSummaryFromValidation($json, $patientInfoJson = null)
     {
         $summary = array(
             'ma_the_bhyt' => '',
+            'ngay_sinh' => '',
+            'gioi_tinh' => '',
+            'ma_so_bhxh' => '',
+            'dia_chi' => '',
             'ngay_vao' => '',
             'ngay_ra' => '',
             'error_count' => 0,
@@ -396,14 +695,22 @@ class FilePeer
             'total_amount' => 0
         );
         $patientInfo = json_decode((string) $patientInfoJson, true);
-        if (is_array($patientInfo) && isset($patientInfo['maThe']) && is_scalar($patientInfo['maThe'])) {
-            $summary['ma_the_bhyt'] = (string) $patientInfo['maThe'];
+        foreach (array('maThe' => 'ma_the_bhyt', 'ngaySinh' => 'ngay_sinh',
+            'gioiTinh' => 'gioi_tinh', 'maSoBHXH' => 'ma_so_bhxh',
+            'diaChi' => 'dia_chi') as $field => $target) {
+            if (is_array($patientInfo) && isset($patientInfo[$field]) && is_scalar($patientInfo[$field])) {
+                $summary[$target] = trim((string) $patientInfo[$field]);
+            }
         }
         $validation = json_decode((string) $json, true);
         if (!is_array($validation)) return $summary;
 
         $fieldMap = array(
             'MA_THE_BHYT' => 'ma_the_bhyt',
+            'NGAY_SINH' => 'ngay_sinh',
+            'GIOI_TINH' => 'gioi_tinh',
+            'MA_SO_BHXH' => 'ma_so_bhxh',
+            'DIA_CHI' => 'dia_chi',
             'NGAY_VAO' => 'ngay_vao',
             'NGAY_RA' => 'ngay_ra',
             'T_TONGCHI_BV' => 'total_amount'
@@ -432,6 +739,8 @@ class FilePeer
                         $summary['error_fields'] = implode(', ', $existing);
                     }
                     if (!isset($fieldMap[$fieldName])) continue;
+                    if (in_array($fieldName, array('MA_THE_BHYT', 'NGAY_SINH', 'GIOI_TINH', 'MA_SO_BHXH', 'DIA_CHI'), true)
+                        && strtoupper($fileType) !== 'XML1') continue;
                     $key = $fieldMap[$fieldName];
                     if ($summary[$key] === '' || $summary[$key] === 0) {
                         $summary[$key] = isset($field['value']) && is_scalar($field['value'])
@@ -446,7 +755,7 @@ class FilePeer
     public function getErrorReportRows($date, $to = null, $idKhoa = null)
     {
         $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
-        $sql = 'SELECT ma_lk, ma_bn, ngay_lap, processing_status, validation_result
+        $sql = 'SELECT ma_lk, ma_bn, ngay_lap, processing_status, validation_result, thongtin_bn
                 FROM `file`
                 WHERE update_at >= ? AND update_at < ?
                   AND validation_result IS NOT NULL AND validation_result <> \'\'';
@@ -470,7 +779,7 @@ class FilePeer
             $validation = json_decode($file['validation_result'], true);
             if (!is_array($validation)) continue;
             $documentDate = $this->formatDocumentDate($file['ngay_lap']);
-            $summary = $this->fileSummaryFromValidation($file['validation_result']);
+            $summary = $this->fileSummaryFromValidation($file['validation_result'], $file['thongtin_bn']);
 
             foreach ($validation as $validationItem) {
                 $errors = isset($validationItem['errors']) && is_array($validationItem['errors'])
@@ -507,7 +816,7 @@ class FilePeer
     public function getAllFileReportRows($date, $to = null, $idKhoa = null)
     {
         $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
-        $sql = 'SELECT ma_lk, ma_bn, ngay_lap, validation_result
+        $sql = 'SELECT ma_lk, ma_bn, ngay_lap, validation_result, thongtin_bn
                 FROM `file` WHERE update_at >= ? AND update_at < ?';
         if ($idKhoa !== null) $sql .= ' AND id_khoa = ?';
         $sql .= ' ORDER BY update_at DESC, id DESC';
@@ -520,7 +829,7 @@ class FilePeer
         if (!$result) throw new RuntimeException('Không thể tải dữ liệu tổng hợp file.');
         $rows = array();
         while ($file = $result->fetch_assoc()) {
-            $summary = $this->fileSummaryFromValidation($file['validation_result']);
+            $summary = $this->fileSummaryFromValidation($file['validation_result'], $file['thongtin_bn']);
             $rows[] = array(
                 'ma_lk' => (string) $file['ma_lk'], 'ma_bn' => (string) ($file['ma_bn'] ?: ''),
                 'ma_the_bhyt' => $summary['ma_the_bhyt'], 'ngay_vao' => $summary['ngay_vao'],
@@ -900,7 +1209,7 @@ class FilePeer
     {
         $statement = $this->connection->prepare(
             'SELECT id, ten, ma_lk, kichthuoc, file_path, processing_status,
-                    validation_result, id_khoa, da_day_cong, update_at, create_at
+                    thongtin_bn, validation_result, id_khoa, da_day_cong, update_at, create_at
              FROM `file` WHERE id = ? LIMIT 1'
         );
         if (!$statement) {
