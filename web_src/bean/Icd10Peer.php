@@ -20,7 +20,7 @@ class Icd10Peer
     public function getPage($start, $length, $search)
     {
         $start = max(0, (int) $start);
-        $length = (int) $length;
+        $length = max(10, min(200, (int) $length));
         $search = trim((string) $search);
 
         $total = (int) $this->connection->query('SELECT COUNT(*) AS total FROM icd10')->fetch_assoc()['total'];
@@ -37,7 +37,7 @@ class Icd10Peer
             $filtered = $total;
         }
 
-        $limit = $length < 0 ? '' : ' LIMIT ' . $start . ', ' . max(1, $length);
+        $limit = ' LIMIT ' . $start . ', ' . $length;
         $sql = 'SELECT code, display_vi, display_en, level, parent_code, chapter_code,
                        chapter_id, section_id, type_code, is_leaf, is_active, coding_guidance
                 FROM icd10' . $where . ' ORDER BY code ASC' . $limit;
