@@ -7,6 +7,11 @@ class FakeBhytCardFilePeer
     public $savedArguments;
     public $existing = false;
 
+    public function getUploadQueueMetadata($fileName)
+    {
+        return array('id_khoa' => 'K01', 'username' => 'import_test');
+    }
+
     public function resolveRootKhoaCode($code)
     {
         return $code;
@@ -75,6 +80,9 @@ foreach ($lookupCases as $case => $lookup) {
         }
         if ($result['status'] !== ($reimport ? 'reimported' : 'imported')) {
             throw new RuntimeException('Unexpected status for ' . $case);
+        }
+        if (!isset($result['upload_username']) || $result['upload_username'] !== 'import_test') {
+            throw new RuntimeException('Upload username was not preserved for audit logging');
         }
         if (strpos($case, 'succeeds') !== false && $patientInfo['gioiTinh'] !== 'Nam') {
             throw new RuntimeException('Other BHYT lookup details were lost');

@@ -47,6 +47,9 @@ class XmlFileImportService
     public function importContent($fileName, $content, $size, $filePath, $decodedResult = null)
     {
         $fileName = $this->normalizeFileName($fileName);
+        $uploadMetadata = method_exists($this->filePeer, 'getUploadQueueMetadata')
+            ? $this->filePeer->getUploadQueueMetadata($fileName)
+            : array('id_khoa' => null, 'username' => null);
         $size = (int) $size;
         if ($size <= 0 || $size > $this->maxFileSize) {
             throw new RuntimeException('File XML phải có dung lượng từ 1 byte đến 5 MB.');
@@ -163,7 +166,9 @@ class XmlFileImportService
                 'name' => $fileName,
                 'validation' => $validationResult,
                 'old_file_path' => $existing['file_path'],
-                'old_file' => $existing
+                'old_file' => $existing,
+                'id_khoa' => $idKhoa,
+                'upload_username' => isset($uploadMetadata['username']) ? $uploadMetadata['username'] : null
             );
         }
         $id = $this->filePeer->insert(
@@ -185,7 +190,9 @@ class XmlFileImportService
             'id' => $id,
             'ma_lk' => $maLk,
             'name' => $fileName,
-            'validation' => $validationResult
+            'validation' => $validationResult,
+            'id_khoa' => $idKhoa,
+            'upload_username' => isset($uploadMetadata['username']) ? $uploadMetadata['username'] : null
         );
     }
 

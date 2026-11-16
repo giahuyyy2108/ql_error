@@ -114,7 +114,11 @@ class fileAction
             return $this->json(array('data' => array(), 'error' => 'Ngày được chọn không hợp lệ.'));
         }
         try {
-            return $this->json(array('data' => $this->filePeer->getList($date)));
+            $search = $this->request->getParameter('search', false);
+            if (!is_string($search) || strlen($search) > 1000) {
+                throw new RuntimeException('Từ khóa tìm kiếm không hợp lệ hoặc quá dài.');
+            }
+            return $this->json(array('data' => $this->filePeer->getList($date, $search)));
         } catch (RuntimeException $exception) {
             return $this->json(array('data' => array(), 'error' => $exception->getMessage()));
         }
@@ -364,25 +368,55 @@ class fileAction
         $fromValue = trim((string) $this->request->getParameter('from_date', false));
         $toValue = trim((string) $this->request->getParameter('to_date', false));
         $reportScope = trim((string) $this->request->getParameter('report_scope', 'hospital'));
-        $reportKhoa = (int) $this->request->getParameter('report_khoa', 0);
+        $reportKhoa = trim((string) $this->request->getParameter('report_khoa', ''));
         $month = $period === 'month' ? DateTime::createFromFormat('!Y-m', $value) : false;
-        $date = $month ? $month->format('Y-m-01') : ($fromValue !== '' ? $fromValue : $this->selectedDate());
-        if ($date === null) {
-            return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
+        $date = null;
+        $to = null;
+        if ($period === 'range') {
+            $fromDate = DateTime::createFromFormat('!Y-m-d', $fromValue);
+            $endDate = DateTime::createFromFormat('!Y-m-d', $toValue);
+            if (!$fromDate || $fromDate->format('Y-m-d') !== $fromValue
+                || !$endDate || $endDate->format('Y-m-d') !== $toValue
+                || $fromDate > $endDate) {
+                return $this->json(array('success' => false, 'message' => 'Khoảng ngày được chọn không hợp lệ.'));
+            }
+            $date = $fromDate->format('Y-m-d');
+            $to = (clone $endDate)->modify('+1 day')->format('Y-m-d');
+        } elseif ($period === 'month') {
+            if (!$month || $month->format('Y-m') !== $value) {
+                return $this->json(array('success' => false, 'message' => 'Tháng được chọn không hợp lệ.'));
+            }
+            $date = $month->format('Y-m-01');
+            $to = (clone $month)->modify('+1 month')->format('Y-m-01');
+        } else {
+            $date = $this->selectedDate();
+            if ($date === null) {
+                return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
+            }
         }
         try {
-            $to = $month ? (clone $month)->modify('+1 month')->format('Y-m-01') : null;
-            if (!$month && $toValue !== '') {
+            if ($period !== 'range' && !$month && $toValue !== '') {
                 $end = DateTime::createFromFormat('!Y-m-d', $toValue);
-                if (!$end) return $this->json(array('success' => false, 'message' => 'Khoảng ngày không hợp lệ.'));
+                if (!$end || $end->format('Y-m-d') !== $toValue) return $this->json(array('success' => false, 'message' => 'Khoảng ngày không hợp lệ.'));
                 $to = $end->modify('+1 day')->format('Y-m-d');
             }
             $idKhoa = null;
-            if ($reportScope === 'khoa' && $reportKhoa > 0 && isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1) {
-                $idKhoa = $reportKhoa;
-            } elseif (!isset($_SESSION['AdminType']) || (int) $_SESSION['AdminType'] !== 1) {
+            $isAdmin = isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1;
+            if ($reportScope === 'khoa' && $isAdmin) {
+                if ($reportKhoa === '' || $reportKhoa === '0') {
+                    return $this->json(array('success' => false, 'message' => 'Vui lòng chọn khoa cần thống kê.'));
+                }
+                $khoa = $this->filePeer->getKhoaByCode($reportKhoa);
+                if (!$khoa) {
+                    return $this->json(array('success' => false, 'message' => 'Mã khoa được chọn không hợp lệ.'));
+                }
+                $idKhoa = $khoa['ma'];
+            } elseif (!$isAdmin) {
                 $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : '';
                 $idKhoa = $this->filePeer->getCurrentUserKhoa($username);
+                if ($idKhoa === null || trim((string) $idKhoa) === '') {
+                    return $this->json(array('success' => false, 'message' => 'Tài khoản chưa được gán khoa.'));
+                }
             }
             $rows = $this->filePeer->getErrorReportRows($date, $to, $idKhoa);
             $files = $this->filePeer->getAllFileReportRows($date, $to, $idKhoa);
@@ -662,6 +696,7 @@ class fileAction
     private function deleteFiles(array $ids)
     {
         $moves = array();
+        $deletedPaths = array();
         try {
             $files = array();
             foreach ($ids as $id) {
@@ -683,11 +718,16 @@ class fileAction
                         : null;
                     $move = $this->fileStorage->moveToDeleted($source, $deleteOutputPath);
                     $moves[] = $move;
+                    $deletedPaths[(int) $file['id']] = $this->fileStorage->relativeToProject($move['destination']);
                 } catch (RuntimeException $ignored) {
                     // A missing physical file must not prevent removal of a stale DB row.
                 }
             }
-            $deleted = $this->filePeer->deleteMany($ids);
+            $deleted = $this->filePeer->deleteMany(
+                $ids,
+                isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : null,
+                $deletedPaths
+            );
             return $deleted;
         } catch (RuntimeException $exception) {
             foreach (array_reverse($moves) as $move) {

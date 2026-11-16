@@ -404,6 +404,22 @@ $logValidationErrors = function ($fileName, array $validation) use ($log) {
     }
 };
 
+$validationErrorDetail = function (array $validation) {
+    $details = array();
+    foreach ($validation as $validationItem) {
+        $errors = isset($validationItem['errors']) && is_array($validationItem['errors'])
+            ? $validationItem['errors'] : array();
+        foreach ($errors as $error) {
+            if (isset($error['severity']) && $error['severity'] === 'warning') continue;
+            $field = isset($error['field_name']) ? trim((string) $error['field_name']) : '';
+            $message = isset($error['message']) ? trim((string) $error['message']) : 'Lỗi validation';
+            $detail = ($field !== '' ? $field . ': ' : '') . preg_replace('/\s+/', ' ', $message);
+            if (!in_array($detail, $details, true)) $details[] = $detail;
+        }
+    }
+    return empty($details) ? null : implode(PHP_EOL, $details);
+};
+
 $lastCleanup = 0;
 $cleanupDeleted = function () use ($deletedDir, $runtimeLogsRoot, $options, $log, &$lastCleanup) {
     $now = time();
@@ -486,7 +502,6 @@ $process = function ($path) use (
     &$importService,
     &$filePeer,
     $projectRoot,
-    $inboxDir,
     $processedDir,
     $failedDir,
     $deletedDir,
@@ -497,6 +512,7 @@ $process = function ($path) use (
     $fileStorage,
     $log,
     $logValidationErrors,
+    $validationErrorDetail,
     $resetDatabase
 ) {
     $processStartedAt = microtime(true);
@@ -588,62 +604,59 @@ $process = function ($path) use (
                 $validationFailed ? 'failed' : 'processed'
             );
         }
+        // Archive the previous version before placing the new XML in an error
+        // folder. Otherwise a same-name import can replace the previous file.
         if ($result['status'] === 'reimported' && !empty($result['old_file_path'])) {
-            $oldErrors = isset($result['old_file']['validation_result'])
-                ? $result['old_file']['validation_result'] : null;
-            $oldErrorList = array();
-            $oldValidation = json_decode((string) $oldErrors, true);
-            if (is_array($oldValidation)) {
-                foreach ($oldValidation as $validationItem) {
-                    foreach ((isset($validationItem['errors']) && is_array($validationItem['errors']) ? $validationItem['errors'] : array()) as $error) {
-                        $message = isset($error['message']) ? (string) $error['message'] : 'Lỗi validation';
-                        $field = isset($error['field_name']) ? (string) $error['field_name'] : '';
-                        $oldErrorList[] = $field !== '' ? $field . ': ' . $message : $message;
-                    }
-                }
-            }
-            $oldErrors = $oldErrorList ? implode(PHP_EOL, $oldErrorList) : (string) $oldErrors;
-            $filePeer->saveAuditLog($result['id'], $result['ma_lk'], $result['name'], 'UPDATE', $result['old_file_path'], $finalStoredPath, $oldErrors);
-            $oldPath = preg_match('/^[A-Za-z]:[\\\\\/]/', $result['old_file_path']) === 1
+            $absoluteOldPath = preg_match('/^[A-Za-z]:[\\\\\/]/', $result['old_file_path']) === 1
+                || substr($result['old_file_path'], 0, 1) === '\\'
+                || substr($result['old_file_path'], 0, 2) === '//';
+            $oldPath = $absoluteOldPath
                 ? $result['old_file_path']
                 : $projectRoot . DIRECTORY_SEPARATOR
                     . str_replace('/', DIRECTORY_SEPARATOR, $result['old_file_path']);
             $resolvedOldPath = realpath($oldPath);
-            if ($resolvedOldPath === false) {
-                $search = new RecursiveIteratorIterator(
-                    new RecursiveDirectoryIterator($inboxDir, FilesystemIterator::SKIP_DOTS)
-                );
-                foreach ($search as $candidate) {
-                    if ($candidate->isFile() && strcasecmp($candidate->getFilename(), basename($oldPath)) === 0) {
-                        $resolvedOldPath = $candidate->getRealPath();
-                        break;
-                    }
-                }
-            }
-            if ($resolvedOldPath !== false && is_file($resolvedOldPath)
-                && strcasecmp($resolvedOldPath, $finalPath) !== 0) {
+            if ($resolvedOldPath === false || !is_file($resolvedOldPath)) {
+                $log('Không tìm thấy phiên bản XML cũ tại đường dẫn đã lưu: '
+                    . $result['old_file_path'], 'WARNING');
+            } elseif (strcasecmp(str_replace('\\', '/', $resolvedOldPath), str_replace('\\', '/', $finalPath)) !== 0
+                && strcasecmp(str_replace('\\', '/', $resolvedOldPath), str_replace('\\', '/', $path)) !== 0) {
                 $archiveDateDir = $archiveDir . DIRECTORY_SEPARATOR . date('Ymd');
                 if (!is_dir($archiveDateDir) && !mkdir($archiveDateDir, 0775, true) && !is_dir($archiveDateDir)) {
                     throw new RuntimeException('Không thể tạo thư mục lưu phiên bản cũ.');
                 }
                 $archiveBase = pathinfo(basename($resolvedOldPath), PATHINFO_FILENAME)
                     . '_' . date('Ymd_His') . '.xml';
-                $deletedPath = $uniqueDestination($archiveDateDir, $archiveBase);
-                if (rename($resolvedOldPath, $deletedPath)) {
-                    touch($deletedPath);
-                    $filePeer->saveFileHistory($result['old_file'], $deletedPath);
-                    $oldErrorPath = $resolvedOldPath . '.error.txt';
-                    if (is_file($oldErrorPath)) {
-                        $deletedErrorPath = $deletedPath . '.error.txt';
-                        if (rename($oldErrorPath, $deletedErrorPath)) {
-                            touch($deletedErrorPath);
-                        }
+                $archivedPath = $uniqueDestination($archiveDateDir, $archiveBase);
+                if (!rename($resolvedOldPath, $archivedPath)) {
+                    throw new RuntimeException('Không thể lưu phiên bản XML cũ: ' . $resolvedOldPath);
+                }
+                touch($archivedPath);
+                try {
+                    $filePeer->saveFileHistory(
+                        $result['old_file'],
+                        $archivedPath,
+                        isset($result['upload_username']) ? $result['upload_username'] : null
+                    );
+                } catch (Throwable $exception) {
+                    // If history persistence fails, restore the former XML
+                    // instead of leaving an untracked archived version.
+                    if (!file_exists($resolvedOldPath) && !@rename($archivedPath, $resolvedOldPath)) {
+                        $log('Không thể khôi phục phiên bản XML cũ: ' . $archivedPath, 'ERROR');
+                    }
+                    throw $exception;
+                }
+                $oldErrorPath = $resolvedOldPath . '.error.txt';
+                if (is_file($oldErrorPath)) {
+                    $archivedErrorPath = $archivedPath . '.error.txt';
+                    if (rename($oldErrorPath, $archivedErrorPath)) {
+                        touch($archivedErrorPath);
                     }
                 }
             }
         }
+        $errorCount = 0;
+        $currentErrorDetail = null;
         if ($validationFailed) {
-            $errorCount = 0;
             foreach ($result['validation'] as $validationItem) {
                 $errorCount += isset($validationItem['error_count']) ? (int) $validationItem['error_count'] : 0;
             }
@@ -660,17 +673,31 @@ $process = function ($path) use (
                 $result['name']
             );
             if (!empty($organizedPaths)) {
-                $organizedStoredPath = $fileStorage->relativeToProject($organizedPaths[0]);
-                $filePeer->updateStorageLocation($result['id'], $organizedStoredPath, 'failed');
+                $finalPath = $organizedPaths[0];
+                $finalStoredPath = $fileStorage->relativeToProject($finalPath);
+                $filePeer->updateStorageLocation($result['id'], $finalStoredPath, 'failed');
             }
+            $currentErrorDetail = $validationErrorDetail($result['validation']);
+        }
+
+        $khoa = $filePeer->getKhoaByCode($idKhoa);
+        $filePeer->saveAuditLog(
+            $result['id'],
+            $result['ma_lk'],
+            $result['name'],
+            $result['status'] === 'reimported' ? 'UPDATE' : 'CREATE',
+            $result['status'] === 'reimported' ? $result['old_file_path'] : null,
+            $finalStoredPath,
+            $currentErrorDetail,
+            isset($result['upload_username']) ? $result['upload_username'] : null,
+            $khoa ? $khoa['ten'] : null
+        );
+
+        if ($validationFailed) {
             $log('File không đạt validation (' . $errorCount . ' lỗi): ' . $result['name']
                 . ' (thời gian ' . number_format(microtime(true) - $processStartedAt, 3) . 's)', 'WARNING');
             $logValidationErrors($result['name'], $result['validation']);
             return;
-        }
-        $staleErrorPath = $datedFailedDir . DIRECTORY_SEPARATOR . $result['name'] . '.error.txt';
-        if (is_file($staleErrorPath)) {
-            unlink($staleErrorPath);
         }
         if ($result['status'] === 'reimported') {
             $log('Đã import và quét lại MA_LK ' . $result['ma_lk'] . ': ' . $result['name']
@@ -722,8 +749,10 @@ $revalidatePending = function () use (
     foreach ($pendingFiles as $file) {
         $currentStoredPath = $file['file_path'];
         $workingPath = null;
+        $lastPhysicalPath = null;
         try {
             $source = $fileStorage->resolveStoredFilePath($currentStoredPath);
+            $lastPhysicalPath = $source;
 
             $workingPath = $uniqueDestination($processingDir, basename($source));
             if (!function_exists('link') || !@link($source, $workingPath)) {
@@ -757,6 +786,7 @@ $revalidatePending = function () use (
                 if (!rename($source, $finalPath)) {
                     throw new RuntimeException('Không thể chuyển file sau khi quét lại.');
                 }
+                $lastPhysicalPath = $finalPath;
             }
 
             $oldErrorPath = $source . '.error.txt';
@@ -777,7 +807,10 @@ $revalidatePending = function () use (
                     true,
                     $file['ten']
                 );
-                if (!empty($organizedPaths)) $finalPath = $organizedPaths[0];
+                if (!empty($organizedPaths)) {
+                    $finalPath = $organizedPaths[0];
+                    $lastPhysicalPath = $finalPath;
+                }
             } else {
                 if (is_file($oldErrorPath)) @unlink($oldErrorPath);
                 if ($newErrorPath !== $oldErrorPath && is_file($newErrorPath)) @unlink($newErrorPath);
@@ -790,7 +823,15 @@ $revalidatePending = function () use (
             if ($errorCount > 0) $logValidationErrors($file['ten'], $validation);
         } catch (Throwable $exception) {
             try {
-                $filePeer->updateStorageLocation($file['id'], $currentStoredPath, 'failed');
+                // A failed DB update must not restore a path whose XML has
+                // already been moved to another directory.
+                if ($lastPhysicalPath !== null && is_file($lastPhysicalPath)) {
+                    $filePeer->updateStorageLocation(
+                        $file['id'],
+                        $fileStorage->relativeToProject($lastPhysicalPath),
+                        'failed'
+                    );
+                }
             } catch (Throwable $ignored) {
             }
             $log('Quét lại thất bại ' . $file['ten'] . ': ' . $exception->getMessage(), 'ERROR');

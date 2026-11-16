@@ -65,7 +65,7 @@
             <div class="col-md-8 col-sm-9 col-xs-12">
                 <div class="input-group">
                     <input type="search" id="file-search" class="form-control"
-                           placeholder="Nhập mã BN, mã thẻ BHYT, thời gian điều trị hoặc số tiền..."
+                           placeholder="Tìm tất cả ngày: mã BN, mã thẻ BHYT, thời gian điều trị..."
                            autocomplete="off" aria-label="Tìm kiếm file XML">
                     <span class="input-group-btn">
                         <button type="button" id="btn-search-file" class="btn btn-primary">

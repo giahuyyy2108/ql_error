@@ -67,7 +67,7 @@
             </div>
             <div class="modal-body audit-panel" id="audit-panel" style="display:none">
                 <div class="audit-panel-heading"><i class="fa fa-history"></i><div><h4>Lịch sử xử lý hồ sơ</h4><p>Theo dõi các lần cập nhật và lỗi của hồ sơ này.</p></div></div>
-                <div class="audit-table-wrap"><table class="table audit-table"><thead><tr><th>Thời gian</th><th>Thao tác</th><th>Người dùng</th><th>Khoa</th><th>Tên file</th><th>Đường dẫn file</th><th>Chi tiết lỗi</th></tr></thead><tbody id="audit-list"></tbody></table></div>
+                <div class="audit-table-wrap"><table class="table audit-table"><thead><tr><th>Thời gian</th><th>Thao tác</th><th>Người dùng</th><th>Khoa</th><th>Chi tiết lỗi</th></tr></thead><tbody id="audit-list"></tbody></table></div>
             </div>
             <div class="modal-footer">
                 <button type="button" id="btn-export-view-excel" class="btn btn-primary" disabled>

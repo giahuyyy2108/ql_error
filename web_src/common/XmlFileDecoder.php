@@ -94,7 +94,17 @@ class XmlFileDecoder
             throw new RuntimeException('Không tìm thấy DANHSACHHOSO trong file XML.');
         }
 
-        $hoSoNodes = $danhSachNodes[0]->xpath('./*[local-name()="HOSO"]');
+        // Một số file giám định chứa DANHSACHHOSO lồng nhau: thẻ ngoài
+        // chỉ bọc GIAMDINHHS, còn các HOSO nằm trực tiếp trong thẻ trong.
+        // Chọn thẻ thật sự chứa HOSO, tương tự bộ đọc XMLReader khi import.
+        $hoSoNodes = array();
+        foreach ($danhSachNodes as $danhSachNode) {
+            $children = $danhSachNode->xpath('./*[local-name()="HOSO"]');
+            if ($children) {
+                $hoSoNodes = $children;
+                break;
+            }
+        }
         if (!$hoSoNodes) {
             throw new RuntimeException('DANHSACHHOSO không có phần tử HOSO.');
         }

@@ -300,7 +300,13 @@ class hosoAction
             $source = $storage->resolveStoredFilePath($file['file_path']);
             $outputPath = $this->filePeer->getKhoaOutputPath($khoa);
             $move = $storage->moveToDeleted($source, $outputPath);
-            $deleted = $this->filePeer->deleteOneForKhoaDate($id, $date, $khoa);
+            $deleted = $this->filePeer->deleteOneForKhoaDate(
+                $id,
+                $date,
+                $khoa,
+                isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : null,
+                $storage->relativeToProject($move['destination'])
+            );
             if (!$deleted) $this->restoreMove($move);
             return $deleted;
         } catch (Throwable $e) {

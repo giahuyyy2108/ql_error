@@ -11,6 +11,11 @@ class baocaoAction extends fileAction
         if ($result) while ($row = $result->fetch_assoc()) $rows[] = $row;
         $this->request->setAttribute('reportKhoaList', $rows);
         $this->request->setModel('www/baocao/index.php');
+        $this->request->setAttribute(
+            'css',
+            '<link href="' . _DEFAULT_URL_ . 'css/file.css?' . _DEFAULT_VERSION_JS_CSS_
+            . '&amp;v=' . filemtime(dirname(__DIR__, 2) . '/css/file.css') . '" rel="stylesheet">'
+        );
         $this->request->setAttribute('script', '<script src="' . _DEFAULT_URL_ . 'js/file.js?' . _DEFAULT_VERSION_JS_CSS_ . '&amp;v=' . filemtime(dirname(__DIR__, 2) . '/js/file.js') . '"></script><script src="' . _DEFAULT_URL_ . 'js/baocao.js?' . _DEFAULT_VERSION_JS_CSS_ . '&amp;v=' . filemtime(dirname(__DIR__, 2) . '/js/baocao.js') . '"></script>');
         return true;
     }

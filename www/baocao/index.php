@@ -11,12 +11,25 @@
                     <select id="report-type" class="form-control">
                         <option value="day">Theo ngày</option>
                         <option value="month">Theo tháng</option>
+                        <option value="range">Từ ngày - đến ngày</option>
                     </select>
                 </div>
-                <div class="col-sm-3 col-md-2">
+                <div id="report-single-time-wrap" class="col-sm-3 col-md-2">
                     <label for="report-date">Thời gian</label>
                     <input id="report-date" type="text" class="form-control" autocomplete="off">
                     <input id="report-month" type="text" class="form-control" style="display:none" autocomplete="off">
+                </div>
+                <div id="report-range-wrap" class="col-sm-6 col-md-4" style="display:none">
+                    <div class="row">
+                        <div class="col-xs-6">
+                            <label for="report-from-date">Từ ngày</label>
+                            <input id="report-from-date" type="text" class="form-control" autocomplete="off">
+                        </div>
+                        <div class="col-xs-6">
+                            <label for="report-to-date">Đến ngày</label>
+                            <input id="report-to-date" type="text" class="form-control" autocomplete="off">
+                        </div>
+                    </div>
                 </div>
                 <div class="col-sm-3 col-md-2">
                     <label for="report-scope">Phạm vi</label>
@@ -46,6 +59,26 @@
             </div>
         </section>
 
+        <section class="file-statistics-section" aria-label="Thống kê trạng thái hồ sơ">
+            <div class="file-statistics-header">
+                <h3>Thống kê theo báo cáo</h3>
+            </div>
+            <div class="file-statistics report-file-statistics">
+                <div class="file-stat-card file-stat-total">
+                    <i class="fa fa-files-o" aria-hidden="true"></i>
+                    <div><strong id="report-stat-total">0</strong><span>Tổng file</span></div>
+                </div>
+                <div class="file-stat-card file-stat-success">
+                    <i class="fa fa-check-circle" aria-hidden="true"></i>
+                    <div><strong id="report-stat-fixed">0</strong><span>Đã sửa</span></div>
+                </div>
+                <div class="file-stat-card file-stat-failed">
+                    <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
+                    <div><strong id="report-stat-unfixed">0</strong><span>Chưa sửa</span></div>
+                </div>
+            </div>
+        </section>
+
         <section class="report-card report-chart-card">
             <div class="chart-container">
                 <canvas id="report-error-chart"></canvas>
@@ -55,6 +88,6 @@
             <div id="report-file-list" class="report-file-list"></div>
         </section>
 
-        <!-- <div id="report-message" class="alert alert-info report-message">Chọn thời gian và chức năng cần thực hiện.</div> -->
+        <div id="report-message" class="alert alert-info report-message">Chọn thời gian và chức năng cần thực hiện.</div>
     </div>
 </div>

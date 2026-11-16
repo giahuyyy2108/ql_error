@@ -188,6 +188,26 @@ class FilePeer
         return true;
     }
 
+    public function getUploadQueueMetadata($fileName)
+    {
+        $statement = $this->connection->prepare(
+            'SELECT id_khoa, username FROM `xml_upload_queue` WHERE file_name = ? LIMIT 1'
+        );
+        if (!$statement) {
+            throw new RuntimeException('Không thể đọc thông tin người tải file.');
+        }
+        $fileName = basename((string) $fileName);
+        $statement->bind_param('s', $fileName);
+        $statement->execute();
+        $row = $statement->get_result()->fetch_assoc();
+        $statement->close();
+
+        return $row ? array(
+            'id_khoa' => $row['id_khoa'] !== null ? (string) $row['id_khoa'] : null,
+            'username' => $row['username'] !== null ? (string) $row['username'] : null
+        ) : array('id_khoa' => null, 'username' => null);
+    }
+
     public function removeUploadQueue($fileName)
     {
         $statement = $this->connection->prepare(
@@ -361,8 +381,9 @@ class FilePeer
     // Danh sách file và dữ liệu báo cáo
     // ---------------------------------------------------------------------
 
-    public function getList($date)
+    public function getList($date, $search = '')
     {
+        $search = trim((string) $search);
         $isAdmin = isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1;
         $userKhoa = null;
         $filterByKhoa = false;
@@ -379,30 +400,52 @@ class FilePeer
                 $filterByKhoa = true;
             }
             $userStatement->close();
+            if (!$filterByKhoa || trim($userKhoa) === '') {
+                return array();
+            }
         }
 
-        $cachePath = $this->fileListCachePath($date, $filterByKhoa ? $userKhoa : 'admin');
-        if (is_file($cachePath) && (time() - (int) @filemtime($cachePath)) < 60) {
+        $cachePath = $search === '' ? $this->fileListCachePath($date, $filterByKhoa ? $userKhoa : 'admin') : null;
+        if ($cachePath !== null && is_file($cachePath) && (time() - (int) @filemtime($cachePath)) < 60) {
             $cached = json_decode((string) @file_get_contents($cachePath), true);
             if (is_array($cached)) return $cached;
         }
 
         $sql = 'SELECT id, ten, ma_lk, ma_bn, ho_ten, thongtin_bn, kichthuoc, processing_status, da_day_cong,
                        validation_result, update_at, create_at
-                FROM `file`
-                WHERE update_at >= ? AND update_at < ?'
-                . ($filterByKhoa ? ' AND id_khoa = ?' : '') . '
-                ORDER BY da_day_cong ASC, update_at DESC, id DESC';
+                FROM `file` WHERE ';
+        if ($search !== '') {
+            // Có từ khóa: tìm trong mọi ngày; điều kiện khoa vẫn được áp dụng bên dưới.
+            $sql .= "(ma_bn LIKE ? ESCAPE '!'
+                     OR ma_lk LIKE ? ESCAPE '!'
+                     OR ho_ten LIKE ? ESCAPE '!'
+                     OR ten LIKE ? ESCAPE '!'
+                     OR thongtin_bn COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '!'
+                     OR validation_result COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '!')";
+        } else {
+            $sql .= 'update_at >= ? AND update_at < ?';
+        }
+        if ($filterByKhoa) $sql .= ' AND id_khoa = ?';
+        $sql .= ' ORDER BY da_day_cong ASC, update_at DESC, id DESC';
         $statement = $this->connection->prepare($sql);
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị danh sách file.');
         }
-        $dateFrom = $date . ' 00:00:00';
-        $dateTo = date('Y-m-d 00:00:00', strtotime($date . ' +1 day'));
-        if ($filterByKhoa) {
-            $statement->bind_param('sss', $dateFrom, $dateTo, $userKhoa);
+        if ($search !== '') {
+            $term = '%' . str_replace(array('!', '%', '_'), array('!!', '!%', '!_'), $search) . '%';
+            if ($filterByKhoa) {
+                $statement->bind_param('sssssss', $term, $term, $term, $term, $term, $term, $userKhoa);
+            } else {
+                $statement->bind_param('ssssss', $term, $term, $term, $term, $term, $term);
+            }
         } else {
-            $statement->bind_param('ss', $dateFrom, $dateTo);
+            $dateFrom = $date . ' 00:00:00';
+            $dateTo = date('Y-m-d 00:00:00', strtotime($date . ' +1 day'));
+            if ($filterByKhoa) {
+                $statement->bind_param('sss', $dateFrom, $dateTo, $userKhoa);
+            } else {
+                $statement->bind_param('ss', $dateFrom, $dateTo);
+            }
         }
         $statement->execute();
         $result = $statement->get_result();
@@ -438,7 +481,9 @@ class FilePeer
         $result->free();
         $statement->close();
 
-        @file_put_contents($cachePath, json_encode($files, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        if ($cachePath !== null) {
+            @file_put_contents($cachePath, json_encode($files, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        }
         return $files;
     }
 
@@ -659,24 +704,56 @@ class FilePeer
     }
 
     /** Điều kiện khoa/ngày/đã đẩy cổng được kiểm tra lại ngay khi DELETE. */
-    public function deleteOneForKhoaDate($id, $date, $idKhoa)
+    public function deleteOneForKhoaDate($id, $date, $idKhoa, $username = null, $deletedPath = null)
     {
         $from = $date . ' 00:00:00';
         $to = date('Y-m-d 00:00:00', strtotime($date . ' +1 day'));
-        $statement = $this->connection->prepare(
-            'DELETE FROM `file` WHERE id = ? AND id_khoa = ?
-             AND update_at >= ? AND update_at < ? AND da_day_cong = 0'
-        );
-        if (!$statement) throw new RuntimeException('Không thể xóa hồ sơ.');
-        $statement->bind_param('isss', $id, $idKhoa, $from, $to);
-        if (!$statement->execute()) {
+        $this->connection->begin_transaction();
+        try {
+            $select = $this->connection->prepare(
+                'SELECT f.id, f.ten, f.ma_lk, f.file_path, kp.ten AS khoa_name
+                 FROM `file` f
+                 LEFT JOIN `khoa_phong` kp ON kp.ma = f.id_khoa
+                 WHERE f.id = ? AND f.id_khoa = ?
+                   AND f.update_at >= ? AND f.update_at < ? AND f.da_day_cong = 0
+                 LIMIT 1 FOR UPDATE'
+            );
+            if (!$select) throw new RuntimeException('Không thể đọc hồ sơ cần xóa.');
+            $select->bind_param('isss', $id, $idKhoa, $from, $to);
+            $select->execute();
+            $file = $select->get_result()->fetch_assoc();
+            $select->close();
+            if (!$file) {
+                $this->connection->rollback();
+                return false;
+            }
+
+            $this->saveAuditLog(
+                (int) $file['id'],
+                (string) $file['ma_lk'],
+                (string) $file['ten'],
+                'DELETE',
+                (string) $file['file_path'],
+                $deletedPath,
+                null,
+                $username,
+                $file['khoa_name'] !== null ? (string) $file['khoa_name'] : null
+            );
+            $statement = $this->connection->prepare('DELETE FROM `file` WHERE id = ?');
+            if (!$statement) throw new RuntimeException('Không thể xóa hồ sơ.');
+            $statement->bind_param('i', $id);
+            if (!$statement->execute() || $statement->affected_rows !== 1) {
+                $statement->close();
+                throw new RuntimeException('Không thể xóa hồ sơ.');
+            }
             $statement->close();
-            throw new RuntimeException('Không thể xóa hồ sơ.');
+            $this->connection->commit();
+        } catch (Throwable $exception) {
+            $this->connection->rollback();
+            throw $exception;
         }
-        $deleted = $statement->affected_rows > 0;
-        $statement->close();
-        if ($deleted) $this->clearFileListCache();
-        return $deleted;
+        $this->clearFileListCache();
+        return true;
     }
 
     private function fileSummaryFromValidation($json, $patientInfoJson = null)
@@ -816,10 +893,17 @@ class FilePeer
     public function getAllFileReportRows($date, $to = null, $idKhoa = null)
     {
         $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
-        $sql = 'SELECT ma_lk, ma_bn, ngay_lap, validation_result, thongtin_bn
-                FROM `file` WHERE update_at >= ? AND update_at < ?';
-        if ($idKhoa !== null) $sql .= ' AND id_khoa = ?';
-        $sql .= ' ORDER BY update_at DESC, id DESC';
+        $sql = 'SELECT f.ma_lk, f.ma_bn, f.ngay_lap, f.processing_status, f.validation_result, f.thongtin_bn,
+                       (SELECT l.error_detail
+                          FROM file_audit_logs l
+                         WHERE l.ma_lk COLLATE utf8mb4_unicode_ci = f.ma_lk COLLATE utf8mb4_unicode_ci
+                           AND l.error_detail IS NOT NULL
+                           AND TRIM(l.error_detail) <> \'\'
+                         ORDER BY l.created_at DESC, l.id DESC
+                         LIMIT 1) AS previous_error_detail
+                FROM `file` f WHERE f.update_at >= ? AND f.update_at < ?';
+        if ($idKhoa !== null) $sql .= ' AND f.id_khoa = ?';
+        $sql .= ' ORDER BY f.update_at DESC, f.id DESC';
         $statement = $this->connection->prepare($sql);
         if (!$statement) throw new RuntimeException('Không thể chuẩn bị dữ liệu tổng hợp file.');
         if ($idKhoa !== null) $statement->bind_param('sss', $date, $to, $idKhoa);
@@ -830,11 +914,16 @@ class FilePeer
         $rows = array();
         while ($file = $result->fetch_assoc()) {
             $summary = $this->fileSummaryFromValidation($file['validation_result'], $file['thongtin_bn']);
+            $hasCurrentErrors = (int) $summary['error_count'] > 0;
+            $hadPreviousErrors = trim((string) $file['previous_error_detail']) !== '';
             $rows[] = array(
                 'ma_lk' => (string) $file['ma_lk'], 'ma_bn' => (string) ($file['ma_bn'] ?: ''),
                 'ma_the_bhyt' => $summary['ma_the_bhyt'], 'ngay_vao' => $summary['ngay_vao'],
                 'ngay_ra' => $summary['ngay_ra'], 'error_count' => $summary['error_count'],
                 'warning_count' => $summary['warning_count'],
+                'error_fields' => $summary['error_fields'],
+                'previous_error_detail' => $hadPreviousErrors ? (string) $file['previous_error_detail'] : '',
+                'correction_status' => $hasCurrentErrors ? 'CHUA_SUA' : ($hadPreviousErrors ? 'DA_SUA' : 'KHONG_LOI'),
                 'total_amount' => $summary['total_amount'], 'date' => $this->formatDocumentDate($file['ngay_lap'])
             );
         }
@@ -1012,9 +1101,10 @@ class FilePeer
     // Lưu/cập nhật hồ sơ XML và lịch sử thay thế
     // ---------------------------------------------------------------------
 
-    public function saveFileHistory($existing, $archivePath)
+    public function saveFileHistory($existing, $archivePath, $importUsername = null)
     {
-        $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : null;
+        $username = $importUsername !== null ? trim((string) $importUsername)
+            : (isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : null);
         if ($username === null || $username === '') {
             $queue = $this->connection->prepare('SELECT username FROM `xml_upload_queue` WHERE file_name = ? LIMIT 1');
             if ($queue) {
@@ -1057,9 +1147,20 @@ class FilePeer
     // Nhật ký truy vết và dữ liệu đẩy cổng
     // ---------------------------------------------------------------------
 
-    public function saveAuditLog($fileId, $maLk, $fileName, $action, $oldPath, $newPath, $errorDetail = null)
+    public function saveAuditLog(
+        $fileId,
+        $maLk,
+        $fileName,
+        $action,
+        $oldPath,
+        $newPath,
+        $errorDetail = null,
+        $importUsername = null,
+        $khoaName = null
+    )
     {
-        $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : null;
+        $username = $importUsername !== null ? trim((string) $importUsername)
+            : (isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : null);
         if (($username === null || $username === '') && $fileName !== '') {
             $queue = $this->connection->prepare('SELECT username FROM `xml_upload_queue` WHERE file_name = ? LIMIT 1');
             if ($queue) {
@@ -1071,12 +1172,12 @@ class FilePeer
             }
         }
         $query = $this->connection->prepare(
-            'INSERT INTO `file_audit_logs` (file_id, ma_lk, file_name, action, username, file_path_old, file_path_new, error_detail)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO `file_audit_logs` (file_id, ma_lk, file_name, action, username, khoa_name, file_path_old, file_path_new, error_detail)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         if (!$query) throw new RuntimeException('Không thể chuẩn bị nhật ký truy vết.');
         $id = $fileId === null ? null : (int) $fileId;
-        $query->bind_param('isssssss', $id, $maLk, $fileName, $action, $username, $oldPath, $newPath, $errorDetail);
+        $query->bind_param('issssssss', $id, $maLk, $fileName, $action, $username, $khoaName, $oldPath, $newPath, $errorDetail);
         if (!$query->execute()) throw new RuntimeException('Không thể lưu nhật ký truy vết.');
         $query->close();
     }
@@ -1568,7 +1669,7 @@ class FilePeer
         return $deleted;
     }
 
-    public function deleteMany(array $ids)
+    public function deleteMany(array $ids, $username = null, array $deletedPaths = array())
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $ids), function ($id) {
             return $id > 0;
@@ -1578,13 +1679,52 @@ class FilePeer
         }
 
         $idList = implode(',', $ids);
-        $result = $this->connection->query(
-            'DELETE FROM `file` WHERE id IN (' . $idList . ') AND da_day_cong = 0'
-        );
-        if ($result === false) {
-            throw new RuntimeException('Không thể xóa các file đã chọn.');
+        $this->connection->begin_transaction();
+        try {
+            $result = $this->connection->query(
+                'SELECT f.id, f.ten, f.ma_lk, f.file_path, kp.ten AS khoa_name
+                 FROM `file` f
+                 LEFT JOIN `khoa_phong` kp ON kp.ma = f.id_khoa
+                 WHERE f.id IN (' . $idList . ') AND f.da_day_cong = 0
+                 FOR UPDATE'
+            );
+            if ($result === false) throw new RuntimeException('Không thể đọc các file cần xóa.');
+            $files = array();
+            while ($row = $result->fetch_assoc()) $files[] = $row;
+            $result->free();
+
+            foreach ($files as $file) {
+                $fileId = (int) $file['id'];
+                $this->saveAuditLog(
+                    $fileId,
+                    (string) $file['ma_lk'],
+                    (string) $file['ten'],
+                    'DELETE',
+                    (string) $file['file_path'],
+                    isset($deletedPaths[$fileId]) ? $deletedPaths[$fileId] : null,
+                    null,
+                    $username,
+                    $file['khoa_name'] !== null ? (string) $file['khoa_name'] : null
+                );
+            }
+
+            if (!empty($files)) {
+                $deleteIds = implode(',', array_map(function ($file) {
+                    return (int) $file['id'];
+                }, $files));
+                if (!$this->connection->query('DELETE FROM `file` WHERE id IN (' . $deleteIds . ')')) {
+                    throw new RuntimeException('Không thể xóa các file đã chọn.');
+                }
+                if ($this->connection->affected_rows !== count($files)) {
+                    throw new RuntimeException('Số lượng file đã xóa không khớp.');
+                }
+            }
+            $this->connection->commit();
+        } catch (Throwable $exception) {
+            $this->connection->rollback();
+            throw $exception;
         }
-        $deleted = $this->connection->affected_rows;
+        $deleted = count($files);
         $this->clearFileListCache();
         return $deleted;
     }

@@ -667,6 +667,24 @@
 
     // Xuất báo cáo tổng hợp: mỗi loại lỗi được đặt trên một sheet riêng.
     function exportErrorReportSheets(rows, fileSummaries, filename) {
+        var evaluation = { total: 0, fixed: 0, unfixed: 0 };
+        (fileSummaries || []).forEach(function (file) {
+            evaluation.total++;
+            var status = String(file.correction_status || (Number(file.error_count || 0) > 0 ? 'CHUA_SUA' : 'KHONG_LOI'));
+            if (status === 'DA_SUA') evaluation.fixed++;
+            if (status === 'CHUA_SUA') evaluation.unfixed++;
+        });
+        var evaluatedTotal = evaluation.fixed + evaluation.unfixed;
+        var completionRate = evaluatedTotal ? (evaluation.fixed * 100 / evaluatedTotal).toFixed(1) + '%' : '100%';
+        var evaluationRows = [
+            { data: { 'CHỈ TIÊU': 'TỔNG FILE', 'GIÁ TRỊ': evaluation.total }, styles: {} },
+            { data: { 'CHỈ TIÊU': 'ĐÃ SỬA', 'GIÁ TRỊ': evaluation.fixed }, styles: { 'GIÁ TRỊ': 4 } },
+            { data: { 'CHỈ TIÊU': 'CHƯA SỬA', 'GIÁ TRỊ': evaluation.unfixed }, styles: { 'GIÁ TRỊ': evaluation.unfixed ? 2 : 4 } },
+            { data: { 'CHỈ TIÊU': 'TỶ LỆ HOÀN THÀNH', 'GIÁ TRỊ': completionRate }, styles: {} },
+            { data: { 'CHỈ TIÊU': 'KẾT LUẬN', 'GIÁ TRỊ': evaluation.unfixed
+                ? 'CÒN ' + evaluation.unfixed + ' FILE CHƯA SỬA'
+                : 'ĐÃ HOÀN TẤT' }, styles: { 'GIÁ TRỊ': evaluation.unfixed ? 2 : 4 } }
+        ];
         var grouped = {}, order = [];
         (rows || []).forEach(function (row, index) {
             var errorName = String(row.error || 'Lỗi validation').trim() || 'Lỗi validation';
@@ -692,7 +710,8 @@
             if (!files[fileKey]) {
                 files[fileKey] = { ma_lk: fileKey, ma_bn: row.ma_bn || '', ma_the_bhyt: row.ma_the_bhyt || '',
                     ngay_vao: row.ngay_vao || '', ngay_ra: row.ngay_ra || '', total_amount: row.total_amount || '',
-                    count: 0, errors: {}, date: row.date || '', status: row.status || '' };
+                    count: 0, errors: {}, error_fields: row.error_fields || row.previous_error_detail || '',
+                    correction_status: row.correction_status || '', date: row.date || '', status: row.status || '' };
                 fileOrder.push(fileKey);
             }
             files[fileKey].count = row.error_count != null ? Number(row.error_count) : files[fileKey].count + (row.error ? 1 : 0);
@@ -706,10 +725,12 @@
                 STT: index + 1, 'MÃ BN': file.ma_bn, 'MÃ THẺ BHYT': file.ma_the_bhyt,
                 'ĐIỀU TRỊ TỪ': file.ngay_vao, 'ĐIỀU TRỊ ĐẾN': file.ngay_ra,
                 'SỐ LƯỢNG LỖI': file.count, 'TÊN TRƯỜNG': file.error_fields || '', 'SỐ TIỀN': file.total_amount,
+                'TRẠNG THÁI SỬA': file.correction_status === 'CHUA_SUA' ? 'CHƯA SỬA' : (file.correction_status === 'DA_SUA' ? 'ĐÃ SỬA' : 'KHÔNG LỖI'),
                 'MÃ LIÊN KẾT': file.ma_lk
             }, styles: file.count > 0 ? { 'SỐ LƯỢNG LỖI': 2 } : {} };
         });
         var sheets = [
+            { name: 'ĐÁNH GIÁ', rows: evaluationRows },
             { name: 'TỔNG HỢP FILE', rows: fileRows },
             { name: 'TỔNG HỢP LỖI', rows: allRows }
         ];
@@ -1556,6 +1577,7 @@
             type: 'POST',
             data: function (request) {
                 request.date = selectedFileDate();
+                request.search = $.trim($('#file-search').val());
             },
             dataSrc: function (response) {
                 var rows = response && Array.isArray(response.data) ? response.data : [];
@@ -1755,7 +1777,8 @@
 
     function searchFiles() {
         fileSearchTerm = normalizeFileSearchText($.trim($('#file-search').val()));
-        table.search('').draw();
+        table.search('');
+        requestFileData();
     }
 
     $('#btn-search-file').on('click', searchFiles);
@@ -1977,9 +2000,11 @@
     $('#modal-push-warning').on('hidden.bs.modal', function () { warningPushFileId = 0; });
 
     $('#btn-reset-file-search').on('click', function () {
+        window.clearTimeout(fileSearchTimer);
         $('#file-search').val('').focus();
         fileSearchTerm = '';
-        table.search('').draw();
+        table.search('');
+        requestFileData();
     });
 
     $('#file-search').on('keydown', function (event) {
@@ -2478,9 +2503,20 @@
         $('.xml-view-layout, #patient-info').hide();
         $('#btn-view-audit').addClass('active');
         $.getJSON(baseUrl + 'file/getAuditLogs/', {ma_lk: $(this).data('malk')}, function (response) {
-            if (!response.success) { list.append($('<tr><td colspan="6">').text(response.message)); }
-            else if (!response.data.length) { list.append('<tr><td colspan="6">Chưa có nhật ký.</td></tr>'); }
-            else response.data.forEach(function (row) { var tr = $('<tr>'); [row.created_at,row.action,row.username,row.khoa_name,row.file_name,(row.file_path_old || '') + (row.file_path_new ? ' → ' + row.file_path_new : ''),row.error_detail].forEach(function (v) { tr.append($('<td>').text(v || '')); }); list.append(tr); });
+            if (!response.success) { list.append($('<tr><td colspan="5">').text(response.message)); }
+            else if (!response.data.length) { list.append('<tr><td colspan="5">Chưa có nhật ký.</td></tr>'); }
+            else response.data.forEach(function (row) {
+                var tr = $('<tr>');
+                [row.created_at,row.action,row.username,row.khoa_name].forEach(function (value) {
+                    tr.append($('<td>').text(value || '-'));
+                });
+                var detail = row.error_detail || '-';
+                tr.append($('<td class="audit-detail-value">').addClass(row.error_detail ? 'is-error' : 'is-ok').text(detail));
+                list.append(tr);
+            });
+            panel.show();
+        }).fail(function () {
+            list.empty().append('<tr><td colspan="5">Không thể tải nhật ký.</td></tr>');
             panel.show();
         });
     });
@@ -2490,17 +2526,6 @@
         $('.xml-view-layout, #patient-info').show();
         applyXmlViewMode();
         $('#btn-view-audit').removeClass('active');
-    });
-
-    $(document).on('click', '#btn-search-audit', function () {
-        var malk = $.trim($('#audit-malk').val()), list = $('#audit-tab-list').empty();
-        if (!malk) { list.append('<tr><td colspan="8">Vui lòng nhập MALK.</td></tr>'); return; }
-        list.append('<tr><td colspan="8">Đang tải...</td></tr>');
-        $.getJSON(baseUrl + 'file/getAuditLogs/', {ma_lk: malk}, function (response) {
-            list.empty();
-            if (!response.success || !response.data.length) { list.append($('<tr><td colspan="8">').text(response.success ? 'Chưa có nhật ký.' : response.message)); return; }
-            response.data.forEach(function (row) { var tr = $('<tr>'); [row.created_at,row.action,row.username,row.khoa_name,row.file_name,row.file_path_old,row.file_path_new,row.error_detail].forEach(function (v) { tr.append($('<td>').text(v || '')); }); list.append(tr); });
-        });
     });
 
     $('#btn-export-view-excel').on('click', function () {

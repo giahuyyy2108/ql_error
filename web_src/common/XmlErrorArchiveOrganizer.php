@@ -11,7 +11,6 @@ class XmlErrorArchiveOrganizer
         $originalName = is_string($originalName) && $originalName !== ''
             ? basename($originalName) : basename($sourcePath);
         $groups = self::groupErrors($validation);
-        self::removePreviousCopies($failedDirectory, $originalName, $sourcePath);
 
         $created = array();
         $canonicalSource = $sourcePath;
@@ -37,19 +36,20 @@ class XmlErrorArchiveOrganizer
             // Keep the original filename. The error directory already identifies
             // the error type, so adding a PASS/rule prefix only makes the file
             // harder to find and changes the name supplied by the user.
-            $destination = $directory . DIRECTORY_SEPARATOR . $archiveName;
-            if (is_file($destination) && strcasecmp($destination, $canonicalSource) !== 0) {
-                @unlink($destination);
-                if (is_file($destination . '.error.txt')) @unlink($destination . '.error.txt');
-            }
+            // A previous import may still be referenced by file_history or by
+            // another worker. Never remove or overwrite it on a name collision.
+            $destination = self::uniqueDestination($directory, $archiveName, $canonicalSource);
             if ($moveSource && empty($created)) {
-                if (!rename($sourcePath, $destination)) {
+                if (!self::samePath($sourcePath, $destination) && !rename($sourcePath, $destination)) {
                     throw new RuntimeException('Không thể chuyển file vào thư mục lỗi: ' . $directory);
                 }
                 $canonicalSource = $destination;
                 $oldReport = $sourcePath . '.error.txt';
-                if (is_file($oldReport)) @rename($oldReport, $destination . '.error.txt');
-            } elseif (!self::linkOrCopy($canonicalSource, $destination)) {
+                if (!self::samePath($sourcePath, $destination) && is_file($oldReport)) {
+                    @rename($oldReport, $destination . '.error.txt');
+                }
+            } elseif (!self::samePath($canonicalSource, $destination)
+                && !self::linkOrCopy($canonicalSource, $destination)) {
                 throw new RuntimeException('Không thể tạo bản phân loại file trong thư mục lỗi: ' . $directory);
             }
             $details = array_merge(array('File gốc: ' . $archiveName, ''), $allDetails);
@@ -71,6 +71,28 @@ class XmlErrorArchiveOrganizer
             return true;
         }
         return copy($source, $destination);
+    }
+
+    private static function samePath($first, $second)
+    {
+        return strcasecmp(str_replace('\\', '/', $first), str_replace('\\', '/', $second)) === 0;
+    }
+
+    private static function uniqueDestination($directory, $fileName, $sourcePath)
+    {
+        $destination = $directory . DIRECTORY_SEPARATOR . $fileName;
+        if (!file_exists($destination) || self::samePath($destination, $sourcePath)) {
+            return $destination;
+        }
+
+        $base = pathinfo($fileName, PATHINFO_FILENAME);
+        $extension = pathinfo($fileName, PATHINFO_EXTENSION);
+        do {
+            $suffix = date('Ymd_His') . '_' . uniqid();
+            $destination = $directory . DIRECTORY_SEPARATOR . $base . '_' . $suffix
+                . ($extension !== '' ? '.' . $extension : '');
+        } while (file_exists($destination));
+        return $destination;
     }
 
     private static function groupErrors(array $validation)
@@ -147,24 +169,4 @@ class XmlErrorArchiveOrganizer
         return is_string($cleanName) && $cleanName !== '' ? $cleanName : $fileName;
     }
 
-    private static function removePreviousCopies($failedDirectory, $originalName, $sourcePath)
-    {
-        if (!is_dir($failedDirectory)) return;
-        $suffix = '_' . $originalName;
-        foreach (new DirectoryIterator($failedDirectory) as $directory) {
-            if (!$directory->isDir() || $directory->isDot()) continue;
-            foreach (new DirectoryIterator($directory->getPathname()) as $file) {
-                if (!$file->isFile()) continue;
-                if (strcasecmp($file->getPathname(), $sourcePath) === 0) continue;
-                $name = $file->getFilename();
-                if ($name === $originalName || $name === $originalName . '.error.txt'
-                    || substr($name, -strlen($suffix)) === $suffix
-                    || substr($name, -strlen($suffix . '.error.txt')) === $suffix . '.error.txt') {
-                    @unlink($file->getPathname());
-                }
-            }
-            $remaining = array_diff(scandir($directory->getPathname()), array('.', '..'));
-            if (empty($remaining)) @rmdir($directory->getPathname());
-        }
-    }
 }
