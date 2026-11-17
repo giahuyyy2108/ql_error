@@ -402,21 +402,26 @@ class fileAction
             }
             $idKhoa = null;
             $isAdmin = isset($_SESSION['AdminType']) && (int) $_SESSION['AdminType'] === 1;
-            if ($reportScope === 'khoa' && $isAdmin) {
+            $userKhoa = null;
+            if (!$isAdmin) {
+                $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : '';
+                $userKhoa = $this->filePeer->getCurrentUserKhoa($username);
+                if ($userKhoa !== null && trim((string) $userKhoa) === '') $userKhoa = null;
+            }
+            $canChooseReportKhoa = $isAdmin || $userKhoa === null;
+            if ($reportScope === 'khoa' && $canChooseReportKhoa) {
                 if ($reportKhoa === '' || $reportKhoa === '0') {
                     return $this->json(array('success' => false, 'message' => 'Vui lòng chọn khoa cần thống kê.'));
                 }
                 $khoa = $this->filePeer->getKhoaByCode($reportKhoa);
+                
                 if (!$khoa) {
                     return $this->json(array('success' => false, 'message' => 'Mã khoa được chọn không hợp lệ.'));
                 }
                 $idKhoa = $khoa['ma'];
             } elseif (!$isAdmin) {
-                $username = isset($_SESSION['sUserName']) ? (string) $_SESSION['sUserName'] : '';
-                $idKhoa = $this->filePeer->getCurrentUserKhoa($username);
-                if ($idKhoa === null || trim((string) $idKhoa) === '') {
-                    return $this->json(array('success' => false, 'message' => 'Tài khoản chưa được gán khoa.'));
-                }
+                // User không gán khoa được xem báo cáo toàn viện, giống danh sách file.
+                $idKhoa = $userKhoa;
             }
             $rows = $this->filePeer->getErrorReportRows($date, $to, $idKhoa);
             $files = $this->filePeer->getAllFileReportRows($date, $to, $idKhoa);

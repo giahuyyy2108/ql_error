@@ -1489,6 +1489,8 @@
 
     function refreshQueuedUploadProgress() {
         window.clearTimeout(queuedUploadProgressTimer);
+        // Chỉ polling tiến độ upload khi bảng danh sách File thực sự có mặt.
+        if (!document.getElementById('datatable-file')) return;
         if (batchUploadProgressActive || uploadInProgress) {
             queuedUploadProgressTimer = window.setTimeout(refreshQueuedUploadProgress, 1000);
             return;

@@ -83,6 +83,7 @@ class FilePeer
             throw new RuntimeException('Không thể đọc thông tin khoa điều trị.');
         }
         $statement->bind_param('s', $maKhoa);
+        
         $statement->execute();
         $row = $statement->get_result()->fetch_assoc();
         $statement->close();
@@ -397,12 +398,9 @@ class FilePeer
             $userRow = $userStatement->get_result()->fetch_assoc();
             if ($userRow && $userRow['id_khoa'] !== null) {
                 $userKhoa = (string) $userRow['id_khoa'];
-                $filterByKhoa = true;
+                $filterByKhoa = trim($userKhoa) !== '';
             }
             $userStatement->close();
-            if (!$filterByKhoa || trim($userKhoa) === '') {
-                return array();
-            }
         }
 
         $cachePath = $search === '' ? $this->fileListCachePath($date, $filterByKhoa ? $userKhoa : 'admin') : null;
@@ -832,78 +830,188 @@ class FilePeer
     public function getErrorReportRows($date, $to = null, $idKhoa = null)
     {
         $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
-        $sql = 'SELECT ma_lk, ma_bn, ngay_lap, processing_status, validation_result, thongtin_bn
-                FROM `file`
-                WHERE update_at >= ? AND update_at < ?
-                  AND validation_result IS NOT NULL AND validation_result <> \'\'';
-        if ($idKhoa !== null) $sql .= ' AND id_khoa = ?';
-        $sql .= '
-                ORDER BY update_at DESC, id DESC';
+
+        $sql = "
+            SELECT
+                ma_lk,
+                ma_bn,
+                ngay_lap,
+                processing_status,
+                validation_result,
+                thongtin_bn
+            FROM `file`
+            WHERE update_at >= ?
+            AND update_at < ?
+            AND validation_result IS NOT NULL
+            AND validation_result <> ''
+        ";
+
+        if ($idKhoa !== null) {
+            $sql .= " AND id_khoa = ?";
+        }
+
+        $sql .= " ORDER BY update_at DESC, id DESC";
+
         $statement = $this->connection->prepare($sql);
+
         if (!$statement) {
-            throw new RuntimeException('Không thể chuẩn bị dữ liệu báo cáo lỗi.');
-        }
-        if ($idKhoa !== null) $statement->bind_param('sss', $date, $to, $idKhoa);
-        else $statement->bind_param('ss', $date, $to);
-        $statement->execute();
-        $result = $statement->get_result();
-        if (!$result) {
-            throw new RuntimeException('Không thể tải dữ liệu báo cáo lỗi.');
+            throw new RuntimeException(
+                'Không thể chuẩn bị dữ liệu báo cáo lỗi.'
+            );
         }
 
-        $reportRows = array();
-        while ($file = $result->fetch_assoc()) {
-            $validation = json_decode($file['validation_result'], true);
-            if (!is_array($validation)) continue;
-            $documentDate = $this->formatDocumentDate($file['ngay_lap']);
-            $summary = $this->fileSummaryFromValidation($file['validation_result'], $file['thongtin_bn']);
+        try {
+            if ($idKhoa !== null) {
+                $statement->bind_param('sss', $date, $to, $idKhoa);
+            } else {
+                $statement->bind_param('ss', $date, $to);
+            }
 
-            foreach ($validation as $validationItem) {
-                $errors = isset($validationItem['errors']) && is_array($validationItem['errors'])
-                    ? $validationItem['errors'] : array();
-                foreach ($errors as $error) {
-                    $reportRows[] = array(
-                        'ma_lk' => (string) $file['ma_lk'],
-                        'ma_bn' => (string) ($file['ma_bn'] ?: ''),
-                        'ma_the_bhyt' => $summary['ma_the_bhyt'],
-                        'ngay_vao' => $summary['ngay_vao'],
-                        'ngay_ra' => $summary['ngay_ra'],
-                        'total_amount' => $summary['total_amount'],
-                        'xml' => isset($validationItem['file_type']) ? (string) $validationItem['file_type'] : '',
-                        'field' => isset($error['field_name']) ? (string) $error['field_name']
-                            : (isset($error['display_name']) ? (string) $error['display_name'] : ''),
-                        'value' => isset($error['value']) && is_scalar($error['value'])
-                            ? (string) $error['value'] : '',
-                        'error' => isset($error['message']) ? (string) $error['message'] : 'Lỗi validation',
-                        'rule_id' => isset($error['rule_id']) ? (int) $error['rule_id'] : null,
-                        'rule_name' => isset($error['display_name']) ? (string) $error['display_name'] : '',
-                        'severity' => isset($error['severity']) ? (string) $error['severity'] : 'error',
-                        'notes' => '',
-                        'date' => $documentDate,
-                        'status' => $file['processing_status'] === 'failed' ? 'CHƯA FIX' : 'ĐÃ FIX'
+            if (!$statement->execute()) {
+                throw new RuntimeException(
+                    'Không thể thực thi truy vấn báo cáo lỗi.'
+                );
+            }
+
+            // Đọc trực tiếp từng bản ghi, không tải toàn bộ result set.
+            if (!$statement->bind_result(
+                $maLk,
+                $maBn,
+                $ngayLap,
+                $processingStatus,
+                $validationJson,
+                $thongtinBn
+            )) {
+                throw new RuntimeException(
+                    'Không thể liên kết dữ liệu báo cáo lỗi.'
+                );
+            }
+
+            $reportRows = [];
+
+            while ($statement->fetch()) {
+
+                // Decode JSON một lần tại đây.
+                $validation = json_decode($validationJson, true);
+
+                if (!is_array($validation) || empty($validation)) {
+                    continue;
+                }
+
+                // Chỉ khởi tạo khi có lỗi hợp lệ.
+                $summary = null;
+                $documentDate = null;
+
+                $status = $processingStatus === 'failed'
+                    ? 'CHƯA FIX'
+                    : 'ĐÃ FIX';
+
+                foreach ($validation as $validationItem) {
+
+                    if (
+                        !is_array($validationItem) ||
+                        empty($validationItem['errors']) ||
+                        !is_array($validationItem['errors'])
+                    ) {
+                        continue;
+                    }
+
+                    $xmlType = (string) (
+                        $validationItem['file_type'] ?? ''
                     );
+
+                    foreach ($validationItem['errors'] as $error) {
+
+                        if (!is_array($error)) {
+                            continue;
+                        }
+
+                        // Chỉ tính thông tin bệnh nhân khi thực sự có lỗi.
+                        if ($summary === null) {
+                            $summary = $this->fileSummaryFromValidation(
+                                $validationJson,
+                                $thongtinBn
+                            );
+
+                            $documentDate = $this->formatDocumentDate(
+                                $ngayLap
+                            );
+                        }
+
+                        $reportRows[] = [
+                            'ma_lk' => (string) $maLk,
+                            'ma_bn' => (string) ($maBn ?? ''),
+
+                            'ma_the_bhyt' => $summary['ma_the_bhyt'],
+                            'ngay_vao' => $summary['ngay_vao'],
+                            'ngay_ra' => $summary['ngay_ra'],
+                            'total_amount' => $summary['total_amount'],
+
+                            'xml' => $xmlType,
+
+                            'field' => (string) (
+                                $error['field_name']
+                                ?? $error['display_name']
+                                ?? ''
+                            ),
+
+                            'value' => isset($error['value'])
+                                && is_scalar($error['value'])
+                                    ? (string) $error['value']
+                                    : '',
+
+                            'error' => (string) (
+                                $error['message'] ?? 'Lỗi validation'
+                            ),
+
+                            'rule_id' => isset($error['rule_id'])
+                                ? (int) $error['rule_id']
+                                : null,
+
+                            'rule_name' => (string) (
+                                $error['display_name'] ?? ''
+                            ),
+
+                            'severity' => (string) (
+                                $error['severity'] ?? 'error'
+                            ),
+
+                            'notes' => '',
+                            'date' => $documentDate,
+                            'status' => $status
+                        ];
+                    }
                 }
             }
+            if ($statement->errno) {
+                throw new RuntimeException(
+                    'Lỗi khi đọc dữ liệu báo cáo: ' . $statement->error
+                );
+            }
+
+            return $reportRows;
+
+        } finally {
+            $statement->close();
         }
-        $result->free();
-        $statement->close();
-        return $reportRows;
     }
 
     public function getAllFileReportRows($date, $to = null, $idKhoa = null)
     {
         $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
         $sql = 'SELECT f.ma_lk, f.ma_bn, f.ngay_lap, f.processing_status, f.validation_result, f.thongtin_bn,
-                       (SELECT l.error_detail
-                          FROM file_audit_logs l
-                         WHERE l.ma_lk COLLATE utf8mb4_unicode_ci = f.ma_lk COLLATE utf8mb4_unicode_ci
-                           AND l.error_detail IS NOT NULL
-                           AND TRIM(l.error_detail) <> \'\'
-                         ORDER BY l.created_at DESC, l.id DESC
-                         LIMIT 1) AS previous_error_detail
-                FROM `file` f WHERE f.update_at >= ? AND f.update_at < ?';
+                    (SELECT l.error_detail
+                        FROM file_audit_logs l
+                        WHERE l.ma_lk = f.ma_lk COLLATE utf8mb4_unicode_ci
+                        AND l.error_detail IS NOT NULL
+                        AND TRIM(l.error_detail) <> \'\'
+                        ORDER BY l.created_at DESC, l.id DESC
+                        LIMIT 1) AS previous_error_detail
+                FROM `file` f
+                WHERE f.update_at >= ? AND f.update_at < ?';
         if ($idKhoa !== null) $sql .= ' AND f.id_khoa = ?';
         $sql .= ' ORDER BY f.update_at DESC, f.id DESC';
+
         $statement = $this->connection->prepare($sql);
         if (!$statement) throw new RuntimeException('Không thể chuẩn bị dữ liệu tổng hợp file.');
         if ($idKhoa !== null) $statement->bind_param('sss', $date, $to, $idKhoa);
@@ -911,6 +1019,7 @@ class FilePeer
         $statement->execute();
         $result = $statement->get_result();
         if (!$result) throw new RuntimeException('Không thể tải dữ liệu tổng hợp file.');
+
         $rows = array();
         while ($file = $result->fetch_assoc()) {
             $summary = $this->fileSummaryFromValidation($file['validation_result'], $file['thongtin_bn']);
@@ -927,7 +1036,9 @@ class FilePeer
                 'total_amount' => $summary['total_amount'], 'date' => $this->formatDocumentDate($file['ngay_lap'])
             );
         }
-        $result->free(); $statement->close();
+
+        $result->free();
+        $statement->close();
         return $rows;
     }
 
@@ -1334,7 +1445,9 @@ class FilePeer
         }
 
         $statement = $this->connection->prepare(
-            'UPDATE `file` SET validation_result = ? WHERE id = ?'
+            'UPDATE `file`
+             SET validation_result = ?, update_at = update_at
+             WHERE id = ?'
         );
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị kết quả kiểm tra.');
@@ -1356,7 +1469,8 @@ class FilePeer
     {
         $statement = $this->connection->prepare(
             'UPDATE `file`
-             SET file_path = ?, processing_status = ?, revalidation_claimed_at = NULL
+             SET file_path = ?, processing_status = ?, revalidation_claimed_at = NULL,
+                 update_at = update_at
              WHERE id = ?'
         );
         if (!$statement) {

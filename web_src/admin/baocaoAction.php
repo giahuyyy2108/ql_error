@@ -16,7 +16,11 @@ class baocaoAction extends fileAction
             '<link href="' . _DEFAULT_URL_ . 'css/file.css?' . _DEFAULT_VERSION_JS_CSS_
             . '&amp;v=' . filemtime(dirname(__DIR__, 2) . '/css/file.css') . '" rel="stylesheet">'
         );
-        $this->request->setAttribute('script', '<script src="' . _DEFAULT_URL_ . 'js/file.js?' . _DEFAULT_VERSION_JS_CSS_ . '&amp;v=' . filemtime(dirname(__DIR__, 2) . '/js/file.js') . '"></script><script src="' . _DEFAULT_URL_ . 'js/baocao.js?' . _DEFAULT_VERSION_JS_CSS_ . '&amp;v=' . filemtime(dirname(__DIR__, 2) . '/js/baocao.js') . '"></script>');
+        $this->request->setAttribute(
+            'script',
+            '<script src="' . _DEFAULT_URL_ . 'js/baocao.js?' . _DEFAULT_VERSION_JS_CSS_
+            . '&amp;v=' . filemtime(dirname(__DIR__, 2) . '/js/baocao.js') . '"></script>'
+        );
         return true;
     }
 }
