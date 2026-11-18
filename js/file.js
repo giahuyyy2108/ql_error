@@ -1832,7 +1832,7 @@
         }
 
         $.ajax({
-            url: baseUrl + 'file/getErrorReport/',
+            url: baseUrl + 'baocao/getErrorReport/',
             type: 'GET',
             dataType: 'json',
             data: { date: selectedFileDate() }

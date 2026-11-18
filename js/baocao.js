@@ -86,15 +86,33 @@
         }
     }
     function exportXlsx(html, filename) {
+        if (typeof JSZip === 'undefined') {
+            return Promise.reject(new Error('Thư viện tạo file Excel chưa được tải.'));
+        }
         var doc = new DOMParser().parseFromString(html, 'text/html');
-        function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+        function esc(v) { return String(v == null ? '' : v).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
         function rowsFromTable(table) {
             return Array.prototype.map.call(table.querySelectorAll('tr'), function (tr) {
                 return Array.prototype.map.call(tr.children, function (cell) { return cell.textContent; });
             });
         }
+        function excelDateSerial(value) {
+            var text = String(value == null ? '' : value).trim();
+            var digits = text.replace(/\D/g, '');
+            var match = /^(19\d{2}|20\d{2})(\d{2})(\d{2})/.exec(digits);
+            if (!match) {
+                match = /^(\d{2})[.\/-](\d{2})[.\/-](\d{4})$/.exec(text);
+                if (match) match = [match[0], match[3], match[2], match[1]];
+            }
+            if (!match) return null;
+            var year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+            var date = new Date(Date.UTC(year, month - 1, day));
+            if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+            return Math.floor(date.getTime() / 86400000) + 25569;
+        }
         function worksheetXml(rows) {
-            var sheet = rows.map(function (row, r) { var moneyRow = row.some(function (v) { return /TỔNG\s*(BHYT|BHTT)/i.test(String(v || '')); }); return '<row r="' + (r + 1) + '">' + row.map(function (v, c) { var col = '', n = c + 1; while (n) { var x = (n - 1) % 26; col = String.fromCharCode(65 + x) + col; n = Math.floor((n - 1) / 26); } var text = String(v == null ? '' : v).trim(); if (/^-?\d+(\.\d+)?$/.test(text)) return '<c r="' + col + (r + 1) + '"' + (moneyRow && c > 1 ? ' s="1"' : '') + '><v>' + text + '</v></c>'; return '<c r="' + col + (r + 1) + '" t="inlineStr"><is><t>' + esc(v) + '</t></is></c>'; }).join('') + '</row>'; }).join('');
+            var headers = rows.length ? rows[0].map(function (value) { return String(value || '').trim().toUpperCase(); }) : [];
+            var sheet = rows.map(function (row, r) { var moneyRow = row.some(function (v) { return /TỔNG\s*(BHYT|BHTT)/i.test(String(v || '')); }); return '<row r="' + (r + 1) + '">' + row.map(function (v, c) { var col = '', n = c + 1; while (n) { var x = (n - 1) % 26; col = String.fromCharCode(65 + x) + col; n = Math.floor((n - 1) / 26); } var text = String(v == null ? '' : v).trim(); var header = headers[c] || ''; var forceText = /^(MÃ LIÊN KẾT|MÃ LK|MÃ BN|MÃ THẺ BHYT)$/.test(header); var isDateColumn = /^(NGÀY|ĐIỀU TRỊ TỪ|ĐIỀU TRỊ ĐẾN)$/.test(header); var isMoneyColumn = /^(SỐ TIỀN|BHTT|TỔNG BHTT|TỔNG BHYT|ƯỚC TÍNH GIÁ TIỀN)$/.test(header); var dateSerial = r > 0 && isDateColumn ? excelDateSerial(text) : null; if (dateSerial !== null) return '<c r="' + col + (r + 1) + '" s="2"><v>' + dateSerial + '</v></c>'; if (!forceText && /^-?\d+(\.\d+)?$/.test(text)) return '<c r="' + col + (r + 1) + '"' + ((isMoneyColumn || (moneyRow && c > 1)) ? ' s="1"' : '') + '><v>' + text + '</v></c>'; return '<c r="' + col + (r + 1) + '" t="inlineStr"><is><t>' + esc(v) + '</t></is></c>'; }).join('') + '</row>'; }).join('');
             return '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + sheet + '</sheetData></worksheet>';
         }
         var tables = Array.prototype.slice.call(doc.querySelectorAll('table'));
@@ -117,13 +135,38 @@
         zip.file('_rels/.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
         zip.file('xl/workbook.xml', '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + workbookSheets.join('') + '</sheets></workbook>');
         zip.file('xl/_rels/workbook.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + relationships.join('') + '</Relationships>');
-        zip.file('xl/styles.xml', '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0"/></numFmts><fonts count="1"><font><sz val="11"/><name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/></cellXfs></styleSheet>');
+        zip.file('xl/styles.xml', '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0"/><numFmt numFmtId="165" formatCode="dd/mm/yyyy"/></numFmts><fonts count="1"><font><sz val="11"/><name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/></cellXfs></styleSheet>');
         var save = function (blob) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); window.setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000); };
         if (typeof zip.generateAsync === 'function') {
-            zip.generateAsync({type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}).then(save);
-        } else {
-            save(zip.generate({type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+            return zip.generateAsync({type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}).then(save);
         }
+        return new Promise(function (resolve, reject) {
+            try {
+                save(zip.generate({type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+    function showExportResult(promise, successMessage) {
+        return Promise.resolve(promise).then(function () {
+            $('#report-message').text(successMessage).removeClass('alert-danger alert-info').addClass('alert-success');
+        }).catch(function (error) {
+            var message = error && error.message ? error.message : String(error || 'Không thể tạo file Excel.');
+            $('#report-message').text('Xuất Excel thất bại: ' + message).removeClass('alert-info alert-success').addClass('alert-danger');
+        }).then(function () {
+            setReportBusy(false);
+        });
+    }
+    var reportBusy = false;
+    function setReportBusy(busy, message) {
+        reportBusy = !!busy;
+        var overlay = $('#report-loading-overlay');
+        $('#report-loading-text').text(message || 'Đang xử lý báo cáo...');
+        overlay.toggleClass('is-active', reportBusy).attr('aria-hidden', reportBusy ? 'false' : 'true');
+        $('.report-page').attr('aria-busy', reportBusy ? 'true' : 'false');
+        $('.report-filter-row :input').prop('disabled', reportBusy);
     }
     function reportFilename(value) {
         var filename = 'bao-cao-' + value;
@@ -188,6 +231,7 @@
         if (!byDepartment) $('#report-khoa').val('0');
     }).trigger('change');
     $('#btn-show-chart').on('click', function () {
+        if (reportBusy) return;
         if ($('#report-scope').val() === 'khoa' && !selectedReportKhoa()) {
             $('#report-message').text('Vui lòng chọn khoa cần thống kê.').removeClass('alert-info alert-success').addClass('alert-danger');
             return;
@@ -198,6 +242,8 @@
             return;
         }
         var params = $.extend({}, selection.params, { report_scope: $('#report-scope').val(), report_khoa: selectedReportKhoa() });
+        setReportBusy(true, 'Đang truy xuất dữ liệu biểu đồ...');
+        $('#report-message').text('Đang truy xuất dữ liệu, vui lòng chờ...').removeClass('alert-danger alert-success').addClass('alert-info');
         $.getJSON('../baocao/getErrorReport/', params)
             .done(function (r) {
                 if (!r.success) {
@@ -210,9 +256,11 @@
             })
             .fail(function () {
                 $('#report-message').text('Không thể tải dữ liệu biểu đồ.').removeClass('alert-info alert-success').addClass('alert-danger');
-            });
+            })
+            .always(function () { setReportBusy(false); });
     });
     $('#btn-export-report').on('click', function () {
+        if (reportBusy) return;
         if ($('#report-scope').val() === 'khoa' && !selectedReportKhoa()) {
             $('#report-message').text('Vui lòng chọn khoa cần xuất báo cáo.').removeClass('alert-info alert-success').addClass('alert-danger');
             return;
@@ -220,12 +268,95 @@
         var selection = selectedReportPeriod();
         if (selection.error) { $('#report-message').text(selection.error).removeClass('alert-info alert-success').addClass('alert-danger'); return; }
         var type = selection.type, value = selection.value;
-        var button = $(this).prop('disabled', true);
         var params = $.extend({}, selection.params, { report_scope: $('#report-scope').val(), report_khoa: selectedReportKhoa() });
+        setReportBusy(true, 'Đang truy xuất dữ liệu để xuất Excel...');
+        $('#report-message').text('Đang chuẩn bị dữ liệu và tạo file Excel...').removeClass('alert-danger alert-success').addClass('alert-info');
         $.getJSON('../baocao/getErrorReport/', params)
             .done(function (response) {
-                if (!response.success) { $('#report-message').text(response.message).addClass('alert-danger'); return; }
+                if (!response.success) { $('#report-message').text(response.message).removeClass('alert-info alert-success').addClass('alert-danger'); setReportBusy(false); return; }
+                setReportBusy(true, 'Đang tạo file Excel, vui lòng chờ...');
                 function cell(value) { return '<td>' + String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>'; }
+                function correctionStatusText(file) {
+                    var status = String(file.correction_status || (Number(file.error_count || 0) > 0 ? 'CHUA_SUA' : 'KHONG_LOI'));
+                    return status === 'DA_SUA' ? 'Đã sửa' : (status === 'CHUA_SUA' ? 'Chưa sửa' : 'Không lỗi');
+                }
+                function evaluationTable(files) {
+                    var evaluation = { total: 0, valid: 0, fixed: 0, unfixed: 0 };
+                    (files || []).forEach(function (file) {
+                        evaluation.total++;
+                        if (Number(file.error_count || 0) === 0) evaluation.valid++;
+                        var status = String(file.correction_status || (Number(file.error_count || 0) > 0 ? 'CHUA_SUA' : 'KHONG_LOI'));
+                        if (status === 'DA_SUA') evaluation.fixed++;
+                        if (status === 'CHUA_SUA') evaluation.unfixed++;
+                    });
+                    var evaluatedTotal = evaluation.fixed + evaluation.unfixed;
+                    var completionRate = evaluatedTotal ? (evaluation.fixed * 100 / evaluatedTotal).toFixed(1) + '%' : '100%';
+                    return '<table data-sheet-name="ĐÁNH GIÁ" border="1"><tr><th>CHỈ TIÊU</th><th>GIÁ TRỊ</th></tr>'
+                        + '<tr>' + cell('KHOA') + cell($('#report-khoa option:selected').text().trim()) + '</tr>'
+                        + '<tr>' + cell('TỔNG FILE') + cell(evaluation.total) + '</tr>'
+                        + '<tr>' + cell('FILE HỢP LỆ') + cell(evaluation.valid) + '</tr>'
+                        + '<tr>' + cell('ĐÃ SỬA') + cell(evaluation.fixed) + '</tr>'
+                        + '<tr>' + cell('CHƯA SỬA') + cell(evaluation.unfixed) + '</tr>'
+                        + '<tr>' + cell('TỶ LỆ HOÀN THÀNH') + cell(completionRate) + '</tr>'
+                        + '<tr>' + cell('KẾT LUẬN') + cell(evaluation.unfixed ? ('CÒN ' + evaluation.unfixed + ' FILE CHƯA SỬA') : 'ĐÃ HOÀN TẤT') + '</tr></table>';
+                }
+                function departmentSummaryTable(files) {
+                    var grouped = {};
+                    (files || []).forEach(function (file) {
+                        var code = String(file.id_khoa || '').trim();
+                        var name = String(file.khoa_name || '').trim();
+                        var key = code || name || 'KHONG_XAC_DINH';
+                        if (!grouped[key]) grouped[key] = { code: code, name: name || 'Không xác định', total: 0, error: 0, valid: 0, fixed: 0, unfixed: 0 };
+                        var item = grouped[key];
+                        var errorCount = Number(file.error_count || 0);
+                        var status = String(file.correction_status || (errorCount > 0 ? 'CHUA_SUA' : 'KHONG_LOI'));
+                        item.total++;
+                        if (errorCount > 0) item.error++;
+                        else item.valid++;
+                        if (status === 'DA_SUA') item.fixed++;
+                        if (status === 'CHUA_SUA') item.unfixed++;
+                    });
+                    var rows = Object.keys(grouped).map(function (key) { return grouped[key]; }).sort(function (a, b) { return a.name.localeCompare(b.name, 'vi'); });
+                    var table = '<table data-sheet-name="TỔNG HỢP KHOA" border="1"><tr><th>STT</th><th>Mã khoa</th><th>Tên khoa</th><th>Tổng file</th><th>Số file lỗi</th><th>Số file hợp lệ</th><th>Số file đã sửa</th><th>Số file chưa sửa</th></tr>';
+                    var totals = { total: 0, error: 0, valid: 0, fixed: 0, unfixed: 0 };
+                    rows.forEach(function (row, index) {
+                        table += '<tr>' + [index + 1, row.code, row.name, row.total, row.error, row.valid, row.fixed, row.unfixed].map(cell).join('') + '</tr>';
+                        Object.keys(totals).forEach(function (key) { totals[key] += row[key]; });
+                    });
+                    table += '<tr>' + ['', '', 'TỔNG CỘNG', totals.total, totals.error, totals.valid, totals.fixed, totals.unfixed].map(cell).join('') + '</tr>';
+                    return table + '</table>';
+                }
+                function monthDailyErrorSummaryTable(files, errorRows, monthValue) {
+                    var parts = String(monthValue || '').split('-');
+                    var year = Number(parts[0]), month = Number(parts[1]);
+                    var daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+                    var daily = {};
+                    for (var day = 1; day <= daysInMonth; day++) {
+                        var label = String(day).padStart(2, '0') + '.' + String(month).padStart(2, '0') + '.' + year;
+                        daily[label] = { files: 0, errors: 0, amount: 0 };
+                    }
+                    (errorRows || []).forEach(function (row) {
+                        var label = String(row.date || '');
+                        if (daily[label]) daily[label].errors++;
+                    });
+                    (files || []).forEach(function (file) {
+                        var label = String(file.date || '');
+                        if (!daily[label] || Number(file.error_count || 0) <= 0) return;
+                        daily[label].files++;
+                        daily[label].amount += Number(file.total_amount) || 0;
+                    });
+                    var table = '<table data-sheet-name="TỔNG HỢP THEO NGÀY" border="1"><tr><th>NGÀY</th><th>SỐ FILE LỖI</th><th>TỔNG LƯỢT LỖI</th><th>ƯỚC TÍNH GIÁ TIỀN</th></tr>';
+                    var totals = { files: 0, errors: 0, amount: 0 };
+                    Object.keys(daily).forEach(function (label) {
+                        var item = daily[label];
+                        table += '<tr>' + [label, item.files, item.errors, item.amount].map(cell).join('') + '</tr>';
+                        totals.files += item.files;
+                        totals.errors += item.errors;
+                        totals.amount += item.amount;
+                    });
+                    table += '<tr>' + ['TỔNG CỘNG', totals.files, totals.errors, totals.amount].map(cell).join('') + '</tr>';
+                    return table + '</table>';
+                }
                 var html = '<html><head><meta charset="utf-8"></head><body>';
                 if (type === 'month') {
                     var evaluation = { total: 0, fixed: 0, unfixed: 0 };
@@ -237,42 +368,60 @@
                     });
                     var evaluatedTotal = evaluation.fixed + evaluation.unfixed;
                     var completionRate = evaluatedTotal ? (evaluation.fixed * 100 / evaluatedTotal).toFixed(1) + '%' : '100%';
-                    html += '<table data-sheet-name="ĐÁNH GIÁ" border="1"><tr><th>CHỈ TIÊU</th><th>GIÁ TRỊ</th></tr>'
-                        + '<tr>' + cell('TỔNG FILE') + cell(evaluation.total) + '</tr>'
+                    html += '<table data-sheet-name="ĐÁNH GIÁ" border="1"><tr><th>CHỈ TIÊU</th><th>GIÁ TRỊ</th></tr>';
+                    if ($('#report-scope').val() === 'khoa') {
+                        html += '<tr>' + cell('KHOA') + cell($('#report-khoa option:selected').text().trim()) + '</tr>';
+                    }
+                    html += '<tr>' + cell('TỔNG FILE') + cell(evaluation.total) + '</tr>'
                         + '<tr>' + cell('ĐÃ SỬA') + cell(evaluation.fixed) + '</tr>'
                         + '<tr>' + cell('CHƯA SỬA') + cell(evaluation.unfixed) + '</tr>'
                         + '<tr>' + cell('TỶ LỆ HOÀN THÀNH') + cell(completionRate) + '</tr>'
                         + '<tr>' + cell('KẾT LUẬN') + cell(evaluation.unfixed ? ('CÒN ' + evaluation.unfixed + ' FILE CHƯA SỬA') : 'ĐÃ HOÀN TẤT') + '</tr></table>';
                     var dates = [], grouped = {};
+                    var monthParts = value.split('-');
+                    var monthYear = Number(monthParts[0]), monthNumber = Number(monthParts[1]);
+                    var monthDays = new Date(Date.UTC(monthYear, monthNumber, 0)).getUTCDate();
+                    for (var monthDay = 1; monthDay <= monthDays; monthDay++) {
+                        dates.push(String(monthDay).padStart(2, '0') + '.' + String(monthNumber).padStart(2, '0') + '.' + monthYear);
+                    }
                     (response.data || []).forEach(function (r) {
                         var d = r.date || 'Không rõ ngày';
-                        if (dates.indexOf(d) < 0) dates.push(d);
                         var e = r.error || 'Lỗi validation';
                         if (!grouped[e]) grouped[e] = {};
                         grouped[e][d] = (grouped[e][d] || 0) + 1;
                     });
-                    dates.sort(function (a, b) { return a.split('.').reverse().join('').localeCompare(b.split('.').reverse().join('')); });
-                    html += '<h2>BÁO CÁO THEO THÁNG ' + value + '</h2><table data-sheet-name="BÁO CÁO THÁNG" border="1"><tr><th>STT</th><th>TÊN LỖI</th>' + dates.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '</tr>';
-                    Object.keys(grouped).sort().forEach(function (e, i) { html += '<tr>' + cell(i + 1) + cell(e) + dates.map(function (d) { return cell(grouped[e][d] || 0); }).join('') + '</tr>'; });
-                    html += '<tr>' + cell('') + cell('TỔNG FILE LỖI THEO NGÀY') + dates.map(function (d) { return cell((response.data || []).filter(function (r) { return (r.date || 'Không rõ ngày') === d; }).length); }).join('') + '</tr>';
-                    html += '<tr>' + cell('') + cell('TỔNG BHTT') + dates.map(function (d) { var total = 0; (response.files || []).forEach(function (f) { if (f.date === d) total += Number(f.total_amount) || 0; }); return cell(total); }).join('') + '</tr></table></body></html>';
-                    exportXlsx(html, reportFilename(value));
-                    $('#report-message').text('Đã xuất báo cáo tháng thành công.').removeClass('alert-danger').addClass('alert-success');
+                    html += '<h2>BÁO CÁO THEO THÁNG ' + value + '</h2><table data-sheet-name="TỔNG HỢP LỖI" border="1"><tr><th>STT</th><th>TÊN LỖI</th>' + dates.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '<th>TỔNG CỘNG</th></tr>';
+                    Object.keys(grouped).sort().forEach(function (e, i) {
+                        var errorTotal = dates.reduce(function (sum, d) { return sum + (grouped[e][d] || 0); }, 0);
+                        html += '<tr>' + cell(i + 1) + cell(e) + dates.map(function (d) { return cell(grouped[e][d] || 0); }).join('') + cell(errorTotal) + '</tr>';
+                    });
+                    var grandErrorTotal = (response.data || []).length;
+                    html += '<tr>' + cell('') + cell('TỔNG LƯỢT LỖI THEO NGÀY') + dates.map(function (d) { return cell((response.data || []).filter(function (r) { return (r.date || 'Không rõ ngày') === d; }).length); }).join('') + cell(grandErrorTotal) + '</tr>';
+                    var grandAmount = 0;
+                    html += '<tr>' + cell('') + cell('TỔNG BHTT') + dates.map(function (d) { var total = 0; (response.files || []).forEach(function (f) { if (f.date === d) total += Number(f.total_amount) || 0; }); grandAmount += total; return cell(total); }).join('') + cell(grandAmount) + '</tr></table>';
+                    html += monthDailyErrorSummaryTable(response.files || [], response.data || [], value);
+                    html += '<table data-sheet-name="TỔNG HỢP FILE" border="1"><tr><th>STT</th><th>Mã liên kết</th><th>Mã BN</th><th>Mã thẻ BHYT</th><th>Điều trị từ</th><th>Điều trị đến</th><th>Số lượng lỗi</th><th>Trạng thái</th><th>Số tiền</th></tr>';
+                    (response.files || []).forEach(function (r, i) { html += '<tr>' + [i + 1, r.ma_lk, r.ma_bn, r.ma_the_bhyt, r.ngay_vao, r.ngay_ra, r.error_count, correctionStatusText(r), r.total_amount].map(cell).join('') + '</tr>'; });
+                    html += '</table>' + departmentSummaryTable(response.files || []) + '</body></html>';
+                    showExportResult(exportXlsx(html, reportFilename(value)), 'Đã xuất báo cáo tháng thành công.');
                     return;
                 }
                 if (window.exportErrorReportSheets) {
-                    window.exportErrorReportSheets(response.data || [], response.files || [], reportFilename(value));
-                    $('#report-message').text('Đã xuất báo cáo thành công.').removeClass('alert-danger').addClass('alert-success');
+                    showExportResult(window.exportErrorReportSheets(response.data || [], response.files || [], reportFilename(value)), 'Đã xuất báo cáo thành công.');
                     return;
                 }
-                html += '<h2>BÁO CÁO LỖI</h2><table border="1"><tr><th>STT</th><th>Mã liên kết</th><th>XML</th><th>Trường lỗi</th><th>Giá trị lỗi</th><th>Lỗi</th><th>Ngày</th></tr>';
+                if ($('#report-scope').val() === 'khoa') {
+                    html += evaluationTable(response.files || []);
+                }
+                html += '<h2>BÁO CÁO LỖI</h2><table data-sheet-name="CHI TIẾT LỖI" border="1"><tr><th>STT</th><th>Mã liên kết</th><th>XML</th><th>Trường lỗi</th><th>Giá trị lỗi</th><th>Lỗi</th><th>Ngày</th></tr>';
                 (response.data || []).forEach(function (r, i) { html += '<tr>' + [i + 1, r.ma_lk, r.xml, r.field, r.value, r.error, r.date].map(cell).join('') + '</tr>'; });
-                html += '</table><br><h2>TỔNG HỢP FILE</h2><table border="1"><tr><th>STT</th><th>Mã liên kết</th><th>Mã BN</th><th>Mã thẻ BHYT</th><th>Điều trị từ</th><th>Điều trị đến</th><th>Số lượng lỗi</th><th>Số tiền</th></tr>';
-                (response.files || []).forEach(function (r, i) { html += '<tr>' + [i + 1, r.ma_lk, r.ma_bn, r.ma_the_bhyt, r.ngay_vao, r.ngay_ra, r.error_count, r.total_amount].map(cell).join('') + '</tr>'; });
-                html += '</table></body></html>';
-                exportXlsx(html, reportFilename(value));
-                $('#report-message').text('Đã xuất báo cáo thành công.').removeClass('alert-danger').addClass('alert-success');
-            }).fail(function () { $('#report-message').text('Không thể tải dữ liệu báo cáo.').addClass('alert-danger'); })
-            .always(function () { button.prop('disabled', false); });
+                html += '</table><br><h2>TỔNG HỢP FILE</h2><table data-sheet-name="TỔNG HỢP FILE" border="1"><tr><th>STT</th><th>Mã liên kết</th><th>Mã BN</th><th>Mã thẻ BHYT</th><th>Điều trị từ</th><th>Điều trị đến</th><th>Số lượng lỗi</th><th>Trạng thái</th><th>Số tiền</th></tr>';
+                (response.files || []).forEach(function (r, i) { html += '<tr>' + [i + 1, r.ma_lk, r.ma_bn, r.ma_the_bhyt, r.ngay_vao, r.ngay_ra, r.error_count, correctionStatusText(r), r.total_amount].map(cell).join('') + '</tr>'; });
+                html += '</table>' + departmentSummaryTable(response.files || []) + '</body></html>';
+                showExportResult(exportXlsx(html, reportFilename(value)), 'Đã xuất báo cáo thành công.');
+            }).fail(function () {
+                $('#report-message').text('Không thể tải dữ liệu báo cáo.').removeClass('alert-info alert-success').addClass('alert-danger');
+                setReportBusy(false);
+            });
     });
 })(jQuery);

@@ -274,9 +274,9 @@ Bảng chính: `file`, `xml_upload_queue`, `file_history`, `file_audit_logs`, `c
 - Response header chính: `Content-Type: application/xml`, `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`.
 - Lỗi: HTTP `400` nếu ID sai, `404` nếu file/record không tồn tại.
 
-### `file/getErrorReport`
+### `baocao/getErrorReport`
 
-- Mục đích: tổng hợp lỗi/cảnh báo theo ngày, khoảng ngày hoặc tháng.
+- Mục đích: tổng hợp lỗi/cảnh báo theo ngày, khoảng ngày hoặc tháng. Endpoint được xử lý độc lập bởi `baocaoAction` và được cả màn hình báo cáo lẫn chức năng xuất lỗi ở màn hình file sử dụng.
 - Input:
   - `period=month` và `date=Y-m`; hoặc
   - `from_date`, `to_date`; hoặc
@@ -420,12 +420,12 @@ File: `web_src/admin/baocaoAction.php`.
 
 ### `baocao/index`
 
-- Kế thừa `fileAction`, vì vậy dùng lại các endpoint báo cáo trong `fileAction`.
+- Là action độc lập, chỉ khởi tạo `Request` và `FilePeer` phục vụ nghiệp vụ báo cáo.
 - Đọc danh sách khoa từ bảng `khoa` để admin chọn phạm vi báo cáo.
 - View: `www/baocao/index.php`.
 - JS: dùng cả `js/file.js` và `js/baocao.js`.
 
-Endpoint dữ liệu báo cáo chính là `file/getErrorReport` hoặc route tương đương khi router gọi method kế thừa.
+Endpoint dữ liệu báo cáo là `baocao/getErrorReport` và được xử lý trực tiếp trong `baocaoAction`.
 
 ## 7. Quản lý rule validation
 

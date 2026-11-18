@@ -144,6 +144,19 @@ class XmlRulesValidator
                         continue;
                     }
 
+                    if ($ruleType === 'TABLE_MATCH_REQUIRED') {
+                        $ruleErrors = self::validateTableMatchRequired(
+                            $rule,
+                            $matches,
+                            $tableLookupService,
+                            $fileContexts,
+                            $fileIndex
+                        );
+                        $errors = array_merge($errors, $ruleErrors);
+                        self::appendValidMatches($validFields, $rule, $matches, $ruleErrors);
+                        continue;
+                    }
+
                     if ($ruleType === 'API') {
                         $apiPassed = false;
                         $ruleErrors = self::validateApi(
@@ -330,7 +343,7 @@ class XmlRulesValidator
                 if (!in_array($ruleType, array(
                     'FIELD_COMPARE', 'CONDITIONAL_FIELD', 'CROSS_FILE_REQUIRED_BY_KEY',
                     'CCCD_GENDER_CENTURY', 'API', 'SUBSTRING',
-                    'TABLE_EXISTS', 'VTYT_HAS_DVKT', 'CROSS_FILE_ANY_MATCH'
+                    'TABLE_EXISTS', 'TABLE_MATCH_REQUIRED', 'VTYT_HAS_DVKT', 'CROSS_FILE_ANY_MATCH'
                 ), true)) {
                     continue;
                 }
@@ -390,6 +403,8 @@ class XmlRulesValidator
                             ? strtoupper($fieldConfig['file_type']) : $fileType;
                         if ($fieldName !== '') self::addRequiredField($required, $targetType, $fieldName);
                     }
+                } elseif ($ruleType === 'TABLE_MATCH_REQUIRED' && !empty($config['source_field'])) {
+                    self::addRequiredField($required, $fileType, $config['source_field']);
                 } elseif ($ruleType === 'CCCD_GENDER_CENTURY') {
                     if (!empty($config['birth_field'])) {
                         $targetType = !empty($config['birth_file_type'])
@@ -1387,6 +1402,73 @@ class XmlRulesValidator
             } elseif (!empty($config['return_column'])) {
                 $lookupResults[$match['path']] = count($matchedLookups) === 1
                     ? $matchedLookups[0] : $matchedLookups;
+            }
+        }
+        return $errors;
+    }
+
+    private static function validateTableMatchRequired(
+        array $rule,
+        array $matches,
+        $tableLookupService,
+        array $fileContexts,
+        $currentFileIndex
+    ) {
+        $config = json_decode($rule['rule_value'], true);
+        if (!is_array($config) || empty($config['source_field']) || empty($config['table'])
+            || empty($config['column'])) {
+            return array(self::makeError(
+                $rule,
+                $rule['field_name'],
+                null,
+                'error',
+                'Cấu hình TABLE_MATCH_REQUIRED không hợp lệ.'
+            ));
+        }
+        if ($tableLookupService === null) {
+            return array(self::makeError(
+                $rule,
+                $rule['field_name'],
+                null,
+                'error',
+                'Dịch vụ tra cứu bảng chưa được cấu hình.'
+            ));
+        }
+
+        $sourceMatches = self::indexedMatches(
+            $fileContexts,
+            $currentFileIndex,
+            null,
+            $config['source_field']
+        );
+        if (method_exists($tableLookupService, 'preload')) {
+            $sourceValues = array();
+            foreach ($sourceMatches as $sourceMatch) {
+                if (!self::isNullValue($sourceMatch['value'])) $sourceValues[] = $sourceMatch['value'];
+            }
+            if ($sourceValues) $tableLookupService->preload($sourceValues, $config);
+        }
+
+        $targetByParent = array();
+        foreach ($matches as $match) {
+            $parent = preg_replace('/\.[^.]+$/', '', $match['path']);
+            $targetByParent[$parent] = $match;
+        }
+
+        $errors = array();
+        foreach ($sourceMatches as $sourceMatch) {
+            if (self::isNullValue($sourceMatch['value'])) continue;
+            $parent = preg_replace('/\.[^.]+$/', '', $sourceMatch['path']);
+            $target = isset($targetByParent[$parent]) ? $targetByParent[$parent] : array(
+                'path' => $parent . '.' . $rule['field_name'],
+                'value' => null
+            );
+            if (!self::isNullValue($target['value'])) continue;
+            if ($tableLookupService->exists($sourceMatch['value'], $config)) {
+                $error = self::makeError($rule, $target['path'], $target['value']);
+                $error['source_field'] = $config['source_field'];
+                $error['source_value'] = (string) $sourceMatch['value'];
+                $errors[] = $error;
             }
         }
         return $errors;

@@ -1000,6 +1000,7 @@ class FilePeer
     {
         $to = $to ?: date('Y-m-d', strtotime($date . ' +1 day'));
         $sql = 'SELECT f.ma_lk, f.ma_bn, f.ngay_lap, f.processing_status, f.validation_result, f.thongtin_bn,
+                    f.id_khoa, kp.ten AS khoa_name,
                     (SELECT l.error_detail
                         FROM file_audit_logs l
                         WHERE l.ma_lk = f.ma_lk COLLATE utf8mb4_unicode_ci
@@ -1008,6 +1009,7 @@ class FilePeer
                         ORDER BY l.created_at DESC, l.id DESC
                         LIMIT 1) AS previous_error_detail
                 FROM `file` f
+                LEFT JOIN `khoa_phong` kp ON kp.ma = f.id_khoa
                 WHERE f.update_at >= ? AND f.update_at < ?';
         if ($idKhoa !== null) $sql .= ' AND f.id_khoa = ?';
         $sql .= ' ORDER BY f.update_at DESC, f.id DESC';
@@ -1027,6 +1029,8 @@ class FilePeer
             $hadPreviousErrors = trim((string) $file['previous_error_detail']) !== '';
             $rows[] = array(
                 'ma_lk' => (string) $file['ma_lk'], 'ma_bn' => (string) ($file['ma_bn'] ?: ''),
+                'id_khoa' => (string) ($file['id_khoa'] ?: ''),
+                'khoa_name' => (string) ($file['khoa_name'] ?: ''),
                 'ma_the_bhyt' => $summary['ma_the_bhyt'], 'ngay_vao' => $summary['ngay_vao'],
                 'ngay_ra' => $summary['ngay_ra'], 'error_count' => $summary['error_count'],
                 'warning_count' => $summary['warning_count'],
@@ -1312,15 +1316,16 @@ class FilePeer
 
     public function getPortalFiles($date)
     {
+        list($from, $to) = self::khoaPeriodBounds($date, 'day');
         $q = $this->connection->prepare("SELECT f.id, f.ten, f.ma_lk, f.file_path
             FROM file f
-            WHERE DATE(f.update_at)=? AND f.processing_status='processed' AND f.da_day_cong=0
+            WHERE f.update_at >= ? AND f.update_at < ? AND f.processing_status='processed' AND f.da_day_cong=0
               AND NOT EXISTS (SELECT 1 FROM cong_hoso c WHERE c.malk = f.ma_lk)
             ORDER BY f.id");
         if (!$q) {
             throw new RuntimeException('Không thể tải file đẩy cổng.');
         }
-        $q->bind_param('s', $date);
+        $q->bind_param('ss', $from, $to);
         $q->execute();
         $result = $q->get_result();
         $rows = array();
@@ -1374,9 +1379,11 @@ class FilePeer
         $params = array();
         $types = '';
         if ($date !== null) {
-            $where[] = 'DATE(ngay_day) = ?';
-            $params[] = $date;
-            $types .= 's';
+            $where[] = 'ngay_day >= ? AND ngay_day < ?';
+            list($from, $to) = self::khoaPeriodBounds($date, 'day');
+            $params[] = $from;
+            $params[] = $to;
+            $types .= 'ss';
         }
         if ($maLk !== null && $maLk !== '') {
             $where[] = 'malk = ?';
@@ -1492,6 +1499,7 @@ class FilePeer
 
     public function markAllForRevalidation($date, $idKhoa = null)
     {
+        list($from, $to) = self::khoaPeriodBounds($date, 'day');
         // Serialize queue creation and batch claiming on the same MySQL mutex.
         // This prevents the range UPDATE below from racing with FOR UPDATE.
         $mutex = $this->connection->query("SELECT GET_LOCK('ql_error_revalidation_queue', 10)");
@@ -1502,15 +1510,15 @@ class FilePeer
         try {
         $pendingStatement = $this->connection->prepare(
             "SELECT COUNT(*) AS total FROM `file`
-             WHERE DATE(update_at) = ?
+             WHERE update_at >= ? AND update_at < ?
                AND processing_status IN ('pending_revalidation', 'revalidating')"
              . ($idKhoa !== null ? ' AND id_khoa = ?' : '')
         );
         if (!$pendingStatement) {
             throw new RuntimeException('Không thể chuẩn bị kiểm tra hàng đợi quét lại.');
         }
-        if ($idKhoa !== null) $pendingStatement->bind_param('ss', $date, $idKhoa);
-        else $pendingStatement->bind_param('s', $date);
+        if ($idKhoa !== null) $pendingStatement->bind_param('sss', $from, $to, $idKhoa);
+        else $pendingStatement->bind_param('ss', $from, $to);
         $pendingStatement->execute();
         $pendingResult = $pendingStatement->get_result();
         if (!$pendingResult) {
@@ -1528,7 +1536,7 @@ class FilePeer
              SET processing_status = 'pending_revalidation',
                  revalidation_claimed_at = NULL,
                  update_at = update_at
-             WHERE DATE(update_at) = ?
+             WHERE update_at >= ? AND update_at < ?
                AND processing_status NOT IN ('pending_revalidation', 'revalidating')"
              . ($idKhoa !== null ? ' AND id_khoa = ?' : '') . "
              LIMIT 100"
@@ -1540,8 +1548,8 @@ class FilePeer
         // Update small batches so the watcher never competes with one large
         // range lock covering all files for the selected day.
         do {
-            if ($idKhoa !== null) $statement->bind_param('ss', $date, $idKhoa);
-            else $statement->bind_param('s', $date);
+            if ($idKhoa !== null) $statement->bind_param('sss', $from, $to, $idKhoa);
+            else $statement->bind_param('ss', $from, $to);
             if (!$statement->execute()) {
                 $errorCode = (int) $statement->errno;
                 throw new RuntimeException('Queue update failed.', $errorCode);
@@ -1575,6 +1583,7 @@ class FilePeer
 
     public function claimPendingRevalidation($limit = 2, $date = null, $idKhoa = null, $lockTimeoutSeconds = 10)
     {
+        if ($date !== null) list($from, $to) = self::khoaPeriodBounds($date, 'day');
         $limit = max(1, min(20, (int) $limit));
         $lockTimeoutSeconds = max(0, (int) $lockTimeoutSeconds);
         $mutex = $this->connection->query(
@@ -1604,7 +1613,7 @@ class FilePeer
             $sql = "SELECT id, ten, ma_lk, file_path, processing_status, validation_result, id_khoa
                     FROM `file`
                     WHERE processing_status = 'pending_revalidation'";
-            if ($date !== null) $sql .= " AND DATE(update_at) = ?";
+            if ($date !== null) $sql .= " AND update_at >= ? AND update_at < ?";
             if ($idKhoa !== null) $sql .= " AND id_khoa = ?";
             // MariaDB does not support SKIP LOCKED. The GET_LOCK mutex above
             // serializes the watcher and web requests before this row lock.
@@ -1613,8 +1622,8 @@ class FilePeer
             if (!$statement) {
                 throw new RuntimeException('Không thể chuẩn bị nhận hàng đợi quét lại.');
             }
-            if ($date !== null && $idKhoa !== null) $statement->bind_param('ss', $date, $idKhoa);
-            elseif ($date !== null) $statement->bind_param('s', $date);
+            if ($date !== null && $idKhoa !== null) $statement->bind_param('sss', $from, $to, $idKhoa);
+            elseif ($date !== null) $statement->bind_param('ss', $from, $to);
             elseif ($idKhoa !== null) $statement->bind_param('s', $idKhoa);
             if (!$statement->execute()) {
                 $errorCode = (int) $statement->errno;
@@ -1687,6 +1696,7 @@ class FilePeer
 
     public function getRevalidationProgress($date = null)
     {
+        if ($date !== null) list($from, $to) = self::khoaPeriodBounds($date, 'day');
         $sql = "SELECT
                     SUM(processing_status = 'pending_revalidation') AS pending,
                     SUM(processing_status = 'revalidating') AS revalidating,
@@ -1694,12 +1704,12 @@ class FilePeer
                     SUM(processing_status = 'failed') AS failed,
                     COUNT(*) AS total
                 FROM `file`";
-        if ($date !== null) $sql .= " WHERE DATE(update_at) = ?";
+        if ($date !== null) $sql .= " WHERE update_at >= ? AND update_at < ?";
         $statement = $this->connection->prepare($sql);
         if (!$statement) {
             throw new RuntimeException('Không thể chuẩn bị đọc tiến độ quét lại.');
         }
-        if ($date !== null) $statement->bind_param('s', $date);
+        if ($date !== null) $statement->bind_param('ss', $from, $to);
         $statement->execute();
         $result = $statement->get_result();
         if (!$result) {
@@ -1712,11 +1722,11 @@ class FilePeer
         $revalidating = isset($row['revalidating']) ? (int) $row['revalidating'] : 0;
         // validation_result is an array of XML results; warning_count is stored per item.
         $warningSql = 'SELECT validation_result FROM `file`';
-        if ($date !== null) $warningSql .= ' WHERE DATE(update_at) = ?';
+        if ($date !== null) $warningSql .= ' WHERE update_at >= ? AND update_at < ?';
         $warningStatement = $this->connection->prepare($warningSql);
         $warningCount = 0;
         if ($warningStatement) {
-            if ($date !== null) $warningStatement->bind_param('s', $date);
+            if ($date !== null) $warningStatement->bind_param('ss', $from, $to);
             if ($warningStatement->execute()) {
                 $warningResult = $warningStatement->get_result();
                 while ($warningRow = $warningResult->fetch_assoc()) {

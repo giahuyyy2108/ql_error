@@ -4,6 +4,13 @@
         <div class="clearfix"></div>
     </div>
     <div class="x_content">
+        <div id="report-loading-overlay" class="report-loading-overlay" aria-hidden="true">
+            <div class="report-loading-box" role="status" aria-live="polite">
+                <i class="fa fa-spinner fa-spin" aria-hidden="true"></i>
+                <strong id="report-loading-text">Đang xử lý báo cáo...</strong>
+                <span>Vui lòng chờ và không đóng trang.</span>
+            </div>
+        </div>
         <section class="report-card">
             <div class="row report-filter-row">
                 <div class="col-sm-3 col-md-2">
