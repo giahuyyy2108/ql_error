@@ -106,6 +106,17 @@ class TableLookupService
         self::$databaseSources = null;
     }
 
+    /**
+     * Reload lookup-source configuration and discard values cached by the
+     * long-running watcher. This is called together with the rule refresh so
+     * newly added lookup tables/rules take effect without restarting workers.
+     */
+    public function refreshSources()
+    {
+        self::$databaseSources = null;
+        $this->existsCache = array();
+    }
+
     public static function normalizeConfig(array $config)
     {
         $tableKey = isset($config['table']) ? strtolower(trim((string) $config['table'])) : '';

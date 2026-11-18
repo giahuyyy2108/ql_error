@@ -175,6 +175,7 @@ $buildImportService = function () use (&$filePeer, &$validationCallback) {
         &$rulesLoadedAt
     ) {
         if ($rulesCache === null || (time() - $rulesLoadedAt) >= 30) {
+            $tableLookupService->refreshSources();
             $rulesCache = $rulePeer->getRulesForValidation();
             $rulesLoadedAt = time();
         }

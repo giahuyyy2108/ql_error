@@ -1694,7 +1694,7 @@ class FilePeer
         return (int) $row['total'];
     }
 
-    public function getRevalidationProgress($date = null)
+    public function getRevalidationProgress($date = null, $includeWarningCount = true)
     {
         if ($date !== null) list($from, $to) = self::khoaPeriodBounds($date, 'day');
         $sql = "SELECT
@@ -1720,36 +1720,40 @@ class FilePeer
         $statement->close();
         $pending = isset($row['pending']) ? (int) $row['pending'] : 0;
         $revalidating = isset($row['revalidating']) ? (int) $row['revalidating'] : 0;
-        // validation_result is an array of XML results; warning_count is stored per item.
-        $warningSql = 'SELECT validation_result FROM `file`';
-        if ($date !== null) $warningSql .= ' WHERE update_at >= ? AND update_at < ?';
-        $warningStatement = $this->connection->prepare($warningSql);
         $warningCount = 0;
-        if ($warningStatement) {
-            if ($date !== null) $warningStatement->bind_param('ss', $from, $to);
-            if ($warningStatement->execute()) {
-                $warningResult = $warningStatement->get_result();
-                while ($warningRow = $warningResult->fetch_assoc()) {
-                    $validation = json_decode((string) $warningRow['validation_result'], true);
-                    if (!is_array($validation)) continue;
-                    foreach ($validation as $item) {
-                        if (is_array($item)) $warningCount += (int) ($item['warning_count'] ?? 0);
+        if ($includeWarningCount) {
+            // validation_result is an array of XML results; warning_count is stored per item.
+            // This scan can be expensive, so realtime queue polling explicitly skips it.
+            $warningSql = 'SELECT validation_result FROM `file`';
+            if ($date !== null) $warningSql .= ' WHERE update_at >= ? AND update_at < ?';
+            $warningStatement = $this->connection->prepare($warningSql);
+            if ($warningStatement) {
+                if ($date !== null) $warningStatement->bind_param('ss', $from, $to);
+                if ($warningStatement->execute()) {
+                    $warningResult = $warningStatement->get_result();
+                    while ($warningRow = $warningResult->fetch_assoc()) {
+                        $validation = json_decode((string) $warningRow['validation_result'], true);
+                        if (!is_array($validation)) continue;
+                        foreach ($validation as $item) {
+                            if (is_array($item)) $warningCount += (int) ($item['warning_count'] ?? 0);
+                        }
                     }
+                    $warningResult->free();
                 }
-                $warningResult->free();
+                $warningStatement->close();
             }
-            $warningStatement->close();
         }
-        return array(
+        $progress = array(
             'pending' => $pending,
             'revalidating' => $revalidating,
             'remaining' => $pending + $revalidating,
             'processing' => $pending + $revalidating,
             'success' => isset($row['success']) ? (int) $row['success'] : 0,
             'failed' => isset($row['failed']) ? (int) $row['failed'] : 0,
-            'warning_count' => $warningCount,
             'total' => isset($row['total']) ? (int) $row['total'] : 0
         );
+        if ($includeWarningCount) $progress['warning_count'] = $warningCount;
+        return $progress;
     }
 
     public function getPendingRevalidation($limit = 2)

@@ -950,7 +950,7 @@
 }
 .report-page { background:#f7f9fb; }
 .report-page .x_content { position:relative; }
-.report-page .report-loading-overlay { position:absolute; inset:0; z-index:1000; display:none; align-items:flex-start; justify-content:center; padding-top:110px; background:rgba(247,249,251,.78); backdrop-filter:blur(1px); cursor:wait; }
+.report-page .report-loading-overlay { position:fixed; inset:0; z-index:20000; display:none; align-items:flex-start; justify-content:center; padding-top:110px; background:rgba(247,249,251,.78); backdrop-filter:blur(1px); cursor:wait; }
 .report-page .report-loading-overlay.is-active { display:flex; }
 .report-page .report-loading-box { display:flex; flex-direction:column; align-items:center; min-width:300px; padding:22px 28px; border:1px solid #d9e2ec; border-radius:8px; background:#fff; box-shadow:0 8px 30px rgba(31,45,61,.18); color:#34495e; text-align:center; }
 .report-page .report-loading-box i { margin-bottom:10px; color:#337ab7; font-size:32px; }

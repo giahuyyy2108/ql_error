@@ -427,7 +427,7 @@ class fileAction
                 $idKhoa = $this->filePeer->getCurrentUserKhoa((string) ($_SESSION['sUserName'] ?? ''));
             }
             $queued = $this->filePeer->markAllForRevalidation($date, $idKhoa);
-            $progress = $this->filePeer->getRevalidationProgress($date);
+            $progress = $this->filePeer->getRevalidationProgress($date, false);
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
@@ -469,7 +469,7 @@ class fileAction
                     $errors[] = $file['ten'] . ': ' . $exception->getMessage();
                 }
             }
-            $progress = $this->filePeer->getRevalidationProgress($date);
+            $progress = $this->filePeer->getRevalidationProgress($date, false);
             return $this->json(array(
                 'success' => true,
                 'processed' => count($files),
@@ -487,7 +487,7 @@ class fileAction
         $date = $this->selectedDate();
         if ($date === null) return $this->json(array('success' => false, 'message' => 'Ngày được chọn không hợp lệ.'));
         try {
-            return $this->json(array('success' => true, 'progress' => $this->filePeer->getRevalidationProgress($date)));
+            return $this->json(array('success' => true, 'progress' => $this->filePeer->getRevalidationProgress($date, false)));
         } catch (RuntimeException $exception) {
             return $this->json(array('success' => false, 'message' => $exception->getMessage()));
         }
@@ -518,7 +518,7 @@ class fileAction
                     'statistics' => array('processing' => $remaining)
                 ));
             }
-            $statistics = $date !== null ? $this->filePeer->getRevalidationProgress($date) : array();
+            $statistics = $date !== null ? $this->filePeer->getRevalidationProgress($date, false) : array();
             $statistics['processing'] = $remaining;
             $statistics['total'] = (isset($statistics['total']) ? (int) $statistics['total'] : 0) + $remaining;
             return $this->json(array('success' => true, 'remaining' => $remaining, 'statistics' => $statistics));
@@ -546,7 +546,7 @@ class fileAction
         flush();
         for ($i = 0; $i < 30; $i++) {
             try {
-                $progress = $this->filePeer->getRevalidationProgress($date);
+                $progress = $this->filePeer->getRevalidationProgress($date, false);
                 echo "event: progress\n";
                 echo 'data: ' . json_encode(array('success' => true, 'progress' => $progress), JSON_UNESCAPED_UNICODE) . "\n\n";
                 @ob_flush();
