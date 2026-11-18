@@ -46,7 +46,7 @@ $domain = $_SERVER['HTTP_HOST'] ?? 'localhost';
 define('_DEFAULT_URL_', $protocol . $domain . '/ql_error/');
 // define('_DEFAULT_URL_', 'http://192.168.31.8:80/ql_error/');
 
-define('_DEFAULT_VERSION_', 'v1.0');
+define('_DEFAULT_VERSION_', 'v1.1.2');
 
 define('_DEFAULT_LOGO_', _DEFAULT_URL_ . 'images/favicon.png');
 define('_DEFAULT_TITLE_', 'Quản lý lỗi - BỆNH VIỆN THỐNG NHẤT ' . _DEFAULT_VERSION_);
